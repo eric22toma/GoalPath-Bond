@@ -14,25 +14,30 @@ python3 -m pip install pandas numpy scipy scikit-learn gurobipy
 From a flat GitHub checkout:
 
 ```
-python3 elastic_net_one_period.py --output results/elastic_net_outputs.pkl
-python3 robust_mvo_one_period.py results/elastic_net_outputs.pkl --output results/rmvo
+python3 elastic_net_one_period.py --cusips 00037BAC6 00037BAF9 001055AF9
 ```
 
 For the local organized folder, prefix script paths with `02_Python_Code/`.
 All source CSVs must exist locally; preparation is called automatically by
 elastic net. Each destination must be NEW to protect previous results.
 
-Elastic net prints all original-unit slopes and the intercept, then prints
-yield forecasts for the top THREE bonds by current dollar trading volume
-(with CUSIP tie-breaking). These are examples, not the three best investments.
-It writes ONE `.pkl` handoff file containing all forecasts and the dated
-historical inputs the optimizer needs. Load only the handoff generated locally
-by this project; it is a Python serialized data file.
+Elastic net is currently CONSOLE ONLY. It prints all original-unit slopes
+and the intercept, then displays actual observed RET_EOM returns, forecast
+next-month yield changes, and the ten input predictor values for each selected
+CUSIP. `--cusips` controls display only; pooled training still uses eligible
+historical observations across bonds. Without it, display defaults to the three
+highest current dollar-volume bonds. No output data file is created.
 
-RMVO requires a Gurobi license. Its code contains the optimization, not the
-elastic-net script. It consumes the saved data without refitting. It prints
-selected CUSIPs, weights/trades, nominal/robust forecast monthly return,
-tracking error, costs and turnover; saves portfolio.csv and report.json.
+Predictors are ONLY the agreed ten: Treasury level, slope, curvature, lagged
+level change, within-month rate volatility, lagged Fed funds change, VIX,
+time to maturity, rich/cheap spread, and lagged supplied CPI inflation.
+Next-month observed return is labeled ex-post and is not a predictor or a
+forecast of total return. Missing observations print as unavailable.
+
+RMVO remains paused while inputs are being agreed. Its existing script requires
+a previously generated handoff file; the current console-only elastic-net
+script does not generate a new handoff. Do not run RMVO against old outputs and
+interpret it as a fresh result from this console run.
 
 There is NO annual-return requirement, terminal wealth goal, or goal constraint.
 Objective: tracking variance minus robust expected return plus transaction cost.
