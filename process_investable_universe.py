@@ -39,7 +39,7 @@ NUMERIC_COLUMNS = (
 PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 
-def load_data(csv_path=DEFAULT_BONDS):
+def load_data(csv_path='Investable_universe_AGG.csv'):
     """Return (raw, prepared, report); both tables retain source row/column order.
 
     raw contains original CSV cell strings (including blanks and NA tokens).
