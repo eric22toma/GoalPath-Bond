@@ -12,13 +12,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import gurobipy as gp
-from gurobipy import GRB
 from scipy.optimize import brentq
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, Ridge, Lasso
 from sklearn.covariance import LedoitWolf
+from process_investable_universe import process_all_data
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap']
@@ -36,9 +35,11 @@ def sven_yield(tau, params):
     return b0 + b1*a + b2*(a-np.exp(-x)) + b3*(c-np.exp(-z))
 
 
-def macro_features(curve_path, fred_path, core_path=None):
-    daily = pd.read_csv(curve_path, parse_dates=['Date']).sort_values('Date').set_index('Date')
-    daily = daily.replace(-999.99, np.nan)
+def macro_features(curve, fred, core=None):
+    """Construct predictors from shared prepared tables; never reload raw CSVs."""
+    daily = curve.sort_values('Date').set_index('Date')
+    if daily.index.isna().any():
+        raise ValueError('Curve contains invalid dates; inspect preparation report')
     if daily.index.has_duplicates:
         raise ValueError('Duplicate daily curve dates')
     # Actual last trading-day row, rather than last nonmissing value per column.
@@ -52,17 +53,22 @@ def macro_features(curve_path, fred_path, core_path=None):
     f['lag_level_change'] = f.level.shift(1)-f.level.shift(2)
     # Daily difference includes the previous trading day's close at month boundary.
     f['rate_volatility'] = daily.SVENY10.diff().groupby(daily.index.to_period('M')).std()
-    macro = pd.read_csv(fred_path, parse_dates=['Date']).set_index('Date')
+    macro = fred.sort_values('Date').set_index('Date')
+    if macro.index.isna().any(): raise ValueError('FRED contains invalid dates')
     macro.index = macro.index.to_period('M')
     if macro.index.has_duplicates:
         raise ValueError('Duplicate monthly FRED dates')
+    macro = macro.reindex(pd.period_range(macro.index.min(), macro.index.max(), freq='M'))
+    f = f.reindex(pd.period_range(f.index.min(), f.index.max(), freq='M'))
     # Monthly-average Fed funds for month t may be released after month end.
     # Use t-1 minus t-2 as an explicit extra availability-delay assumption.
     f['fed_funds_change'] = macro.Fed_Funds_Rate.diff().shift(1)
     f['vix'] = macro.VIX
-    if core_path:
-        core = pd.read_csv(core_path, parse_dates=['Date']).set_index('Date')
+    if core is not None:
+        core = core.sort_values('Date').set_index('Date')
+        if core.index.isna().any(): raise ValueError('Core CPI contains invalid dates')
         core.index = core.index.to_period('M')
+        if core.index.has_duplicates: raise ValueError('Duplicate core CPI months')
         core = core.reindex(pd.period_range(core.index.min(), core.index.max(), freq='M'))
         f['core_inflation_lag1'] = (core.CPILFESL/core.CPILFESL.shift(12)-1).shift(1)*100
     params = monthly[['BETA0','BETA1','BETA2','BETA3','TAU1','TAU2']]
@@ -70,22 +76,21 @@ def macro_features(curve_path, fred_path, core_path=None):
     check = params.dropna().loc['2016':'2025']
     error = [abs(sven_yield([10], row.to_numpy())[0]-monthly.loc[m,'SVENY10'])
              for m,row in check.iterrows()]
-    if max(error) > 0.002:
+    if error and max(error) > 0.002:
         raise ValueError('Svensson formula does not reproduce source SVENY10')
     return f, params
 
 
-def load_panel(path, macro, params):
+def load_panel(prepared_bonds, macro, params):
     cols = ['cusip','DATE','YIELD','MATURITY','RET_EOM','DURATION','COUPON',
             'PRICE_EOM','COUPACC','AMOUNT_OUTSTANDING','T_DVolume',
             'NCOUPS','nextcoup','DEFAULTED','CONV','BOND_TYPE']
-    p = pd.read_csv(path, usecols=cols, dtype={'cusip':str})
-    for c in ['DATE','MATURITY','nextcoup']:
-        p[c] = pd.to_datetime(p[c], errors='coerce')
-    for c in ['YIELD','RET_EOM']:
-        p[c] = pd.to_numeric(p[c].str.rstrip('%'), errors='coerce')
-    p.RET_EOM = p.RET_EOM/100
-    p['T_DVolume'] = pd.to_numeric(p.T_DVolume.str.replace(r'[$, ]','',regex=True), errors='coerce')
+    # Shared preparation contract: YIELD and RET_* are decimal fractions.
+    # Preserve these units; convert yield DIFFERENCES explicitly to percentage
+    # points for elastic net's target and rich/cheap feature.
+    p = prepared_bonds.loc[:, cols].copy()
+    if p.DATE.isna().any() or p.cusip.str.strip().eq('').any():
+        raise ValueError('Bond panel requires valid DATE and nonblank CUSIP')
     p['month'] = p.DATE.dt.to_period('M')
     if p.duplicated(['cusip','month']).any():
         raise ValueError('Duplicate bond-month keys')
@@ -95,14 +100,14 @@ def load_panel(path, macro, params):
     for month, rows in p.groupby('month').groups.items():
         if month not in params.index or params.loc[month].isna().any(): continue
         ix = p.loc[rows].index[p.loc[rows,'time_to_maturity']>0]
-        p.loc[ix,'rich_cheap'] = p.loc[ix,'YIELD']-sven_yield(p.loc[ix,'time_to_maturity'],params.loc[month])
+        p.loc[ix,'rich_cheap'] = 100*p.loc[ix,'YIELD']-sven_yield(p.loc[ix,'time_to_maturity'],params.loc[month])
     # Exact calendar successor; never turn a gap into a one-month target.
     future = p[['cusip','month','YIELD','RET_EOM']].copy()
     future['month'] = future.month-1
     future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return'})
     p = p.merge(future,on=['cusip','month'],how='left',validate='one_to_one')
     p['target_month'] = p.month+1
-    p['dy'] = p.next_yield-p.YIELD  # percentage points, not decimal yields
+    p['dy'] = 100*(p.next_yield-p.YIELD)  # percentage points, not decimal yields
     return p
 
 
@@ -141,9 +146,13 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
     model=estimator('elastic_net',alpha,l1_ratio).fit(known[features],known.dy)
     now=panel.loc[panel.month==asof].dropna(subset=features).copy()
     now['predicted_dy_pp']=model.predict(now[features])
+    standardized_intercept=float(model[-1].intercept_)
+    original_intercept=float(standardized_intercept-np.dot(model[-1].coef_/model[0].scale_,model[0].mean_))
     coef=pd.DataFrame({'feature':features,'coefficient_per_standard_deviation':model[-1].coef_,
                        'coefficient_original_units':model[-1].coef_/model[0].scale_,
                        'training_mean':model[0].mean_,'training_scale':model[0].scale_})
+    coef['intercept_standardized_inputs']=standardized_intercept
+    coef['intercept_original_inputs']=original_intercept
     return now,pd.DataFrame(metrics),pd.concat(errors,ignore_index=True),coef
 
 
@@ -178,6 +187,8 @@ def bond_exposures(row, params):
 
 
 def solve_period(now,panel,errors,params,args):
+    import gurobipy as gp
+    from gurobipy import GRB
     asof=pd.Period(args.asof,'M')
     history=panel.loc[(panel.month>=asof-35)&(panel.month<=asof)]
     returns=history.pivot(index='month',columns='cusip',values='RET_EOM').reindex(pd.period_range(asof-35,asof,freq='M'))
@@ -271,21 +282,38 @@ def main():
     p.add_argument('--gamma',type=float,default=10); p.add_argument('--epsilon-mu',type=float,default=.5)
     p.add_argument('--trade-cost',type=float,default=.001); p.add_argument('--duration-tolerance',type=float,default=.5)
     p.add_argument('--convexity-tolerance',type=float,default=10); p.add_argument('--krd-tolerance',type=float,default=.5)
-    p.add_argument('--output',default='outputs/elastic_net_one_period')
+    p.add_argument('--forecast-only',action='store_true',help='Stop after predictor construction, beta estimation, and validation')
+    p.add_argument('--output',default='outputs/elastic_net_shared_processing')
     args=p.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=False)
-    macro,params=macro_features(args.curve,args.fred,args.core_cpi)
+    # 1. Prepare every source in one module before constructing predictors.
+    data=process_all_data(args.bonds,args.fred,args.curve,args.core_cpi)
+    preparation={name: values[2] for name,values in data.items()}
+    (out/'preparation_report.json').write_text(json.dumps(preparation,indent=2)+'\n')
+    # 2. Build dated predictors from the prepared tables.
+    macro,params=macro_features(data['curve'][1],data['fred'][1],
+                               data['core_cpi'][1] if 'core_cpi' in data else None)
     features=FEATURES+(['core_inflation_lag1'] if args.core_cpi else [])
-    panel=load_panel(args.bonds,macro,params)
+    panel=load_panel(data['bonds'][1],macro,params)
+    del data  # Release raw-cell copies after constructing the model view.
     print('Loaded panel',panel.shape,flush=True)
     now,metrics,errors,coef=fit_forecast(panel,pd.Period(args.asof,'M'),features,args.alpha,args.l1_ratio)
-    print('Forecast fits complete',flush=True)
+    print('Forecast fits complete. Beta coefficients (original predictor units):',flush=True)
+    print(coef[['feature','coefficient_original_units']].to_string(index=False),flush=True)
+    print('Intercept:',coef.intercept_original_inputs.iloc[0],flush=True)
     metrics.to_csv(out/'forecast_validation.csv',index=False); coef.to_csv(out/'coefficients.csv',index=False)
     macro.to_csv(out/'monthly_predictors.csv'); errors.to_csv(out/'historical_oos_errors.csv',index=False)
-    holdings,result,Q,theta=solve_period(now,panel,errors,params,args)
-    holdings.to_csv(out/'portfolio.csv',index=False); np.savez(out/'risk_inputs.npz',Q=Q,theta=theta,bond_ids=holdings.cusip.to_numpy(dtype=str))
-    manifest={str(f):hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in [args.bonds,args.fred,args.curve]}
+    now[['cusip','month','target_month']+features+['predicted_dy_pp']].to_csv(out/'asof_predictors_and_forecasts.csv',index=False)
+    if args.forecast_only:
+        result={'status':'not_run','reason':'forecast-only requested'}
+    else:
+        holdings,result,Q,theta=solve_period(now,panel,errors,params,args)
+        holdings.to_csv(out/'portfolio.csv',index=False)
+        np.savez(out/'risk_inputs.npz',Q=Q,theta=theta,bond_ids=holdings.cusip.to_numpy(dtype=str))
+    source_paths=[args.bonds,args.fred,args.curve]+([args.core_cpi] if args.core_cpi else [])
+    manifest={str(f):hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in source_paths}
     report={'settings':vars(args),'features':features,'missing_requested_predictors':[] if args.core_cpi else ['lagged CPILFESL core inflation'],
-            'input_sha256':manifest,'forecast_structure':'pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1',
+            'input_sha256':manifest,'preparation':preparation,
+            'beta_equation':'predicted_dy_pp = intercept_original_inputs + sum(coefficient_original_units * original_feature)','forecast_structure':'pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1',
             'hyperparameters':'one prespecified configuration; expanding-year validation, NOT a tuned optimum',
             'limitations':['Historical revised snapshots; releases/vintages not verified. VIX month-end semantics not source-verified.',
              'Fed funds uses one additional month of lag for availability; differs from meeting formula.',

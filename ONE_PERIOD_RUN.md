@@ -132,7 +132,7 @@ A working Gurobi license is required. Relative data paths are resolved from the
 terminal's working directory; flags can supply alternative paths. Output must
 be a NEW directory to prevent overwriting previous results.
 
-Current outputs are in `outputs/elastic_net_one_period/`:
+Original outputs are preserved in `outputs/elastic_net_one_period/`. Refactored outputs are in `outputs/elastic_net_shared_processing/`:
 report.json (settings, source SHA256, limitations and solve), portfolio.csv (all
 40 candidates and weights/trades), coefficients.csv, forecast_validation.csv,
 monthly_predictors.csv, historical_oos_errors.csv and risk_inputs.npz (Q,
@@ -157,3 +157,73 @@ Next priorities: obtain CPILFESL with documented release/vintage timing;
 verify yield outliers and bond eligibility; load genuine benchmark weights;
 verify price, coupon and risk units; then tune a small grid and reevaluate
 against no-change before running a rolling portfolio backtest.
+
+
+## Updated chronological workflow: shared processing first
+
+1. `process_investable_universe.py` prepares **all three CSVs** through
+   `process_all_data()`: bonds, FRED monthly data, and daily Federal Reserve
+   curve. Raw/prepared/report triples retain all original source rows/columns.
+2. `elastic_net_one_period.py` imports this function, calls it first, and passes
+   prepared DataFrames into `macro_features()` and `load_panel()`. It has no
+   duplicate CSV parsers. Numeric/date parsing belongs to the processing module;
+   economic predictors and exact one-month targets belong to the forecast module.
+3. Elastic net standardizes training predictors, fits shared beta coefficients,
+   and exports coefficients, intercepts, validation errors, and as-of forecasts.
+4. Optional: continue to the unchanged Deliverable 2 optimization model.
+
+The TA's `data_processing.py` remains intact. Keep both updated modules in the
+same folder so Python resolves the import. You do not have to run the preparation
+script separately: the elastic-net entry point calls preparation before fitting.
+
+### Preparation only, optional inspection/export
+
+```
+python process_investable_universe.py --output-dir processed_all_three
+```
+
+This reads all three default CSVs and saves raw/prepared tables and a preparation
+report. It refuses an existing destination. Exporting the bond copies takes
+substantial disk space; the forecast can use prepared tables directly in memory.
+
+### Prepare -> predictors -> beta coefficients, without optimization
+
+```
+python elastic_net_one_period.py --forecast-only --output outputs/beta_run_1
+```
+
+This needs pandas, NumPy, SciPy and scikit-learn. Gurobi is imported only if
+optimization is requested. The source filenames remain configurable with
+`--bonds`, `--fred`, and `--curve`. All three input files must be present locally.
+
+### Understanding the exported beta coefficients
+
+`coefficients.csv` includes each feature's coefficient for standardized inputs,
+its coefficient in original predictor units, its training mean and scale, and
+both intercept conventions. `intercept_original_inputs` is repeated per row for
+convenience; use it ONCE when reconstructing a forecast:
+
+`predicted_dy_pp = intercept_original_inputs + sum(beta_original_j * feature_j)`
+
+For standardized coefficients, use each input `(x_j-mean_j)/scale_j` and the
+standardized-input intercept. Do not mix the two intercept conventions.
+Predicted changes are percentage points; divide by 100 before return mapping.
+
+Canonical prepared units: bond YIELD and RET_* are decimal fractions; source
+FRED and Federal Reserve rates retain percentage-point units. Coupon remains
+percent of face per year. The feature code explicitly converts bond yield to
+percentage points when constructing rich/cheap and the target. The prepared
+source YIELD column itself remains decimal throughout.
+
+Additional outputs: `preparation_report.json` and
+`asof_predictors_and_forecasts.csv`. The latter lists actual predictor values
+and predicted yield changes at the decision month; it can be regenerated rather
+than committed as a large derived table. Core CPI is still missing and remains
+optional, with no replacement by headline CPI.
+
+Refactor verification: 3 focused tests passed, including an end-to-end synthetic
+three-file preparation/unit-conversion test; the full 830,630-row run completed;
+source hashes and fitted original-unit slopes match the original run. All three
+source files have zero unexpected parsing failures. The numerical portfolio
+result is unchanged to floating-point precision. Original run artifacts remain
+available; updated outputs are saved separately.

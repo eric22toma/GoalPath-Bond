@@ -1,4 +1,4 @@
-"""Load the supplied bond-month universe without filtering its rows or columns.
+"""Prepare all three source CSVs without filtering their rows or columns.
 
 Requires pandas: pip install pandas
 Run: python process_investable_universe.py Investable_universe_AGG.csv
@@ -95,6 +95,60 @@ def load_data(csv_path='Investable_universe_AGG.csv'):
     return raw, prepared, report
 
 
+def load_numeric_table(csv_path, sentinel=None):
+    """Prepare a dated numeric source, retaining every source row/column.
+
+    FRED/curve rates retain source percentage-point units. Missing curve
+    sentinel -999.99 is mapped to NaN only in the prepared table.
+    """
+    path = Path(csv_path)
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False,
+                      encoding='utf-8-sig', skip_blank_lines=False)
+    if 'Date' not in raw:
+        raise ValueError(f'{path}: required Date column missing')
+    prepared = raw.copy()
+    failures, missing = {}, {}
+    for column in raw:
+        text = raw[column].str.strip()
+        absent = text.str.upper().isin({'', 'NA', 'N/A', 'NULL', 'NAN', 'NONE', '-'})
+        values = text.mask(absent)
+        if column == 'Date':
+            converted = pd.to_datetime(values, format='%Y-%m-%d', errors='coerce')
+        else:
+            converted = pd.to_numeric(values, errors='coerce')
+            if sentinel is not None:
+                absent = absent | converted.eq(sentinel)
+                converted = converted.mask(converted.eq(sentinel))
+        prepared[column] = converted
+        failures[column] = int((~absent & converted.isna()).sum())
+        missing[column] = int(absent.sum())
+    report = {'source': str(path.resolve()), 'rows': len(raw), 'columns': len(raw.columns),
+              'conversion_failure_counts': failures, 'missing_counts': missing,
+              'units': 'Source numerical units preserved; rates in percentage points',
+              'sentinel_treated_as_missing': sentinel}
+    return raw, prepared, report
+
+
+def process_all_data(bond_path='Investable_universe_AGG.csv',
+                     fred_path='FRED_Monthly_2015_2025.csv',
+                     curve_path='federal_reserve_nominal_yield_curve (1).csv',
+                     core_path=None):
+    """Single preparation entry point imported by elastic_net_one_period.py.
+
+    Returns a dict of raw/prepared/report triples. It preserves the source
+    records. Sorting, monthly aggregation, feature construction, and model
+    eligibility decisions happen downstream, without modifying these tables.
+    """
+    data = {'bonds': load_data(bond_path),
+            'fred': load_numeric_table(fred_path),
+            'curve': load_numeric_table(curve_path, sentinel=-999.99)}
+    if core_path is not None:
+        data['core_cpi'] = load_numeric_table(core_path)
+        if 'CPILFESL' not in data['core_cpi'][1]:
+            raise ValueError('Core CPI input requires Date and CPILFESL columns')
+    return data
+
+
 def get_period_data(data, start_date, end_date):
     """Inclusive observation-date slice of prepared data; no fill or asset removal.
 
@@ -123,17 +177,21 @@ def get_panel(data, value_column='RET_EOM'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('csv_path', nargs='?', default='Investable_universe_AGG.csv')
+    parser.add_argument('--fred', default='FRED_Monthly_2015_2025.csv')
+    parser.add_argument('--curve', default='federal_reserve_nominal_yield_curve (1).csv')
+    parser.add_argument('--core-cpi')
     parser.add_argument('--output-dir', type=Path,
-                        help='New directory for raw_cells.csv, prepared.csv, and report.json')
+                        help='New directory for all prepared/raw tables and preparation report')
     args = parser.parse_args()
-    raw, prepared, report = load_data(args.csv_path)
-    print(json.dumps(report, indent=2))
+    data = process_all_data(args.csv_path, args.fred, args.curve, args.core_cpi)
+    reports = {name: tables[2] for name, tables in data.items()}
+    print(json.dumps(reports, indent=2))
     if args.output_dir is not None:
-        # Refuse existing directories so previous files cannot be overwritten.
         args.output_dir.mkdir(parents=True, exist_ok=False)
-        raw.to_csv(args.output_dir / 'raw_cells.csv', index=False)
-        prepared.to_csv(args.output_dir / 'prepared.csv', index=False)
-        (args.output_dir / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        for name, (raw, prepared, report) in data.items():
+            raw.to_csv(args.output_dir / f'{name}_raw_cells.csv', index=False)
+            prepared.to_csv(args.output_dir / f'{name}_prepared.csv', index=False)
+        (args.output_dir / 'preparation_report.json').write_text(json.dumps(reports, indent=2) + '\n')
 
 
 if __name__ == '__main__':
