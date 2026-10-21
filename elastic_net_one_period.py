@@ -1,9 +1,7 @@
-"""Historical prototype: pooled elastic net -> Deliverable 2, section 4.1 solve.
+"""One-period elastic net: coefficients and next-month bond yield changes.
 
-Run from project root: python 02_Python_Code/elastic_net_one_period.py
-Optional --core-cpi CSV must contain Date,CPILFESL (at least 12 prior months).
-Data are revised snapshots: this is NOT a point-in-time verified backtest.
-No source files are changed. Outputs go to a new --output directory.
+Imports the validated processing module unchanged. Saves one local handoff file
+for robust_mvo_one_period.py; no portfolio optimization is performed here.
 """
 import argparse
 import hashlib
@@ -12,17 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import brentq
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, Ridge, Lasso
-from sklearn.covariance import LedoitWolf
 from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,
                                        DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
-KEYS = np.array([1., 2., 5., 10., 20., 30.])
 
 
 def sven_yield(tau, params):
@@ -170,224 +165,47 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
     return now,pd.DataFrame(metrics),pd.concat(errors,ignore_index=True),coef
 
 
-def bond_exposures(row, params):
-    """Approximate regular coupon cash flows, curve+constant-spread valuation.
-
-    Face=100; coupon in percent; calendar schedule from nextcoup backwards
-    from maturity. Actual day-count, irregular coupons and options are not
-    modeled. These are estimated exposures, NOT source-verified bond analytics.
-    """
-    freq=int(row.NCOUPS)
-    if freq not in [1,2,4,12]: raise ValueError('Unsupported coupon frequency')
-    date=row.MATURITY
-    dates=[]
-    while date>row.DATE:
-        dates.append(date)
-        date=date-pd.DateOffset(months=12//freq)
-    times=np.array([(d-row.DATE).days/365.25 for d in dates])
-    cf=np.full(len(times),row.COUPON/freq); cf[0]+=100
-    zero=sven_yield(times,params)/100
-    dirty=float(row.PRICE_EOM+row.COUPACC)
-    if dirty<=0: raise ValueError('Nonpositive dirty price')
-    price=lambda spread,bump: np.sum(cf*np.exp(-(zero+spread+bump)*times))
-    spread=brentq(lambda s:price(s,0)-dirty,-0.5,5.)
-    h=0.0001
-    base=price(spread,0)
-    d=(price(spread,-h)-price(spread,h))/(2*h*base)
-    c=(price(spread,-h)+price(spread,h)-2*base)/(h*h*base)
-    hat=np.array([np.interp(times,KEYS,np.eye(len(KEYS))[k]) for k in range(len(KEYS))])
-    krd=np.array([(price(spread,-h*hat[k])-price(spread,h*hat[k]))/(2*h*base) for k in range(len(KEYS))])
-    return d,c,krd
-
-
-def solve_period(now,panel,errors,params,args):
-    import gurobipy as gp
-    from gurobipy import GRB
-    asof=pd.Period(args.asof,'M')
-    history=panel.loc[(panel.month>=asof-35)&(panel.month<=asof)]
-    returns=history.pivot(index='month',columns='cusip',values='RET_EOM').reindex(pd.period_range(asof-35,asof,freq='M'))
-    # Historical completeness uses only pre-decision data, never future returns.
-    complete=returns.columns[returns.notna().all()]
-    candidates=now.loc[now.cusip.isin(complete)&(now.time_to_maturity>1/12)&
-                       now.DEFAULTED.eq('N')&now.CONV.eq(0)].copy()
-    candidates=candidates.dropna(subset=['PRICE_EOM','COUPACC','COUPON','NCOUPS','AMOUNT_OUTSTANDING','T_DVolume'])
-    candidates=candidates.loc[(candidates.PRICE_EOM>0)&(candidates.AMOUNT_OUTSTANDING>0)&
-                              candidates.NCOUPS.isin([1,2,4,12])]
-    # Deterministic as-of liquidity screen. Callable status is NOT supplied;
-    # eligibility for the final conventional-bond model remains unverified.
-    candidates=candidates.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(args.candidates).copy()
-    if len(candidates)<args.max_holdings: raise ValueError('Too few candidates')
-    exposures=[bond_exposures(r,params.loc[asof].to_numpy()) for r in candidates.itertuples()]
-    D=np.array([e[0] for e in exposures]); C=np.array([e[1] for e in exposures]); KRD=np.stack([e[2] for e in exposures],axis=1)
-    ids=candidates.cusip.tolist(); n=len(ids)
-    b=(candidates.AMOUNT_OUTSTANDING*candidates.PRICE_EOM).to_numpy(); b=b/b.sum()
-    current=b.copy()  # Illustrative existing portfolio, not an initial cash purchase.
-    carry=(candidates.COUPON/(candidates.PRICE_EOM+candidates.COUPACC)/12).to_numpy()
-    dy=candidates.predicted_dy_pp.to_numpy()/100
-    mu=carry-D*dy+0.5*C*dy**2
-    Q=LedoitWolf().fit(returns[ids].to_numpy()).covariance_
-    # Theta uses genuine earlier fixed-configuration validation predictions.
-    variances=errors.groupby('cusip').return_error.agg(['var','count'])
-    pooled=float(errors.return_error.var())
-    theta=np.array([variances.loc[i,'var'] if i in variances.index and variances.loc[i,'count']>=12 else pooled for i in ids])
-    theta=np.maximum(theta,1e-12)
-    required=(1+args.annual_goal)**(1/12)-1  # Wt=W0, t=0, Y=1, T=12
-    m=gp.Model('Deliverable2_one_period'); m.Params.OutputFlag=0; m.Params.TimeLimit=60; m.Params.MIPGap=1e-5
-    w=m.addMVar(n,lb=0,ub=1,name='w'); buy=m.addMVar(n,lb=0,name='u_plus'); sell=m.addMVar(n,lb=0,name='u_minus')
-    selected=m.addMVar(n,vtype=GRB.BINARY,name='delta'); eta=m.addVar(lb=0,name='eta')
-    # SOC epigraph of ||Theta^(1/2) w||. The objective penalizes eta;
-    # epsilon_mu > 0 forces tightness at the optimum.
-    m.addConstr(w.sum()==1,name='full_investment')
-    m.addConstr(w-current==buy-sell,name='trade_definition')
-    m.addConstr(w<=selected,name='selection_link'); m.addConstr(selected.sum()<=args.max_holdings,name='cardinality')
-    m.addConstr(gp.quicksum(theta[i]*w[i]*w[i] for i in range(n))<=eta*eta,name='robust_norm')
-    for name,x,tol in [('duration',D,args.duration_tolerance),('convexity',C,args.convexity_tolerance)]+[(f'krd_{k:g}',KRD[j],args.krd_tolerance) for j,k in enumerate(KEYS)]:
-        m.addConstr(x@w-x@b<=tol,name=name+'_upper'); m.addConstr(x@b-x@w<=tol,name=name+'_lower')
-    robust=mu@w-args.epsilon_mu*eta
-    m.addConstr(robust>=required,name='required_robust_return')
-    te=(w-b)@Q@(w-b); tc=args.trade_cost*(buy.sum()+sell.sum())
-    m.setObjective(args.gamma*te-robust+tc,GRB.MINIMIZE)
-    m.optimize()
-    candidates['forecast_return']=mu; candidates['estimated_duration']=D; candidates['estimated_convexity']=C
-    candidates['theta_return_variance']=theta; candidates['benchmark_proxy_weight']=b
-    for j,k in enumerate(KEYS): candidates[f'estimated_krd_{k:g}']=KRD[j]
-    info={'solver_status':m.Status,'solution_count':m.SolCount,'required_monthly_return':required,'annual_goal':args.annual_goal,
-          'candidate_count':n,'benchmark':'normalized amount outstanding times clean price of selected candidate subset; NOT AGG',
-          'current_portfolio':'same as proxy benchmark, illustrative', 'goal_feasible':False}
-    if m.SolCount:
-        weights=w.X
-        candidates['weight']=weights; candidates['buy']=buy.X; candidates['sell']=sell.X
-        true_robust=float(mu@weights-args.epsilon_mu*np.sqrt(theta@(weights**2)))
-        checks={'budget_error':abs(weights.sum()-1),'holdings':int((weights>1e-6).sum()),
-                'duration_deviation':float(abs(D@(weights-b))), 'convexity_deviation':float(abs(C@(weights-b))),
-                'maximum_krd_deviation':float(np.max(abs(KRD@(weights-b)))),
-                'robust_goal_slack':true_robust-required,
-                'trade_balance_error':float(np.max(abs(weights-current-buy.X+sell.X)))}
-        assert checks['budget_error']<1e-5 and checks['holdings']<=args.max_holdings
-        assert checks['robust_goal_slack']>=-1e-5 and checks['trade_balance_error']<1e-5
-        assert checks['duration_deviation']<=args.duration_tolerance+1e-5
-        assert checks['convexity_deviation']<=args.convexity_tolerance+1e-5
-        assert checks['maximum_krd_deviation']<=args.krd_tolerance+1e-5
-        info.update(goal_feasible=True,optimal=m.Status==GRB.OPTIMAL,mip_gap=m.MIPGap,
-                    nominal_monthly_return=float(mu@weights),robust_monthly_return=true_robust,
-                    monthly_tracking_error=float(np.sqrt(max(0,(weights-b)@Q@(weights-b)))),
-                    transaction_cost_fraction=float(tc.getValue()),turnover=float(0.5*np.sum(buy.X+sell.X)),checks=checks)
-        # Ex-post observation is accessed ONLY AFTER solve. Never used for candidate selection.
-        actual=panel.loc[panel.month==asof,['cusip','next_return']].set_index('cusip').reindex(ids).next_return
-        info['realized_return_coverage']=int(actual.notna().sum())
-        if actual.notna().all():
-            rp=float(actual.to_numpy()@weights); rb=float(actual.to_numpy()@b)
-            info.update(realized_portfolio_return=rp,realized_proxy_return=rb,
-                        realized_active_return=rp-rb,
-                        realized_wealth_after_cost=args.wealth*(1-info['transaction_cost_fraction'])*(1+rp))
-    elif m.Status==GRB.INFEASIBLE:
-        m.computeIIS(); m.write(str(Path(args.output)/'infeasible.ilp'))
-        info['infeasible_constraints']=[c.ConstrName for c in m.getConstrs() if c.IISConstr]
-    return candidates,info,Q,theta
-
-
-def save_forecast_outputs(out, now, panel, errors, params, args):
-    """Publish yield forecasts and a dated input bundle for the separate solver.
-
-    Expected return mapping is performed later by the robust MVO stage.
-    No future yields/returns are included in the optimizer snapshot/history.
-    """
-    asof=pd.Period(args.asof, 'M')
-    forecast=pd.DataFrame({
-        'cusip': now.cusip.to_numpy(),
-        'forecast_origin_month': str(asof),
-        'forecast_target_month': str(asof+1),
-        'current_yield_decimal': now.YIELD.to_numpy(),
-        'forecast_change_yield_percentage_points': now.predicted_dy_pp.to_numpy(),
-        'forecast_change_yield_basis_points': now.predicted_dy_pp.to_numpy()*100,
-        'forecast_change_yield_decimal': now.predicted_dy_pp.to_numpy()/100,
-        'forecast_next_yield_decimal': now.YIELD.to_numpy()+now.predicted_dy_pp.to_numpy()/100,
-    })
-    forecast.to_csv(out/'yield_change_forecasts.csv',index=False)
-    now.drop(columns=['next_yield','next_return','dy'],errors='ignore').to_csv(out/'optimizer_snapshot.csv',index=False)
-    history=panel.loc[panel.month.between(asof-35,asof),['cusip','month','RET_EOM']]
-    history.to_csv(out/'optimizer_return_history.csv',index=False)
-    (out/'optimizer_curve_params.json').write_text(json.dumps(params.loc[asof].to_dict(),indent=2)+'\n')
-    names=['yield_change_forecasts.csv','optimizer_snapshot.csv','optimizer_return_history.csv',
-           'optimizer_curve_params.json','historical_oos_errors.csv']
-    manifest={'asof':str(asof),'target_month':str(asof+1),'settings':vars(args),
-              'yield_units':'YIELD decimal; predicted_dy_pp percentage points; divide by 100 for return mapping',
-              'files':{n:hashlib.sha256((out/n).read_bytes()).hexdigest() for n in names}}
-    (out/'forecast_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print('Final elastic-net output: '+str(out/'yield_change_forecasts.csv'),flush=True)
-    print(forecast.head(5).to_string(index=False),flush=True)
-
-
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--bonds',default=str(DEFAULT_BONDS)); p.add_argument('--fred',default=str(DEFAULT_FRED))
-    p.add_argument('--curve',default=str(DEFAULT_CURVE)); p.add_argument('--core-cpi')
-    p.add_argument('--asof',default='2024-12'); p.add_argument('--alpha',type=float,default=.001); p.add_argument('--l1-ratio',type=float,default=.5)
-    p.add_argument('--annual-goal',type=float,default=.03); p.add_argument('--wealth',type=float,default=100000)
-    p.add_argument('--candidates',type=int,default=40); p.add_argument('--max-holdings',type=int,default=10)
-    p.add_argument('--gamma',type=float,default=10); p.add_argument('--epsilon-mu',type=float,default=.5)
-    p.add_argument('--trade-cost',type=float,default=.001); p.add_argument('--duration-tolerance',type=float,default=.5)
-    p.add_argument('--convexity-tolerance',type=float,default=10); p.add_argument('--krd-tolerance',type=float,default=.5)
-    mode=p.add_mutually_exclusive_group()
-    mode.add_argument('--forecast-only',action='store_true',help='Forecast only (the default)')
-    mode.add_argument('--optimize',action='store_true',help='Also run legacy in-process optimization; separate robust_mvo_one_period.py is recommended')
-    p.add_argument('--output',default=str(PROJECT_ROOT/'03_Results'/'new_elastic_net_run'))
-    args=p.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=False)
-    # 1. Prepare every source in one module before constructing predictors.
-    data=process_all_data(args.bonds,args.fred,args.curve,args.core_cpi)
-    preparation={name: values[2] for name,values in data.items()}
-    (out/'preparation_report.json').write_text(json.dumps(preparation,indent=2)+'\n')
-    # 2. Build dated predictors from the prepared tables.
-    macro,params=macro_features(history_for_features(data,'curve'),history_for_features(data,'fred'),
-                               history_for_features(data,'core_cpi') if 'core_cpi' in data else None)
-    features=FEATURES+(['core_inflation_lag1'] if args.core_cpi else [])
-    # Warm-up history has now served its purpose. Model outputs use bond months
-    # only. Never align daily Treasury trading dates directly to month-end dates.
-    bond_months = data['bonds'][1].DATE.dt.to_period('M')
-    model_months = pd.period_range(bond_months.min(), bond_months.max(), freq='M')
-    macro = macro.reindex(model_months)
-    params = params.reindex(model_months)
-    coverage = macro.isna().add_prefix('missing_')
-    coverage['all_macro_predictors_available'] = macro.notna().all(axis=1)
-    coverage.to_csv(out/'predictor_month_coverage.csv', index_label='month')
-
+    parser=argparse.ArgumentParser(description='One-period pooled elastic net: coefficients and next-month yield changes')
+    parser.add_argument('--bonds',default=str(DEFAULT_BONDS))
+    parser.add_argument('--fred',default=str(DEFAULT_FRED))
+    parser.add_argument('--curve',default=str(DEFAULT_CURVE))
+    parser.add_argument('--asof',default='2024-12')
+    parser.add_argument('--alpha',type=float,default=.001)
+    parser.add_argument('--l1-ratio',type=float,default=.5)
+    parser.add_argument('--output',type=Path,default=PROJECT_ROOT/'03_Results'/'elastic_net_outputs.pkl')
+    args=parser.parse_args()
+    if args.output.exists(): raise FileExistsError(f'Choose a new output filename: {args.output}')
+    data=process_all_data(args.bonds,args.fred,args.curve)
+    macro,params=macro_features(history_for_features(data,'curve'),history_for_features(data,'fred'))
+    months=data['bonds'][1].DATE.dt.to_period('M')
+    model_months=pd.period_range(months.min(),months.max(),freq='M')
+    macro=macro.reindex(model_months);params=params.reindex(model_months)
     panel=load_panel(data['bonds'][1],macro,params)
-    del data  # Release raw-cell copies after constructing the model view.
-    print('Loaded panel',panel.shape,flush=True)
-    now,metrics,errors,coef=fit_forecast(panel,pd.Period(args.asof,'M'),features,args.alpha,args.l1_ratio)
-    print('Forecast fits complete. Beta coefficients (original predictor units):',flush=True)
-    print(coef[['feature','coefficient_original_units']].to_string(index=False),flush=True)
-    print('Intercept:',coef.intercept_original_inputs.iloc[0],flush=True)
-    metrics.to_csv(out/'forecast_validation.csv',index=False); coef.to_csv(out/'coefficients.csv',index=False)
-    macro.to_csv(out/'monthly_predictors.csv'); errors.to_csv(out/'historical_oos_errors.csv',index=False)
-    now[['cusip','month','target_month']+features+['predicted_dy_pp']].to_csv(out/'asof_predictors_and_forecasts.csv',index=False)
-    save_forecast_outputs(out,now,panel,errors,params,args)
-    if not args.optimize:
-        result={'status':'not_run','reason':'forecast-only requested'}
-    else:
-        holdings,result,Q,theta=solve_period(now,panel,errors,params,args)
-        holdings.to_csv(out/'portfolio.csv',index=False)
-        np.savez(out/'risk_inputs.npz',Q=Q,theta=theta,bond_ids=holdings.cusip.to_numpy(dtype=str))
-    source_paths=[args.bonds,args.fred,args.curve]+([args.core_cpi] if args.core_cpi else [])
-    manifest={str(f):hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in source_paths}
-    report={'settings':vars(args),'features':features,'missing_requested_predictors':[],
-            'inflation_predictor':'Supplied Inflation_YoY shifted one calendar month; CPI-based fallback only if column absent',
-            'input_sha256':manifest,'preparation':preparation,
-            'beta_equation':'predicted_dy_pp = intercept_original_inputs + sum(coefficient_original_units * original_feature)','forecast_structure':'pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1',
-            'hyperparameters':'one prespecified configuration; expanding-year validation, NOT a tuned optimum',
-            'limitations':['Historical revised snapshots; releases/vintages not verified. VIX month-end semantics not source-verified.',
-             'Fed funds uses one additional month of lag for availability; differs from meeting formula.',
-             'User-approved supplied CPI replaces requested CPILFESL; it is labeled CPI inflation, not core inflation.',
-             'Callable/embedded-option and source conventional-bond eligibility not verified; CONV=0 only screens convertibility.',
-             'Proxy benchmark and illustrative existing holdings; no claims of AGG replication.',
-             'Estimated regular-coupon cash flows, curve+constant spread, approximate day counts and schedule.',
-             'Carry is coupon yield/12; no exact coupon/roll cash accounting.',
-             'Historical OOS uncertainty uses first-order return mapping, final uses estimated convexity.',
-             'Costs penalized in objective per Deliverable 2; ex-post wealth deduction is explicitly illustrative.',
-             'No terminal wealth distribution or goal probability calculated from one rebalance.'],
-            'optimization':result}
-    (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-    print(json.dumps(result,indent=2))
+    del data
+    asof=pd.Period(args.asof,'M')
+    now,metrics,errors,coef=fit_forecast(panel,asof,FEATURES,args.alpha,args.l1_ratio)
+    print('ELASTIC-NET COEFFICIENTS (original predictor units)')
+    print(coef[['feature','coefficient_original_units']].to_string(index=False))
+    print('Intercept:',coef.intercept_original_inputs.iloc[0])
+    forecasts=pd.DataFrame({'cusip':now.cusip,'current_yield_percent':now.YIELD*100,
+        'expected_change_yield_bp':now.predicted_dy_pp*100,
+        'expected_next_yield_percent':now.YIELD*100+now.predicted_dy_pp})
+    top=now.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(3).index
+    print('NEXT-MONTH YIELD FORECASTS — 3 highest dollar-volume bonds')
+    print('Decision month:',asof,'Target month:',asof+1)
+    print(forecasts.loc[top].to_string(index=False))
+    print('VALIDATION RMSE (yield basis points):')
+    print(metrics[['year','model','rmse_yield_bp']].to_string(index=False))
+    history=panel.loc[panel.month.between(asof-35,asof),['cusip','month','RET_EOM']].copy()
+    bundle={'asof':str(asof),'target_month':str(asof+1),'coefficients':coef,
+        'forecasts':forecasts,'snapshot':now.drop(columns=['next_yield','next_return','dy'],errors='ignore'),
+        'history':history,'errors':errors[['cusip','target_month','return_error']],
+        'curve_params':params.loc[[asof]],'validation':metrics,'monthly_predictors':macro}
+    args.output.parent.mkdir(parents=True,exist_ok=True)
+    pd.to_pickle(bundle,args.output)
+    print('Saved ONE handoff file:',args.output)
+    print('Prototype: revised data, unverified eligibility; validation is not evidence of profitable forecasts.')
 
 
 if __name__=='__main__': main()
