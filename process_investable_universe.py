@@ -1,7 +1,7 @@
 """Prepare all three source CSVs without filtering their rows or columns.
 
 Requires pandas: pip install pandas
-Run: python process_investable_universe.py Investable_universe_AGG.csv
+Run from project root: python 02_Python_Code/process_investable_universe.py
 Optional exports: append --output-dir processed_universe (a NEW directory).
 
 The supplied CSV and TA reference script are never modified. This adapts the
@@ -16,6 +16,13 @@ import json
 from pathlib import Path
 
 import pandas as pd
+
+CODE_FOLDER = Path(__file__).resolve().parent
+PROJECT_ROOT = CODE_FOLDER.parent if CODE_FOLDER.name == "02_Python_Code" else CODE_FOLDER
+SOURCE_DATA = PROJECT_ROOT / "01_Source_Data" if (PROJECT_ROOT / "01_Source_Data").is_dir() else PROJECT_ROOT
+DEFAULT_BONDS = SOURCE_DATA / "Investable_universe_AGG.csv"
+DEFAULT_FRED = SOURCE_DATA / "FRED_Monthly_2015_2025.csv"
+DEFAULT_CURVE = SOURCE_DATA / "federal_reserve_nominal_yield_curve (1).csv"
 
 DATE_COLUMNS = (
     'DATE', 'OFFERING_DATE', 'MATURITY', 'DATED_DATE', 'FIRST_INTEREST_DATE',
@@ -32,7 +39,7 @@ NUMERIC_COLUMNS = (
 PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 
-def load_data(csv_path='Investable_universe_AGG.csv'):
+def load_data(csv_path=DEFAULT_BONDS):
     """Return (raw, prepared, report); both tables retain source row/column order.
 
     raw contains original CSV cell strings (including blanks and NA tokens).
@@ -129,9 +136,9 @@ def load_numeric_table(csv_path, sentinel=None):
     return raw, prepared, report
 
 
-def process_all_data(bond_path='Investable_universe_AGG.csv',
-                     fred_path='FRED_Monthly_2015_2025.csv',
-                     curve_path='federal_reserve_nominal_yield_curve (1).csv',
+def process_all_data(bond_path=DEFAULT_BONDS,
+                     fred_path=DEFAULT_FRED,
+                     curve_path=DEFAULT_CURVE,
                      core_path=None):
     """Single preparation entry point imported by elastic_net_one_period.py.
 
@@ -176,9 +183,9 @@ def get_panel(data, value_column='RET_EOM'):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('csv_path', nargs='?', default='Investable_universe_AGG.csv')
-    parser.add_argument('--fred', default='FRED_Monthly_2015_2025.csv')
-    parser.add_argument('--curve', default='federal_reserve_nominal_yield_curve (1).csv')
+    parser.add_argument('csv_path', nargs='?', default=str(DEFAULT_BONDS))
+    parser.add_argument('--fred', default=str(DEFAULT_FRED))
+    parser.add_argument('--curve', default=str(DEFAULT_CURVE))
     parser.add_argument('--core-cpi')
     parser.add_argument('--output-dir', type=Path,
                         help='New directory for all prepared/raw tables and preparation report')

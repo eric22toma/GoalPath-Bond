@@ -1,3 +1,12 @@
+> CURRENT UPDATE: Bill approved use of supplied FRED CPI instead of CPILFESL.
+> Default model now has ten predictors, including `cpi_inflation_lag1`:
+> `100 * (CPI[t-1] / CPI[t-13] - 1)`. No forward filling is used.
+> Earlier nine-predictor run descriptions below are retained as historical records.
+> New results: `03_Results/cpi_ten_predictors/`. Source CSVs are unchanged.
+
+> Local folder layout updated: see ../README.md for current commands and paths.
+> Historical run descriptions below retain their original paths.
+
 # Elastic net and one optimization period — configuration 1
 
 Completed an executed historical prototype at 2024-12 month-end for January

@@ -1,6 +1,6 @@
 """Historical prototype: pooled elastic net -> Deliverable 2, section 4.1 solve.
 
-Run from the data folder: python elastic_net_one_period.py
+Run from project root: python 02_Python_Code/elastic_net_one_period.py
 Optional --core-cpi CSV must contain Date,CPILFESL (at least 12 prior months).
 Data are revised snapshots: this is NOT a point-in-time verified backtest.
 No source files are changed. Outputs go to a new --output directory.
@@ -17,10 +17,11 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, Ridge, Lasso
 from sklearn.covariance import LedoitWolf
-from process_investable_universe import process_all_data
+from process_investable_universe import (process_all_data, PROJECT_ROOT,
+                                       DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
-            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap']
+            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
 KEYS = np.array([1., 2., 5., 10., 20., 30.])
 
 
@@ -64,6 +65,9 @@ def macro_features(curve, fred, core=None):
     # Use t-1 minus t-2 as an explicit extra availability-delay assumption.
     f['fed_funds_change'] = macro.Fed_Funds_Rate.diff().shift(1)
     f['vix'] = macro.VIX
+    # Bill approved supplied CPI in place of CPILFESL; YoY percent, lagged one month.
+    # Reindexed calendar months ensure gaps do not become twelve-observation changes.
+    f['cpi_inflation_lag1'] = 100*(macro.CPI/macro.CPI.shift(12)-1).shift(1)
     if core is not None:
         core = core.sort_values('Date').set_index('Date')
         if core.index.isna().any(): raise ValueError('Core CPI contains invalid dates')
@@ -274,8 +278,8 @@ def solve_period(now,panel,errors,params,args):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--bonds',default='Investable_universe_AGG.csv'); p.add_argument('--fred',default='FRED_Monthly_2015_2025.csv')
-    p.add_argument('--curve',default='federal_reserve_nominal_yield_curve (1).csv'); p.add_argument('--core-cpi')
+    p.add_argument('--bonds',default=str(DEFAULT_BONDS)); p.add_argument('--fred',default=str(DEFAULT_FRED))
+    p.add_argument('--curve',default=str(DEFAULT_CURVE)); p.add_argument('--core-cpi')
     p.add_argument('--asof',default='2024-12'); p.add_argument('--alpha',type=float,default=.001); p.add_argument('--l1-ratio',type=float,default=.5)
     p.add_argument('--annual-goal',type=float,default=.03); p.add_argument('--wealth',type=float,default=100000)
     p.add_argument('--candidates',type=int,default=40); p.add_argument('--max-holdings',type=int,default=10)
@@ -283,7 +287,7 @@ def main():
     p.add_argument('--trade-cost',type=float,default=.001); p.add_argument('--duration-tolerance',type=float,default=.5)
     p.add_argument('--convexity-tolerance',type=float,default=10); p.add_argument('--krd-tolerance',type=float,default=.5)
     p.add_argument('--forecast-only',action='store_true',help='Stop after predictor construction, beta estimation, and validation')
-    p.add_argument('--output',default='outputs/elastic_net_shared_processing')
+    p.add_argument('--output',default=str(PROJECT_ROOT/'03_Results'/'new_elastic_net_run'))
     args=p.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=False)
     # 1. Prepare every source in one module before constructing predictors.
     data=process_all_data(args.bonds,args.fred,args.curve,args.core_cpi)
@@ -311,13 +315,14 @@ def main():
         np.savez(out/'risk_inputs.npz',Q=Q,theta=theta,bond_ids=holdings.cusip.to_numpy(dtype=str))
     source_paths=[args.bonds,args.fred,args.curve]+([args.core_cpi] if args.core_cpi else [])
     manifest={str(f):hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in source_paths}
-    report={'settings':vars(args),'features':features,'missing_requested_predictors':[] if args.core_cpi else ['lagged CPILFESL core inflation'],
+    report={'settings':vars(args),'features':features,'missing_requested_predictors':[],
+            'inflation_predictor':'Supplied FRED CPI: 100*(CPI[t-1]/CPI[t-13]-1); user-approved substitution for core CPI',
             'input_sha256':manifest,'preparation':preparation,
             'beta_equation':'predicted_dy_pp = intercept_original_inputs + sum(coefficient_original_units * original_feature)','forecast_structure':'pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1',
             'hyperparameters':'one prespecified configuration; expanding-year validation, NOT a tuned optimum',
             'limitations':['Historical revised snapshots; releases/vintages not verified. VIX month-end semantics not source-verified.',
              'Fed funds uses one additional month of lag for availability; differs from meeting formula.',
-             'Core CPI omitted unless explicitly supplied; headline CPI never silently substituted.',
+             'User-approved supplied CPI replaces requested CPILFESL; it is labeled CPI inflation, not core inflation.',
              'Callable/embedded-option and source conventional-bond eligibility not verified; CONV=0 only screens convertibility.',
              'Proxy benchmark and illustrative existing holdings; no claims of AGG replication.',
              'Estimated regular-coupon cash flows, curve+constant spread, approximate day counts and schedule.',

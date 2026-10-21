@@ -36,6 +36,22 @@ class PipelineTests(unittest.TestCase):
             self.assertAlmostEqual(panel.next_return.iloc[0],-.01)
             self.assertTrue(pd.isna(panel.dy.iloc[1]))
 
+    def test_cpi_year_on_year_and_release_lag(self):
+        dates=pd.date_range('2022-01-31',periods=16,freq='ME')
+        fred=pd.DataFrame({'Date':dates,'CPI':np.arange(100.,116.),
+                           'Fed_Funds_Rate':1.,'VIX':15.})
+        curve=pd.DataFrame({'Date':dates,'SVENY02':2.,'SVENY05':2.,'SVENY10':2.,
+                            'BETA0':2.,'BETA1':0.,'BETA2':0.,'BETA3':0.,'TAU1':1.,'TAU2':2.})
+        macro,_=macro_features(curve,fred)
+        self.assertTrue(macro.cpi_inflation_lag1.iloc[:13].isna().all())
+        self.assertAlmostEqual(macro.cpi_inflation_lag1.iloc[13],12.)
+        changed=fred.copy();changed.loc[13:,'CPI']=9999.
+        updated,_=macro_features(curve,changed)
+        self.assertAlmostEqual(updated.cpi_inflation_lag1.iloc[13],12.)
+        # A missing calendar month must remain missing, never shift observations together.
+        gap,_=macro_features(curve,fred.drop(index=0))
+        self.assertTrue(pd.isna(gap.cpi_inflation_lag1.iloc[13]))
+
     def test_future_labels_cannot_change_fit_or_forecast(self):
         rng=np.random.default_rng(7)
         months=pd.period_range('2016-01','2025-12',freq='M')
