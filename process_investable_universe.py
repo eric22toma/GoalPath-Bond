@@ -170,10 +170,7 @@ def get_panel(data, value_column='RET_EOM'):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('csv_path', nargs='?', default=str(DEFAULT_BONDS))
-    parser.add_argument('--fred', default=str(DEFAULT_FRED))
-    parser.add_argument('--curve', default=str(DEFAULT_CURVE))
-    parser.add_argument('--core-cpi')
+    parser.add_argument('csv_path', nargs='?', default='Investable_universe_AGG.csv')
     parser.add_argument('--output-dir', type=Path,
                         help='New directory for all prepared/raw tables and preparation report')
     args = parser.parse_args()
