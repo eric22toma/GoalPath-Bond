@@ -2,7 +2,7 @@
 import unittest
 import tempfile
 from pathlib import Path
-from process_investable_universe import process_all_data
+from process_investable_universe import process_all_data, synchronize_data, history_for_features
 from types import SimpleNamespace
 import numpy as np
 import pandas as pd
@@ -51,6 +51,32 @@ class PipelineTests(unittest.TestCase):
         # A missing calendar month must remain missing, never shift observations together.
         gap,_=macro_features(curve,fred.drop(index=0))
         self.assertTrue(pd.isna(gap.cpi_inflation_lag1.iloc[13]))
+
+    def test_alignment_preserves_raw_and_keeps_warmup_separate(self):
+        bonds=pd.DataFrame({'DATE':pd.to_datetime(['2016-01-31','2016-02-29'])})
+        fred=pd.DataFrame({'Date':pd.to_datetime(['2015-01-31','2015-12-31','2016-01-31','2016-02-29'])})
+        curve=pd.DataFrame({'Date':pd.to_datetime(['1961-06-14','2015-12-31','2016-01-29','2016-02-29','2026-01-30'])})
+        sources={n:(t.copy(),t.copy(),{'source':n+'.csv'}) for n,t in [('bonds',bonds),('fred',fred),('curve',curve)]}
+        aligned=synchronize_data(sources)
+        self.assertEqual(len(aligned['curve'][0]),5)
+        self.assertEqual(len(aligned['curve'][1]),2)
+        self.assertEqual(aligned['curve'][1].Date.iloc[0],pd.Timestamp('2016-01-29'))
+        self.assertEqual(len(aligned['fred_warmup'][1]),2)
+        self.assertGreaterEqual(history_for_features(aligned,'curve').Date.min(),pd.Timestamp('2014-12-01'))
+
+    def test_supplied_inflation_is_used_and_checked(self):
+        dates=pd.date_range('2022-01-31',periods=16,freq='ME')
+        fred=pd.DataFrame({'Date':dates,'CPI':np.arange(100.,116.),'Fed_Funds_Rate':1.,'VIX':15.})
+        fred['Inflation_YoY']=100*(fred.CPI/fred.CPI.shift(12)-1)
+        curve=pd.DataFrame({'Date':dates,'SVENY02':2.,'SVENY05':2.,'SVENY10':2.,
+                            'BETA0':2.,'BETA1':0.,'BETA2':0.,'BETA3':0.,'TAU1':1.,'TAU2':2.})
+        macro,_=macro_features(curve,fred)
+        self.assertAlmostEqual(macro.cpi_inflation_lag1.iloc[13],fred.Inflation_YoY.iloc[12])
+        fred.loc[12,'Inflation_YoY']=np.nan
+        macro,_=macro_features(curve,fred)
+        self.assertTrue(pd.isna(macro.cpi_inflation_lag1.iloc[13]))
+        fred.loc[12,'Inflation_YoY']=999
+        with self.assertRaises(ValueError): macro_features(curve,fred)
 
     def test_future_labels_cannot_change_fit_or_forecast(self):
         rng=np.random.default_rng(7)

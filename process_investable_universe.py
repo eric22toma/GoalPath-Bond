@@ -1,3 +1,16 @@
+"""Prepare all three source CSVs without filtering their rows or columns.
+
+Requires pandas: pip install pandas
+Run from project root: python 02_Python_Code/process_investable_universe.py
+Optional exports: append --output-dir processed_universe (a NEW directory).
+
+The supplied CSV and TA reference script are never modified. This adapts the
+TA's load/slice/pivot approach to long-form bond observations. It does not
+calculate returns from prices: the CSV already supplies RET_* observations.
+No missing-value imputation, eligibility screen, deduplication, or full-history
+survival filter is applied. No optimizer, forecasts, or benchmark weights are
+constructed here. The dataset name alone does not verify AGG membership.
+"""
 import argparse
 import json
 from pathlib import Path
@@ -26,7 +39,7 @@ NUMERIC_COLUMNS = (
 PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 
-def load_data(csv_path='Investable_universe_AGG.csv'):
+def load_data(csv_path=DEFAULT_BONDS):
     """Return (raw, prepared, report); both tables retain source row/column order.
 
     raw contains original CSV cell strings (including blanks and NA tokens).
@@ -129,8 +142,8 @@ def process_all_data(bond_path=DEFAULT_BONDS,
                      core_path=None):
     """Single preparation entry point imported by elastic_net_one_period.py.
 
-    Returns a dict of raw/prepared/report triples. It preserves the source
-    records. Sorting, monthly aggregation, feature construction, and model
+    Returns raw/prepared/report triples. Raw records are preserved; prepared
+    tables share the overlapping modeling months, with separate warm-up views. Sorting, monthly aggregation, feature construction, and model
     eligibility decisions happen downstream, without modifying these tables.
     """
     data = {'bonds': load_data(bond_path),
@@ -140,7 +153,65 @@ def process_all_data(bond_path=DEFAULT_BONDS,
         data['core_cpi'] = load_numeric_table(core_path)
         if 'CPILFESL' not in data['core_cpi'][1]:
             raise ValueError('Core CPI input requires Date and CPILFESL columns')
-    return data
+    return synchronize_data(data)
+
+
+def synchronize_data(data):
+    """Align prepared tables by calendar month; retain 13 prior warm-up months.
+
+    Treasury observations stay DAILY within each modeling month so realized
+    volatility can be calculated before month-end aggregation. Original raw
+    tables stay intact; prepared tables alone are cropped.
+    """
+    sources = list(data)
+    ranges = {}
+    for name in sources:
+        table = data[name][1]
+        date_column = 'DATE' if name == 'bonds' else 'Date'
+        if table[date_column].isna().any() or table.empty:
+            raise ValueError(f'{name}: empty data or invalid dates; inspect source before alignment')
+        months = table[date_column].dt.to_period('M')
+        ranges[name] = (months.min(), months.max())
+    start = max(bounds[0] for bounds in ranges.values())
+    end = min(bounds[1] for bounds in ranges.values())
+    if start > end:
+        raise ValueError('Input files have no overlapping calendar-month range')
+    aligned = {}
+    for name in sources:
+        raw, prepared, report = data[name]
+        date_column = 'DATE' if name == 'bonds' else 'Date'
+        months = prepared[date_column].dt.to_period('M')
+        mask = months.between(start, end)
+        selected = prepared.loc[mask].copy()
+        available_months = set(months[mask])
+        report = dict(report)
+        report['alignment'] = {
+            'model_start_month': str(start), 'model_end_month': str(end),
+            'source_rows': len(raw), 'prepared_rows': len(selected),
+            'excluded_from_model_view': int((~mask).sum()),
+            'missing_model_months': [str(m) for m in pd.period_range(start, end, freq='M')
+                                     if m not in available_months],
+            'note': 'Calendar-month alignment; Treasury rows remain daily, not month-end labels. Raw source records are preserved; warm-up is exported separately.',
+        }
+        aligned[name] = (raw, selected, report)
+        if name != 'bonds':
+            warm_mask = months.between(start-13, start-1)
+            warm = prepared.loc[warm_mask].copy()
+            warm_report = {
+                'source': report['source'], 'rows': len(warm), 'columns': len(warm.columns),
+                'purpose': 'Predictor warm-up only; not extra bond observations or training targets',
+                'requested_start_month': str(start-13),
+                'end_month': str(start-1),
+            }
+            aligned[name+'_warmup'] = (raw.loc[warm_mask].copy(), warm, warm_report)
+    return aligned
+
+
+def history_for_features(data, name):
+    """Supply only needed warm-up plus aligned observations to feature building."""
+    current = data[name][1]
+    warm = data.get(name+'_warmup')
+    return pd.concat([warm[1], current], axis=0) if warm is not None else current
 
 
 def get_period_data(data, start_date, end_date):
@@ -182,7 +253,7 @@ def print_first_rows(data):
             continue
         preview = pd.DataFrame({
             'Column': prepared.columns,
-            'Raw first-row value': raw.iloc[0].to_numpy(),
+            'Raw first-row value': raw.loc[prepared.index[0]].to_numpy(),
             'Processed first-row value': prepared.iloc[0].to_numpy(),
         })
         print(preview.to_string(index=False, max_colwidth=None), flush=True)
@@ -193,7 +264,7 @@ def main():
     parser.add_argument('csv_path', nargs='?', default=str(DEFAULT_BONDS))
     parser.add_argument('--fred', default=str(DEFAULT_FRED))
     parser.add_argument('--curve', default=str(DEFAULT_CURVE))
-    parser.add_argument('--core-cpi', help='Optional CSV with Date and CPILFESL columns')
+    parser.add_argument('--core-cpi')
     parser.add_argument('--output-dir', type=Path,
                         help='New directory for all prepared/raw tables and preparation report')
     args = parser.parse_args()

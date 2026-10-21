@@ -1,6 +1,6 @@
 """Historical prototype: pooled elastic net -> Deliverable 2, section 4.1 solve.
 
-Run from the data folder: python elastic_net_one_period.py
+Run from project root: python 02_Python_Code/elastic_net_one_period.py
 Optional --core-cpi CSV must contain Date,CPILFESL (at least 12 prior months).
 Data are revised snapshots: this is NOT a point-in-time verified backtest.
 No source files are changed. Outputs go to a new --output directory.
@@ -17,7 +17,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, Ridge, Lasso
 from sklearn.covariance import LedoitWolf
-from process_investable_universe import (process_all_data, PROJECT_ROOT,
+from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,
                                        DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
@@ -47,6 +47,7 @@ def macro_features(curve, fred, core=None):
     monthly = daily.groupby(daily.index.to_period('M')).tail(1).copy()
     monthly['month'] = monthly.index.to_period('M')
     monthly = monthly.set_index('month')
+    monthly = monthly.reindex(pd.period_range(monthly.index.min(), monthly.index.max(), freq='M'))
     f = pd.DataFrame(index=monthly.index)
     f['level'] = monthly.SVENY10
     f['slope'] = monthly.SVENY10-monthly.SVENY02
@@ -67,7 +68,16 @@ def macro_features(curve, fred, core=None):
     f['vix'] = macro.VIX
     # Bill approved supplied CPI in place of CPILFESL; YoY percent, lagged one month.
     # Reindexed calendar months ensure gaps do not become twelve-observation changes.
-    f['cpi_inflation_lag1'] = 100*(macro.CPI/macro.CPI.shift(12)-1).shift(1)
+    computed_yoy = 100*(macro.CPI/macro.CPI.shift(12)-1)
+    inflation_column = next((c for c in macro if c.lower() == 'inflation_yoy'), None)
+    if inflation_column is not None:
+        supplied_yoy = macro[inflation_column]
+        comparable = supplied_yoy.notna() & computed_yoy.notna()
+        if not np.allclose(supplied_yoy[comparable], computed_yoy[comparable], atol=1e-6, rtol=1e-6):
+            raise ValueError('Inflation_YoY does not match 100*(CPI/CPI.shift(12)-1); verify units')
+        f['cpi_inflation_lag1'] = supplied_yoy.shift(1)
+    else:
+        f['cpi_inflation_lag1'] = computed_yoy.shift(1)
     if core is not None:
         core = core.sort_values('Date').set_index('Date')
         if core.index.isna().any(): raise ValueError('Core CPI contains invalid dates')
@@ -294,9 +304,19 @@ def main():
     preparation={name: values[2] for name,values in data.items()}
     (out/'preparation_report.json').write_text(json.dumps(preparation,indent=2)+'\n')
     # 2. Build dated predictors from the prepared tables.
-    macro,params=macro_features(data['curve'][1],data['fred'][1],
-                               data['core_cpi'][1] if 'core_cpi' in data else None)
+    macro,params=macro_features(history_for_features(data,'curve'),history_for_features(data,'fred'),
+                               history_for_features(data,'core_cpi') if 'core_cpi' in data else None)
     features=FEATURES+(['core_inflation_lag1'] if args.core_cpi else [])
+    # Warm-up history has now served its purpose. Model outputs use bond months
+    # only. Never align daily Treasury trading dates directly to month-end dates.
+    bond_months = data['bonds'][1].DATE.dt.to_period('M')
+    model_months = pd.period_range(bond_months.min(), bond_months.max(), freq='M')
+    macro = macro.reindex(model_months)
+    params = params.reindex(model_months)
+    coverage = macro.isna().add_prefix('missing_')
+    coverage['all_macro_predictors_available'] = macro.notna().all(axis=1)
+    coverage.to_csv(out/'predictor_month_coverage.csv', index_label='month')
+
     panel=load_panel(data['bonds'][1],macro,params)
     del data  # Release raw-cell copies after constructing the model view.
     print('Loaded panel',panel.shape,flush=True)
@@ -316,7 +336,7 @@ def main():
     source_paths=[args.bonds,args.fred,args.curve]+([args.core_cpi] if args.core_cpi else [])
     manifest={str(f):hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in source_paths}
     report={'settings':vars(args),'features':features,'missing_requested_predictors':[],
-            'inflation_predictor':'Supplied FRED CPI: 100*(CPI[t-1]/CPI[t-13]-1); user-approved substitution for core CPI',
+            'inflation_predictor':'Supplied Inflation_YoY shifted one calendar month; CPI-based fallback only if column absent',
             'input_sha256':manifest,'preparation':preparation,
             'beta_equation':'predicted_dy_pp = intercept_original_inputs + sum(coefficient_original_units * original_feature)','forecast_structure':'pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1',
             'hyperparameters':'one prespecified configuration; expanding-year validation, NOT a tuned optimum',
