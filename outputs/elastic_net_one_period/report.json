@@ -1,0 +1,86 @@
+{
+  "settings": {
+    "bonds": "Investable_universe_AGG.csv",
+    "fred": "FRED_Monthly_2015_2025.csv",
+    "curve": "federal_reserve_nominal_yield_curve (1).csv",
+    "core_cpi": null,
+    "asof": "2024-12",
+    "alpha": 0.001,
+    "l1_ratio": 0.5,
+    "annual_goal": 0.03,
+    "wealth": 100000,
+    "candidates": 40,
+    "max_holdings": 10,
+    "gamma": 10,
+    "epsilon_mu": 0.5,
+    "trade_cost": 0.001,
+    "duration_tolerance": 0.5,
+    "convexity_tolerance": 10,
+    "krd_tolerance": 0.5,
+    "output": "outputs/elastic_net_one_period"
+  },
+  "features": [
+    "level",
+    "slope",
+    "curvature",
+    "lag_level_change",
+    "rate_volatility",
+    "fed_funds_change",
+    "vix",
+    "time_to_maturity",
+    "rich_cheap"
+  ],
+  "missing_requested_predictors": [
+    "lagged CPILFESL core inflation"
+  ],
+  "input_sha256": {
+    "Investable_universe_AGG.csv": "87660f570a4fe299dbfe64ffa07264040db087fc01728ca0bcdec1dd95e435fe",
+    "FRED_Monthly_2015_2025.csv": "89b7ab1c916b17199364c3ff816cbefbbc1aa09dc8d1faad603b55aabd925b46",
+    "federal_reserve_nominal_yield_curve (1).csv": "ea60ddd7211a439087415d5e56a3d891c732c1a80e85eaeb26756978da916be2"
+  },
+  "forecast_structure": "pooled shared slopes and common intercept; no bond-specific intercepts in configuration 1",
+  "hyperparameters": "one prespecified configuration; expanding-year validation, NOT a tuned optimum",
+  "limitations": [
+    "Historical revised snapshots; releases/vintages not verified. VIX month-end semantics not source-verified.",
+    "Fed funds uses one additional month of lag for availability; differs from meeting formula.",
+    "Core CPI omitted unless explicitly supplied; headline CPI never silently substituted.",
+    "Callable/embedded-option and source conventional-bond eligibility not verified; CONV=0 only screens convertibility.",
+    "Proxy benchmark and illustrative existing holdings; no claims of AGG replication.",
+    "Estimated regular-coupon cash flows, curve+constant spread, approximate day counts and schedule.",
+    "Carry is coupon yield/12; no exact coupon/roll cash accounting.",
+    "Historical OOS uncertainty uses first-order return mapping, final uses estimated convexity.",
+    "Costs penalized in objective per Deliverable 2; ex-post wealth deduction is explicitly illustrative.",
+    "No terminal wealth distribution or goal probability calculated from one rebalance."
+  ],
+  "optimization": {
+    "solver_status": 2,
+    "solution_count": 1,
+    "required_monthly_return": 0.0024662697723036864,
+    "annual_goal": 0.03,
+    "candidate_count": 40,
+    "benchmark": "normalized amount outstanding times clean price of selected candidate subset; NOT AGG",
+    "current_portfolio": "same as proxy benchmark, illustrative",
+    "goal_feasible": true,
+    "optimal": true,
+    "mip_gap": 0.0,
+    "nominal_monthly_return": 0.033324294642707454,
+    "robust_monthly_return": 0.018607901435496475,
+    "monthly_tracking_error": 0.018034008634542957,
+    "transaction_cost_fraction": 0.0014736947317273204,
+    "turnover": 0.7368473658636603,
+    "checks": {
+      "budget_error": 0.0,
+      "holdings": 10,
+      "duration_deviation": 0.19104211225086698,
+      "convexity_deviation": 0.3756274658385621,
+      "maximum_krd_deviation": 0.5000000000000001,
+      "robust_goal_slack": 0.01614163166319279,
+      "trade_balance_error": 3.469446951953614e-18
+    },
+    "realized_return_coverage": 40,
+    "realized_portfolio_return": 0.008818090558751265,
+    "realized_proxy_return": 0.007670512549727056,
+    "realized_active_return": 0.0011475780090242083,
+    "realized_wealth_after_cost": 100733.14006534235
+  }
+}
