@@ -165,12 +165,54 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
     return now,pd.DataFrame(metrics),pd.concat(errors,ignore_index=True),coef
 
 
+def show_selected_bonds(now, coef, asof, cusips=None):
+    """Display actual returns separately from the yield-change forecast.
+
+    CUSIP selection affects display only, never the estimation sample.
+    Next-month realized returns are ex-post evaluation, never predictors.
+    """
+    if cusips:
+        requested=list(dict.fromkeys(cusips))
+        missing=[c for c in requested if c not in set(now.cusip)]
+        if missing:
+            raise ValueError(f'No complete predictor row at {asof} for CUSIP(s): {missing}')
+        selected=now.set_index('cusip').loc[requested].reset_index()
+    else:
+        selected=now.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(3).copy()
+    beta=coef.set_index('feature').loc[FEATURES,'coefficient_original_units']
+    intercept=float(coef.intercept_original_inputs.iloc[0])
+    print('SELECTED BONDS: decision month',asof,'forecast target',asof+1)
+    summaries=[]
+    for row in selected.itertuples(index=False):
+        print(f'\nCUSIP: {row.cusip}')
+        summary={'cusip':row.cusip,'current_yield_percent':row.YIELD*100,
+            'expected_change_yield_bp':row.predicted_dy_pp*100,
+            'expected_next_yield_percent':row.YIELD*100+row.predicted_dy_pp,
+            'observed_return_asof_percent':row.RET_EOM*100,
+            'realized_next_month_return_percent':row.next_return*100}
+        summaries.append(summary)
+        for name,value in summary.items():
+            if name!='cusip': print(f'  {name}: {value:.6f}' if pd.notna(value) else f'  {name}: unavailable')
+        values=selected.loc[selected.cusip.eq(row.cusip),FEATURES].iloc[0].astype(float)
+        table=pd.DataFrame({'predictor':FEATURES,'value':values.to_numpy(),
+             'beta_original_units':beta.to_numpy(),
+             'contribution_to_yield_change_bp':values.to_numpy()*beta.to_numpy()*100})
+        print(table.to_string(index=False))
+        print(f'  Intercept contribution (bp): {intercept*100:.6f}')
+        np.testing.assert_allclose(intercept+values.to_numpy()@beta.to_numpy(),row.predicted_dy_pp,atol=1e-10)
+    print('Returns above are observed RET_EOM values, not predicted returns.')
+    print('Next-month return is ex-post evaluation only. Elastic net forecasts yield CHANGE, not total return.')
+    print('Predictor units: rate levels/changes/spreads and inflation in percentage points; maturity in years; VIX in source units.')
+    return pd.DataFrame(summaries),selected[ ['cusip']+FEATURES ].copy()
+
+
 def main():
     parser=argparse.ArgumentParser(description='One-period pooled elastic net: coefficients and next-month yield changes')
     parser.add_argument('--bonds',default=str(DEFAULT_BONDS))
     parser.add_argument('--fred',default=str(DEFAULT_FRED))
     parser.add_argument('--curve',default=str(DEFAULT_CURVE))
     parser.add_argument('--asof',default='2024-12')
+    parser.add_argument('--cusips',nargs='+',help='CUSIPs to display; default: 3 highest dollar-volume bonds. Does not restrict training.')
     parser.add_argument('--alpha',type=float,default=.001)
     parser.add_argument('--l1-ratio',type=float,default=.5)
     parser.add_argument('--output',type=Path,default=PROJECT_ROOT/'03_Results'/'elastic_net_outputs.pkl')
@@ -191,15 +233,13 @@ def main():
     forecasts=pd.DataFrame({'cusip':now.cusip,'current_yield_percent':now.YIELD*100,
         'expected_change_yield_bp':now.predicted_dy_pp*100,
         'expected_next_yield_percent':now.YIELD*100+now.predicted_dy_pp})
-    top=now.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(3).index
-    print('NEXT-MONTH YIELD FORECASTS — 3 highest dollar-volume bonds')
-    print('Decision month:',asof,'Target month:',asof+1)
-    print(forecasts.loc[top].to_string(index=False))
+    selected_returns,selected_predictors=show_selected_bonds(now,coef,asof,args.cusips)
     print('VALIDATION RMSE (yield basis points):')
     print(metrics[['year','model','rmse_yield_bp']].to_string(index=False))
     history=panel.loc[panel.month.between(asof-35,asof),['cusip','month','RET_EOM']].copy()
     bundle={'asof':str(asof),'target_month':str(asof+1),'coefficients':coef,
-        'forecasts':forecasts,'snapshot':now.drop(columns=['next_yield','next_return','dy'],errors='ignore'),
+        'forecasts':forecasts,'displayed_bond_returns':selected_returns,'displayed_bond_predictors':selected_predictors,
+        'snapshot':now.drop(columns=['next_yield','next_return','dy'],errors='ignore'),
         'history':history,'errors':errors[['cusip','target_month','return_error']],
         'curve_params':params.loc[[asof]],'validation':metrics,'monthly_predictors':macro}
     args.output.parent.mkdir(parents=True,exist_ok=True)
