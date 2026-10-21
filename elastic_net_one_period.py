@@ -1,6 +1,6 @@
 """Historical prototype: pooled elastic net -> Deliverable 2, section 4.1 solve.
 
-Run from project root: python 02_Python_Code/elastic_net_one_period.py
+Run from the data folder: python elastic_net_one_period.py
 Optional --core-cpi CSV must contain Date,CPILFESL (at least 12 prior months).
 Data are revised snapshots: this is NOT a point-in-time verified backtest.
 No source files are changed. Outputs go to a new --output directory.

@@ -1,16 +1,3 @@
-"""Prepare all three source CSVs without filtering their rows or columns.
-
-Requires pandas: pip install pandas
-Run from project root: python 02_Python_Code/process_investable_universe.py
-Optional exports: append --output-dir processed_universe (a NEW directory).
-
-The supplied CSV and TA reference script are never modified. This adapts the
-TA's load/slice/pivot approach to long-form bond observations. It does not
-calculate returns from prices: the CSV already supplies RET_* observations.
-No missing-value imputation, eligibility screen, deduplication, or full-history
-survival filter is applied. No optimizer, forecasts, or benchmark weights are
-constructed here. The dataset name alone does not verify AGG membership.
-"""
 import argparse
 import json
 from pathlib import Path
