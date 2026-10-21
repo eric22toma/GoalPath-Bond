@@ -1,7 +1,8 @@
 """One-period elastic net: coefficients and next-month bond yield changes.
 
-Imports the validated processing module unchanged. Saves one local handoff file
-for robust_mvo_one_period.py; no portfolio optimization is performed here.
+Imports the validated processing module unchanged. Prints coefficients, selected
+bond returns, predictors and forecast yield changes. Does not write output files
+or run portfolio optimization.
 """
 import argparse
 import hashlib
@@ -215,9 +216,7 @@ def main():
     parser.add_argument('--cusips',nargs='+',help='CUSIPs to display; default: 3 highest dollar-volume bonds. Does not restrict training.')
     parser.add_argument('--alpha',type=float,default=.001)
     parser.add_argument('--l1-ratio',type=float,default=.5)
-    parser.add_argument('--output',type=Path,default=PROJECT_ROOT/'03_Results'/'elastic_net_outputs.pkl')
     args=parser.parse_args()
-    if args.output.exists(): raise FileExistsError(f'Choose a new output filename: {args.output}')
     data=process_all_data(args.bonds,args.fred,args.curve)
     macro,params=macro_features(history_for_features(data,'curve'),history_for_features(data,'fred'))
     months=data['bonds'][1].DATE.dt.to_period('M')
@@ -230,21 +229,10 @@ def main():
     print('ELASTIC-NET COEFFICIENTS (original predictor units)')
     print(coef[['feature','coefficient_original_units']].to_string(index=False))
     print('Intercept:',coef.intercept_original_inputs.iloc[0])
-    forecasts=pd.DataFrame({'cusip':now.cusip,'current_yield_percent':now.YIELD*100,
-        'expected_change_yield_bp':now.predicted_dy_pp*100,
-        'expected_next_yield_percent':now.YIELD*100+now.predicted_dy_pp})
-    selected_returns,selected_predictors=show_selected_bonds(now,coef,asof,args.cusips)
+    show_selected_bonds(now,coef,asof,args.cusips)
     print('VALIDATION RMSE (yield basis points):')
     print(metrics[['year','model','rmse_yield_bp']].to_string(index=False))
-    history=panel.loc[panel.month.between(asof-35,asof),['cusip','month','RET_EOM']].copy()
-    bundle={'asof':str(asof),'target_month':str(asof+1),'coefficients':coef,
-        'forecasts':forecasts,'displayed_bond_returns':selected_returns,'displayed_bond_predictors':selected_predictors,
-        'snapshot':now.drop(columns=['next_yield','next_return','dy'],errors='ignore'),
-        'history':history,'errors':errors[['cusip','target_month','return_error']],
-        'curve_params':params.loc[[asof]],'validation':metrics,'monthly_predictors':macro}
-    args.output.parent.mkdir(parents=True,exist_ok=True)
-    pd.to_pickle(bundle,args.output)
-    print('Saved ONE handoff file:',args.output)
+    print('No output files were written. RMVO is not run.')
     print('Prototype: revised data, unverified eligibility; validation is not evidence of profitable forecasts.')
 
 
