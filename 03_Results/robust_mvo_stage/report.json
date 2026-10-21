@@ -1,0 +1,60 @@
+{
+  "forecast_source": "/Users/billjiang/Desktop/goalpath-bond-codex/03_Results/yield_forecast_stage",
+  "asof": "2024-12",
+  "target_month": "2025-01",
+  "settings": {
+    "bonds": "/Users/billjiang/Desktop/goalpath-bond-codex/01_Source_Data/Investable_universe_AGG.csv",
+    "fred": "/Users/billjiang/Desktop/goalpath-bond-codex/01_Source_Data/FRED_Monthly_2015_2025.csv",
+    "curve": "/Users/billjiang/Desktop/goalpath-bond-codex/01_Source_Data/federal_reserve_nominal_yield_curve (1).csv",
+    "core_cpi": null,
+    "asof": "2024-12",
+    "alpha": 0.001,
+    "l1_ratio": 0.5,
+    "annual_goal": 0.03,
+    "wealth": 100000,
+    "candidates": 40,
+    "max_holdings": 10,
+    "gamma": 10,
+    "epsilon_mu": 0.5,
+    "trade_cost": 0.001,
+    "duration_tolerance": 0.5,
+    "convexity_tolerance": 10,
+    "krd_tolerance": 0.5,
+    "forecast_only": true,
+    "optimize": false,
+    "output": "03_Results/robust_mvo_stage"
+  },
+  "optimization": {
+    "solver_status": 2,
+    "solution_count": 3,
+    "required_monthly_return": 0.0024662697723036864,
+    "annual_goal": 0.03,
+    "candidate_count": 40,
+    "benchmark": "normalized amount outstanding times clean price of selected candidate subset; NOT AGG",
+    "current_portfolio": "same as proxy benchmark, illustrative",
+    "goal_feasible": true,
+    "optimal": true,
+    "mip_gap": 0.0,
+    "nominal_monthly_return": 0.03408035174490471,
+    "robust_monthly_return": 0.01872589121696984,
+    "monthly_tracking_error": 0.017078172711828907,
+    "transaction_cost_fraction": 0.0014154962218816806,
+    "turnover": 0.7077481109408403,
+    "checks": {
+      "budget_error": 0.0,
+      "holdings": 10,
+      "duration_deviation": 0.5000000000000011,
+      "convexity_deviation": 1.5133919108322935,
+      "maximum_krd_deviation": 0.5000000000000001,
+      "robust_goal_slack": 0.016259621444666153,
+      "trade_balance_error": 1.3877787807814457e-17
+    },
+    "realized_return_coverage": 0
+  },
+  "limitations": [
+    "Candidate-subset proxy benchmark, not AGG.",
+    "Estimated coupon-bond risk analytics; eligibility and release vintages unverified.",
+    "No goal-achievement probability from this single-period solve.",
+    "No target-period realized returns used or evaluated by this solver."
+  ]
+}

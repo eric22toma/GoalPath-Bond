@@ -286,6 +286,38 @@ def solve_period(now,panel,errors,params,args):
     return candidates,info,Q,theta
 
 
+def save_forecast_outputs(out, now, panel, errors, params, args):
+    """Publish yield forecasts and a dated input bundle for the separate solver.
+
+    Expected return mapping is performed later by the robust MVO stage.
+    No future yields/returns are included in the optimizer snapshot/history.
+    """
+    asof=pd.Period(args.asof, 'M')
+    forecast=pd.DataFrame({
+        'cusip': now.cusip.to_numpy(),
+        'forecast_origin_month': str(asof),
+        'forecast_target_month': str(asof+1),
+        'current_yield_decimal': now.YIELD.to_numpy(),
+        'forecast_change_yield_percentage_points': now.predicted_dy_pp.to_numpy(),
+        'forecast_change_yield_basis_points': now.predicted_dy_pp.to_numpy()*100,
+        'forecast_change_yield_decimal': now.predicted_dy_pp.to_numpy()/100,
+        'forecast_next_yield_decimal': now.YIELD.to_numpy()+now.predicted_dy_pp.to_numpy()/100,
+    })
+    forecast.to_csv(out/'yield_change_forecasts.csv',index=False)
+    now.drop(columns=['next_yield','next_return','dy'],errors='ignore').to_csv(out/'optimizer_snapshot.csv',index=False)
+    history=panel.loc[panel.month.between(asof-35,asof),['cusip','month','RET_EOM']]
+    history.to_csv(out/'optimizer_return_history.csv',index=False)
+    (out/'optimizer_curve_params.json').write_text(json.dumps(params.loc[asof].to_dict(),indent=2)+'\n')
+    names=['yield_change_forecasts.csv','optimizer_snapshot.csv','optimizer_return_history.csv',
+           'optimizer_curve_params.json','historical_oos_errors.csv']
+    manifest={'asof':str(asof),'target_month':str(asof+1),'settings':vars(args),
+              'yield_units':'YIELD decimal; predicted_dy_pp percentage points; divide by 100 for return mapping',
+              'files':{n:hashlib.sha256((out/n).read_bytes()).hexdigest() for n in names}}
+    (out/'forecast_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    print('Final elastic-net output: '+str(out/'yield_change_forecasts.csv'),flush=True)
+    print(forecast.head(5).to_string(index=False),flush=True)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--bonds',default=str(DEFAULT_BONDS)); p.add_argument('--fred',default=str(DEFAULT_FRED))
@@ -296,7 +328,9 @@ def main():
     p.add_argument('--gamma',type=float,default=10); p.add_argument('--epsilon-mu',type=float,default=.5)
     p.add_argument('--trade-cost',type=float,default=.001); p.add_argument('--duration-tolerance',type=float,default=.5)
     p.add_argument('--convexity-tolerance',type=float,default=10); p.add_argument('--krd-tolerance',type=float,default=.5)
-    p.add_argument('--forecast-only',action='store_true',help='Stop after predictor construction, beta estimation, and validation')
+    mode=p.add_mutually_exclusive_group()
+    mode.add_argument('--forecast-only',action='store_true',help='Forecast only (the default)')
+    mode.add_argument('--optimize',action='store_true',help='Also run legacy in-process optimization; separate robust_mvo_one_period.py is recommended')
     p.add_argument('--output',default=str(PROJECT_ROOT/'03_Results'/'new_elastic_net_run'))
     args=p.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=False)
     # 1. Prepare every source in one module before constructing predictors.
@@ -327,7 +361,8 @@ def main():
     metrics.to_csv(out/'forecast_validation.csv',index=False); coef.to_csv(out/'coefficients.csv',index=False)
     macro.to_csv(out/'monthly_predictors.csv'); errors.to_csv(out/'historical_oos_errors.csv',index=False)
     now[['cusip','month','target_month']+features+['predicted_dy_pp']].to_csv(out/'asof_predictors_and_forecasts.csv',index=False)
-    if args.forecast_only:
+    save_forecast_outputs(out,now,panel,errors,params,args)
+    if not args.optimize:
         result={'status':'not_run','reason':'forecast-only requested'}
     else:
         holdings,result,Q,theta=solve_period(now,panel,errors,params,args)
