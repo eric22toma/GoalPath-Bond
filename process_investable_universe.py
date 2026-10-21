@@ -168,6 +168,26 @@ def get_panel(data, value_column='RET_EOM'):
     return data.pivot(index='DATE', columns='cusip', values=value_column).sort_index()
 
 
+def print_first_rows(data):
+    """Show the first actual data record of every input, before and after processing.
+
+    Display fields vertically so all columns remain visible in a narrow terminal.
+    This is a spot check of row 1, not validation of every record in the file.
+    """
+    print("\nFIRST DATA ROW FROM EACH FILE (before and after processing)", flush=True)
+    for name, (raw, prepared, report) in data.items():
+        print(f"\n{name.upper()} — {Path(report['source']).name}", flush=True)
+        if prepared.empty:
+            print("No data rows: this file contains headers only.", flush=True)
+            continue
+        preview = pd.DataFrame({
+            'Column': prepared.columns,
+            'Raw first-row value': raw.iloc[0].to_numpy(),
+            'Processed first-row value': prepared.iloc[0].to_numpy(),
+        })
+        print(preview.to_string(index=False, max_colwidth=None), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('csv_path', nargs='?', default=str(DEFAULT_BONDS))
@@ -180,6 +200,7 @@ def main():
     data = process_all_data(args.csv_path, args.fred, args.curve, args.core_cpi)
     reports = {name: tables[2] for name, tables in data.items()}
     print(json.dumps(reports, indent=2))
+    print_first_rows(data)
     if args.output_dir is not None:
         args.output_dir.mkdir(parents=True, exist_ok=False)
         for name, (raw, prepared, report) in data.items():
