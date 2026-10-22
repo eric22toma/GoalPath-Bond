@@ -1,14 +1,9 @@
-"""One-period elastic net: coefficients and next-month bond yield changes.
+"""Pooled elastic net forecasting next-month bond yield changes.
 
-Imports the validated processing module unchanged. Prints coefficients, selected
-bond returns, predictors and forecast yield changes. Does not write output files
-or run portfolio optimization.
+Each bond-month has its own predictors; the model is trained across bonds.
+Forecasted changes are in percentage points, with basis-point output.
 """
 import argparse
-import hashlib
-import json
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import make_pipeline
@@ -33,13 +28,13 @@ def sven_yield(tau, params):
 
 
 def macro_features(curve, fred, core=None):
-    """Construct predictors from shared prepared tables; never reload raw CSVs."""
+    """Build monthly Treasury-curve and macroeconomic predictors."""
     daily = curve.sort_values('Date').set_index('Date')
     if daily.index.isna().any():
         raise ValueError('Curve contains invalid dates; inspect preparation report')
     if daily.index.has_duplicates:
         raise ValueError('Duplicate daily curve dates')
-    # Actual last trading-day row, rather than last nonmissing value per column.
+    # Last trading day for each month.
     monthly = daily.groupby(daily.index.to_period('M')).tail(1).copy()
     monthly['month'] = monthly.index.to_period('M')
     monthly = monthly.set_index('month')
@@ -49,7 +44,7 @@ def macro_features(curve, fred, core=None):
     f['slope'] = monthly.SVENY10-monthly.SVENY02
     f['curvature'] = 2*monthly.SVENY05-monthly.SVENY02-monthly.SVENY10
     f['lag_level_change'] = f.level.shift(1)-f.level.shift(2)
-    # Daily difference includes the previous trading day's close at month boundary.
+    # Daily changes include the prior month's final trading day.
     f['rate_volatility'] = daily.SVENY10.diff().groupby(daily.index.to_period('M')).std()
     macro = fred.sort_values('Date').set_index('Date')
     if macro.index.isna().any(): raise ValueError('FRED contains invalid dates')
@@ -58,12 +53,10 @@ def macro_features(curve, fred, core=None):
         raise ValueError('Duplicate monthly FRED dates')
     macro = macro.reindex(pd.period_range(macro.index.min(), macro.index.max(), freq='M'))
     f = f.reindex(pd.period_range(f.index.min(), f.index.max(), freq='M'))
-    # Monthly-average Fed funds for month t may be released after month end.
-    # Use t-1 minus t-2 as an explicit extra availability-delay assumption.
+    # Lag monthly Fed funds changes for availability.
     f['fed_funds_change'] = macro.Fed_Funds_Rate.diff().shift(1)
     f['vix'] = macro.VIX
-    # Bill approved supplied CPI in place of CPILFESL; YoY percent, lagged one month.
-    # Reindexed calendar months ensure gaps do not become twelve-observation changes.
+    # Check supplied YoY inflation against the CPI series.
     computed_yoy = 100*(macro.CPI/macro.CPI.shift(12)-1)
     inflation_column = next((c for c in macro if c.lower() == 'inflation_yoy'), None)
     if inflation_column is not None:
@@ -82,7 +75,7 @@ def macro_features(curve, fred, core=None):
         core = core.reindex(pd.period_range(core.index.min(), core.index.max(), freq='M'))
         f['core_inflation_lag1'] = (core.CPILFESL/core.CPILFESL.shift(12)-1).shift(1)*100
     params = monthly[['BETA0','BETA1','BETA2','BETA3','TAU1','TAU2']]
-    # Check source formula/units against the supplied 10-year zero yield.
+    # Verify Svensson parameters against the observed 10-year yield.
     check = params.dropna().loc['2016':'2025']
     error = [abs(sven_yield([10], row.to_numpy())[0]-monthly.loc[m,'SVENY10'])
              for m,row in check.iterrows()]
@@ -95,9 +88,7 @@ def load_panel(prepared_bonds, macro, params):
     cols = ['cusip','DATE','YIELD','MATURITY','RET_EOM','DURATION','COUPON',
             'PRICE_EOM','COUPACC','AMOUNT_OUTSTANDING','T_DVolume',
             'NCOUPS','nextcoup','DEFAULTED','CONV','BOND_TYPE']
-    # Shared preparation contract: YIELD and RET_* are decimal fractions.
-    # Preserve these units; convert yield DIFFERENCES explicitly to percentage
-    # points for elastic net's target and rich/cheap feature.
+    # Input yields are decimal fractions; yield changes use percentage points.
     p = prepared_bonds.loc[:, cols].copy()
     if p.DATE.isna().any() or p.cusip.str.strip().eq('').any():
         raise ValueError('Bond panel requires valid DATE and nonblank CUSIP')
@@ -111,13 +102,13 @@ def load_panel(prepared_bonds, macro, params):
         if month not in params.index or params.loc[month].isna().any(): continue
         ix = p.loc[rows].index[p.loc[rows,'time_to_maturity']>0]
         p.loc[ix,'rich_cheap'] = 100*p.loc[ix,'YIELD']-sven_yield(p.loc[ix,'time_to_maturity'],params.loc[month])
-    # Exact calendar successor; never turn a gap into a one-month target.
+    # Require the immediately following calendar month for realized targets.
     future = p[['cusip','month','YIELD','RET_EOM']].copy()
     future['month'] = future.month-1
     future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return'})
     p = p.merge(future,on=['cusip','month'],how='left',validate='one_to_one')
     p['target_month'] = p.month+1
-    p['dy'] = 100*(p.next_yield-p.YIELD)  # percentage points, not decimal yields
+    p['dy'] = 100*(p.next_yield-p.YIELD)  # realized one-month yield change (pp)
     return p
 
 
@@ -131,8 +122,7 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
     known = panel.loc[(panel.target_month<=asof)&(panel.month>=pd.Period('2016-01','M'))]
     known = known.dropna(subset=features+['dy']).copy()
     metrics, errors = [], []
-    # Expanding training with strictly earlier target months; all bonds in a
-    # calendar month remain together. Test year 2025 is never used for fitting.
+    # Validate by year, using only earlier target months for training.
     for year in [2021,2022,2023,2024]:
         start = pd.Period(f'{year}-01','M')
         train = known.loc[known.target_month<start]
@@ -148,8 +138,7 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
             if kind=='elastic_net':
                 e=valid[['cusip','month','target_month','dy','next_return','COUPON','PRICE_EOM','DURATION']].copy()
                 e['predicted_dy_pp']=pred
-                # Historical first-order mapping; its realized return error
-                # captures coupon/roll/spread/convexity approximation error too.
+                # Return approximation for the downstream risk model.
                 e['predicted_return']=e.COUPON/e.PRICE_EOM/12-e.DURATION*pred/100
                 e['return_error']=e.next_return-e.predicted_return
                 errors.append(e)
@@ -167,44 +156,80 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
 
 
 def show_selected_bonds(now, coef, asof, cusips=None):
-    """Display actual returns separately from the yield-change forecast.
-
-    CUSIP selection affects display only, never the estimation sample.
-    Next-month realized returns are ex-post evaluation, never predictors.
-    """
+    """Show each selected bond's predictors and next-month yield forecast."""
     if cusips:
-        requested=list(dict.fromkeys(cusips))
-        missing=[c for c in requested if c not in set(now.cusip)]
+        requested = list(dict.fromkeys(cusips))
+        missing = [c for c in requested if c not in set(now.cusip)]
         if missing:
             raise ValueError(f'No complete predictor row at {asof} for CUSIP(s): {missing}')
-        selected=now.set_index('cusip').loc[requested].reset_index()
+        selected = now.set_index('cusip').loc[requested].reset_index()
     else:
-        selected=now.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(3).copy()
-    beta=coef.set_index('feature').loc[FEATURES,'coefficient_original_units']
-    intercept=float(coef.intercept_original_inputs.iloc[0])
-    print('SELECTED BONDS: decision month',asof,'forecast target',asof+1)
-    summaries=[]
+        selected = now.sort_values(['T_DVolume', 'cusip'],
+                                   ascending=[False, True]).head(3).copy()
+
+    beta = coef.set_index('feature').loc[FEATURES, 'coefficient_original_units']
+    intercept = float(coef.intercept_original_inputs.iloc[0])
+    target_month = asof + 1
+    print(f'\nMONTHLY YIELD CHANGE: {asof} -> {target_month}')
+    print(f'Bonds with complete predictors: {len(now):,}; displayed: {len(selected)}.')
+
+    summaries = []
     for row in selected.itertuples(index=False):
-        print(f'\nCUSIP: {row.cusip}')
-        summary={'cusip':row.cusip,'current_yield_percent':row.YIELD*100,
-            'expected_change_yield_bp':row.predicted_dy_pp*100,
-            'expected_next_yield_percent':row.YIELD*100+row.predicted_dy_pp,
-            'observed_return_asof_percent':row.RET_EOM*100,
-            'realized_next_month_return_percent':row.next_return*100}
+        start_yield_pct = row.YIELD * 100
+        forecast_change_bp = row.predicted_dy_pp * 100
+        forecast_yield_pct = start_yield_pct + row.predicted_dy_pp
+        actual_yield_pct = row.next_yield * 100 if pd.notna(row.next_yield) else np.nan
+        actual_change_bp = row.dy * 100 if pd.notna(row.dy) else np.nan
+        error_bp = actual_change_bp - forecast_change_bp if pd.notna(actual_change_bp) else np.nan
+
+        summary = {
+            'cusip': row.cusip,
+            'asof_month': str(asof),
+            'target_month': str(target_month),
+            'current_yield_percent': start_yield_pct,
+            'expected_change_yield_bp': forecast_change_bp,
+            'expected_next_yield_percent': forecast_yield_pct,
+            'realized_next_yield_percent': actual_yield_pct,
+            'realized_change_yield_bp': actual_change_bp,
+            'forecast_error_bp': error_bp,
+            'observed_return_asof_percent': row.RET_EOM * 100,
+            'realized_next_month_return_percent': row.next_return * 100,
+        }
         summaries.append(summary)
-        for name,value in summary.items():
-            if name!='cusip': print(f'  {name}: {value:.6f}' if pd.notna(value) else f'  {name}: unavailable')
-        values=selected.loc[selected.cusip.eq(row.cusip),FEATURES].iloc[0].astype(float)
-        table=pd.DataFrame({'predictor':FEATURES,'value':values.to_numpy(),
-             'beta_original_units':beta.to_numpy(),
-             'contribution_to_yield_change_bp':values.to_numpy()*beta.to_numpy()*100})
+
+        print(f'\nCUSIP: {row.cusip}')
+        print(f'  Observed yield ({asof}):        {start_yield_pct:.4f}%')
+        print(f'  Forecast yield change:          {forecast_change_bp:+.2f} bp')
+        print(f'  Forecast yield ({target_month}):  {forecast_yield_pct:.4f}%')
+
+        if pd.notna(actual_yield_pct):
+            np.testing.assert_allclose(
+                actual_change_bp, (actual_yield_pct - start_yield_pct) * 100,
+                atol=1e-8
+            )
+            print(f'  Actual yield ({target_month}):    {actual_yield_pct:.4f}% [evaluation only]')
+            print(f'  Actual yield change:            {actual_change_bp:+.2f} bp [evaluation only]')
+            print(f'  Forecast error (actual - pred): {error_bp:+.2f} bp')
+        else:
+            print(f'  Actual yield ({target_month}):    not available')
+
+        values = selected.loc[selected.cusip.eq(row.cusip), FEATURES].iloc[0].astype(float)
+        table = pd.DataFrame({
+            'predictor': FEATURES,
+            'value': values.to_numpy(),
+            'beta_original_units': beta.to_numpy(),
+            'contribution_bp': values.to_numpy() * beta.to_numpy() * 100,
+        })
+        print('  Predictors and forecast contributions:')
         print(table.to_string(index=False))
-        print(f'  Intercept contribution (bp): {intercept*100:.6f}')
-        np.testing.assert_allclose(intercept+values.to_numpy()@beta.to_numpy(),row.predicted_dy_pp,atol=1e-10)
-    print('Returns above are observed RET_EOM values, not predicted returns.')
-    print('Next-month return is ex-post evaluation only. Elastic net forecasts yield CHANGE, not total return.')
-    print('Predictor units: rate levels/changes/spreads and inflation in percentage points; maturity in years; VIX in source units.')
-    return pd.DataFrame(summaries),selected[ ['cusip']+FEATURES ].copy()
+        print(f'  Intercept contribution: {intercept * 100:+.2f} bp')
+        np.testing.assert_allclose(
+            intercept + values.to_numpy() @ beta.to_numpy(),
+            row.predicted_dy_pp, atol=1e-10
+        )
+
+    print('Actual next-month yields are evaluation data, never model inputs.')
+    return pd.DataFrame(summaries), selected[['cusip'] + FEATURES].copy()
 
 
 def main():
@@ -226,14 +251,13 @@ def main():
     del data
     asof=pd.Period(args.asof,'M')
     now,metrics,errors,coef=fit_forecast(panel,asof,FEATURES,args.alpha,args.l1_ratio)
-    print('ELASTIC-NET COEFFICIENTS (original predictor units)')
+    print('ELASTIC-NET COEFFICIENTS (yield change in percentage points)')
     print(coef[['feature','coefficient_original_units']].to_string(index=False))
     print('Intercept:',coef.intercept_original_inputs.iloc[0])
     show_selected_bonds(now,coef,asof,args.cusips)
-    print('VALIDATION RMSE (yield basis points):')
+    print('HISTORICAL VALIDATION RMSE (yield-change basis points):')
     print(metrics[['year','model','rmse_yield_bp']].to_string(index=False))
-    print('No output files were written. RMVO is not run.')
-    print('Prototype: revised data, unverified eligibility; validation is not evidence of profitable forecasts.')
+    print('Forecasts displayed; no output files saved.')
 
 
 if __name__=='__main__': main()
