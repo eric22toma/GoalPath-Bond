@@ -380,6 +380,22 @@ def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
     return pd.DataFrame(summaries), selected[['cusip'] + FEATURES].copy()
 
 
+def data_readiness(panel, features, asof):
+    """Count complete bond predictors in the forecast month."""
+    rows = panel.loc[panel.month == asof]
+    usable = int(rows[features].notna().all(axis=1).sum())
+    print(f'\nDATA READINESS {asof}: {len(rows):,} bonds; '
+          f'{usable:,} have all {len(features)} required predictors')
+    if not usable:
+        counts = {name: int(rows[name].notna().sum()) for name in features}
+        print('  Nonmissing bond rows by predictor: '
+              + ', '.join(f'{k}={v:,}' for k, v in counts.items()))
+        months = panel.loc[panel[features].notna().all(axis=1), 'month']
+        print('  Recent usable months: '
+              + ', '.join(str(v) for v in sorted(months.unique())[-6:]))
+    return usable
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Monthly pooled elastic net with ordered CV and expanding-window refits'
@@ -387,8 +403,10 @@ def main():
     parser.add_argument('--bonds', default=str(DEFAULT_BONDS))
     parser.add_argument('--fred', default=str(DEFAULT_FRED))
     parser.add_argument('--curve', default=str(DEFAULT_CURVE))
-    parser.add_argument('--asof', default='2025-11',
-                        help='Forecast origin YYYY-MM, or latest for last usable month')
+    parser.add_argument('--asof', default='latest',
+                        help='Origin YYYY-MM, or latest complete month with observed next-month yields')
+    parser.add_argument('--include-forward', action='store_true',
+                        help='Include optional forward-rate predictor if supplied')
     parser.add_argument('--horizon', type=int, default=1,
                         help='Forecast direct yield changes for h=1,...,H months')
     parser.add_argument('--cusips', nargs='+',
@@ -423,8 +441,12 @@ def main():
     model_months = pd.period_range(months.min(), months.max(), freq='M')
     macro = macro.reindex(model_months)
     curve_params = curve_params.reindex(model_months)
-    features = FEATURES + [name for name in OPTIONAL_FEATURES
-                           if name in macro.columns and macro[name].notna().any()]
+    features = FEATURES.copy()
+    if args.include_forward:
+        extra = [name for name in OPTIONAL_FEATURES if name in macro.columns]
+        if not extra:
+            parser.error('No forward-rate series found; omit --include-forward')
+        features += extra
     panel = load_panel(data['bonds'][1], macro, curve_params)
     del data
 
@@ -435,8 +457,14 @@ def main():
         raise ValueError(
             f'No complete bond predictor rows anywhere. Nonmissing values by predictor: {counts}'
         )
-    asof = (eligible_months.max() if args.asof == 'latest'
-            else pd.Period(args.asof, freq='M'))
+    if args.asof == 'latest':
+        observed = panel.loc[complete & panel.dy.notna(), 'month']
+        asof = observed.max() if not observed.empty else eligible_months.max()
+    else:
+        asof = pd.Period(args.asof, freq='M')
+    if not data_readiness(panel, features, asof):
+        raise ValueError(f'Cannot forecast {asof} with incomplete bond predictors. '
+                         'Try --asof latest or omit --include-forward.')
     backtest_start = pd.Period(args.backtest_start, freq='M')
     print(f'Data range: {months.min()} through {months.max()}')
     print(f'Predictors ({len(features)}): {", ".join(features)}')
