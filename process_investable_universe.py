@@ -1,9 +1,8 @@
-"""Load, prepare, and check GoalPath-Bond datasets.
-
-Reads AGG bonds, FRED macroeconomic data, and Federal Reserve yield curves.
+"""Load, prepare, and check GoalPath-Bond datasets. 
+The following code reads AGG bonds, FRED macroeconomic data, and Federal Reserve yield curves.
 Preserves the raw data, prepares aligned modeling tables, and displays loading
-status plus the first three observations from each dataset in 2016-2025.
-"""
+status plus the first three observations from each dataset in 2016-2025."""
+
 import argparse
 import json
 from pathlib import Path
