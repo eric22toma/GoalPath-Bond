@@ -474,19 +474,24 @@ def main():
     if args.output_dir is not None:
         args.output_dir.mkdir(parents=True, exist_ok=False)
 
-    alphas = (.2, .4, .6, .8)
-    lambdas = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
+    alphas = CV_MIXING_GRID
+    lambdas = CV_PENALTY_GRID
+    print(f'Ordered CV grid: {len(alphas)} alpha × {len(lambdas)} lambda = '
+          f'{len(alphas) * len(lambdas)} elastic-net configurations')
     for horizon in range(1, args.horizon + 1):
         labeled = build_horizon_panel(panel, horizon)
         known = training_rows(labeled, asof, features)
+        cv_scores = None
         if args.no_tune:
             mixing, penalty = args.alpha, args.penalty_lambda
             cv_info = 'fixed parameters (tuning disabled)'
         else:
-            mixing, penalty, score, folds = tune_elastic_net(
+            mixing, penalty, score, folds, cv_scores = tune_elastic_net(
                 known, features, alphas, lambdas
             )
             cv_info = f'CV RMSE={score:.3f} bp; validation years={folds}'
+            print('Top five alpha/lambda configurations by CV RMSE:')
+            print(cv_scores.head(5).to_string(index=False))
 
         now, coefficients, training_count = fit_forecast(
             labeled, asof, features, mixing, penalty
@@ -524,6 +529,9 @@ def main():
             now.to_csv(args.output_dir / f'forecast_h{horizon}.csv', index=False)
             coefficients.to_csv(args.output_dir / f'coefficients_h{horizon}.csv',
                                 index=False)
+            if cv_scores is not None:
+                cv_scores.to_csv(args.output_dir / f'cv_grid_h{horizon}.csv',
+                                 index=False)
             if not history_errors.empty:
                 history_errors.to_csv(
                     args.output_dir / f'backtest_h{horizon}.csv', index=False
