@@ -1,15 +1,8 @@
-"""Prepare all three source CSVs without filtering their rows or columns.
+"""Load, prepare, and check GoalPath-Bond datasets.
 
-Requires pandas: pip install pandas
-Run from project root: python 02_Python_Code/process_investable_universe.py
-Optional exports: append --output-dir processed_universe (a NEW directory).
-
-The supplied CSV and TA reference script are never modified. This adapts the
-TA's load/slice/pivot approach to long-form bond observations. It does not
-calculate returns from prices: the CSV already supplies RET_* observations.
-No missing-value imputation, eligibility screen, deduplication, or full-history
-survival filter is applied. No optimizer, forecasts, or benchmark weights are
-constructed here. The dataset name alone does not verify AGG membership.
+Reads AGG bonds, FRED macroeconomic data, and Federal Reserve yield curves.
+Preserves the raw data, prepares aligned modeling tables, and displays loading
+status plus the first three observations from each dataset in 2016–2025.
 """
 import argparse
 import json
@@ -40,15 +33,10 @@ PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 
 def load_data(csv_path=DEFAULT_BONDS):
-    """Return (raw, prepared, report); both tables retain source row/column order.
+    """Load raw bond cells and a type-converted copy.
 
-    raw contains original CSV cell strings (including blanks and NA tokens).
-    prepared converts recognized columns; failed conversions become NaN/NaT
-    and are counted in report. Original values remain available in raw.
-    Percent columns MUST use a percent sign for nonmissing values; e.g.
-    '2.78%' becomes 0.0278. Bare values are flagged rather than guessed.
-    COUPON and T_Yld_Pt retain source numerical units (not divided by 100).
-    Missing tokens in converted columns: blank, NA, N/A, NULL, NAN, NONE, '-'.
+    Percent-marked yields and returns become decimals. Other numeric units
+    are preserved, and conversion failures are counted in the report.
     """
     path = Path(csv_path)
     zipped = Path(str(path) + '.zip')
@@ -139,11 +127,10 @@ def process_all_data(bond_path=DEFAULT_BONDS,
                      fred_path=DEFAULT_FRED,
                      curve_path=DEFAULT_CURVE,
                      core_path=None):
-    """Single preparation entry point imported by elastic_net_one_period.py.
+    """Load datasets and align prepared tables over overlapping months.
 
-    Returns raw/prepared/report triples. Raw records are preserved; prepared
-    tables share the overlapping modeling months, with separate warm-up views. Sorting, monthly aggregation, feature construction, and model
-    eligibility decisions happen downstream, without modifying these tables.
+    Raw data stays unchanged. Historical warm-up observations are kept
+    separately for downstream feature generation.
     """
     data = {'bonds': load_data(bond_path),
             'fred': load_numeric_table(fred_path),
@@ -156,11 +143,9 @@ def process_all_data(bond_path=DEFAULT_BONDS,
 
 
 def synchronize_data(data):
-    """Align prepared tables by calendar month; retain 13 prior warm-up months.
+    """Align prepared tables by month and retain 13 warm-up months.
 
-    Treasury observations stay DAILY within each modeling month so realized
-    volatility can be calculated before month-end aggregation. Original raw
-    tables stay intact; prepared tables alone are cropped.
+    Treasury observations remain daily to support volatility calculations.
     """
     sources = list(data)
     ranges = {}
@@ -243,51 +228,77 @@ PREVIEW_END = pd.Timestamp('2025-12-31')
 
 
 def preview_period(prepared, name):
-    """Rows dated 2016–2025; the full prepared table is not modified."""
+    """Select 2016–2025 rows for display or export without altering the data."""
     date_column = 'DATE' if name == 'bonds' else 'Date'
     return prepared.loc[prepared[date_column].between(PREVIEW_START, PREVIEW_END)]
 
 
 def print_first_rows(data):
-    """Report loading results and preview three rows per dataset for 2016–2025."""
-    print('\nDATA LOAD CHECK — 2016-01-01 to 2025-12-31')
+    """Display source status, data-quality issues, and three 2016–2025 rows."""
+    print('\nDATA LOAD STATUS | 2016-01-01 through 2025-12-31 (120 months)')
     all_loaded = True
+    any_warnings = False
+
     for name in ('bonds', 'fred', 'curve', 'core_cpi'):
         if name not in data:
+            if name == 'core_cpi':
+                print('\nCORE_CPI — SKIPPED (optional file not supplied)')
+            else:
+                print(f'\n{name.upper()} — ERROR: Required dataset was not loaded.')
+                all_loaded = False
             continue
+
         raw, prepared, report = data[name]
-        sample = preview_period(prepared, name)
+        period_data = preview_period(prepared, name)
         date_column = 'DATE' if name == 'bonds' else 'Date'
-        loaded = not sample.empty
-        all_loaded &= loaded
-        print(f"\n{name.upper()} — {'SUCCESS' if loaded else 'ERROR'} — {Path(report['source']).name}")
-        print(f'  Source rows: {len(raw):,}; aligned rows: {len(prepared):,}; 2016–2025 rows: {len(sample):,}')
-        if not loaded:
-            print('  ERROR: No observations from 2016 through 2025 in the aligned table.')
-            continue
-        print(f"  Dates: {sample[date_column].min():%Y-%m-%d} to {sample[date_column].max():%Y-%m-%d}")
-        months_present = set(sample[date_column].dt.to_period('M').unique())
+        errors = []
+        warnings = []
+
+        if raw.empty:
+            errors.append('Source file contains no data rows.')
+        if prepared.empty:
+            errors.append('No rows remain after monthly alignment.')
+        if period_data.empty:
+            errors.append('No prepared observations dated 2016-01-01 to 2025-12-31.')
+        elif len(period_data) < 3:
+            warnings.append(f'Only {len(period_data)} period rows available; fewer than three can be displayed.')
+
+        months_present = set(period_data[date_column].dt.to_period('M'))
         missing_months = [str(m) for m in pd.period_range('2016-01', '2025-12', freq='M')
                           if m not in months_present]
         if missing_months:
-            displayed = ', '.join(missing_months[:12])
-            suffix = f', ... ({len(missing_months)} total)' if len(missing_months) > 12 else ''
-            print(f'  WARNING: Missing months: {displayed}{suffix}')
-        failed = {k: v for k, v in report.get('conversion_failure_counts', {}).items() if v}
-        if failed:
-            print('  WARNING: Nonmissing cells that failed conversion: '
-                  + ', '.join(f'{k}={v}' for k, v in failed.items()))
-        if name == 'bonds' and report.get('duplicate_cusip_date_rows', 0):
-            print(f"  WARNING: Duplicate CUSIP/date rows: {report['duplicate_cusip_date_rows']}")
-        ordered = [date_column] + (['cusip'] if name == 'bonds' else [])
-        ordered += [c for c in sample.columns if c not in ordered]
-        print('  First three rows (prepared data):')
-        print(sample.loc[:, ordered].head(3).to_string(index=False, max_cols=12, max_colwidth=22))
-        if len(ordered) > 12:
-            print(f'  Preview shows up to 12 of {len(ordered)} columns; saved data retains all columns.')
-    print(f"\nOVERALL: {'SUCCESS' if all_loaded else 'ERROR'} — dataset loading and 2016–2025 preview")
-    return all_loaded
+            warnings.append(f'Missing {len(missing_months)} of 120 calendar months: '
+                            + ', '.join(missing_months[:24])
+                            + (' ... (full list in the preparation report)' if len(missing_months) > 24 else ''))
 
+        failures = {k: v for k, v in report.get('conversion_failure_counts', {}).items() if v}
+        if failures:
+            warnings.append('Unconverted nonmissing source cells: '
+                            + ', '.join(f'{key}={count}' for key, count in failures.items()))
+        duplicate_count = report.get('duplicate_cusip_date_rows', 0) if name == 'bonds' else 0
+        if duplicate_count:
+            warnings.append(f'Duplicate CUSIP/date source rows: {duplicate_count}')
+
+        status = 'ERROR' if errors else 'LOADED WITH WARNINGS' if warnings else 'SUCCESS'
+        all_loaded &= not errors
+        any_warnings |= bool(warnings)
+        print(f"\n{name.upper()} — {status} — {Path(report['source']).name}")
+        print(f'  Source rows: {len(raw):,} | Aligned rows: {len(prepared):,} '
+              f'| 2016–2025 rows: {len(period_data):,}')
+        if not period_data.empty:
+            print(f"  Dates in period: {period_data[date_column].min():%Y-%m-%d} "
+                  f"to {period_data[date_column].max():%Y-%m-%d}")
+        for issue in errors:
+            print(f'  ERROR: {issue}')
+        for issue in warnings:
+            print(f'  WARNING: {issue}')
+        if not period_data.empty:
+            print('  First three prepared rows in 2016–2025 (all columns):')
+            print(period_data.head(3).to_string(index=False, max_cols=None, max_colwidth=28))
+
+    overall = 'ERROR' if not all_loaded else 'SUCCESS WITH WARNINGS' if any_warnings else 'SUCCESS'
+    print(f'\nOVERALL: {overall} — data loaded locally; no files uploaded to GitHub.')
+    return all_loaded
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -313,7 +324,7 @@ def main():
                         args.output_dir / f'{name}_preview_2016_2025.csv', index=False)
             (args.output_dir / 'preparation_report.json').write_text(
                 json.dumps(reports, indent=2) + '\n')
-            print(f'\nOutputs saved in: {args.output_dir.resolve()}')
+            print(f'\nSUCCESS: Prepared tables, source copies, reports, and 2016–2025 previews saved to: {args.output_dir.resolve()}')
     except Exception as exc:
         parser.exit(1, f'\nERROR: {type(exc).__name__}: {exc}\n')
 
