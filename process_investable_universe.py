@@ -1,16 +1,11 @@
-"""Prepare all three source CSVs without filtering their rows or columns.
+"""Load and prepare bond holdings, FRED factors, and Treasury yield-curve data.
 
-Requires pandas: pip install pandas
-Run from project root: python 02_Python_Code/process_investable_universe.py
-Optional exports: append --output-dir processed_universe (a NEW directory).
+Run: python process_investable_universe.py
+Optional exports: --output-dir NEW_DIRECTORY
 
-The supplied CSV and TA reference script are never modified. This adapts the
-TA's load/slice/pivot approach to long-form bond observations. It does not
-calculate returns from prices: the CSV already supplies RET_* observations.
-No missing-value imputation, eligibility screen, deduplication, or full-history
-survival filter is applied. No optimizer, forecasts, or benchmark weights are
-constructed here. The dataset name alone does not verify AGG membership.
+Source data is left unchanged; converted tables are used by the modeling scripts.
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -51,6 +46,9 @@ def load_data(csv_path=DEFAULT_BONDS):
     Missing tokens in converted columns: blank, NA, N/A, NULL, NAN, NONE, '-'.
     """
     path = Path(csv_path)
+    zipped = Path(str(path) + '.zip')
+    if path.suffix == '.csv' and not path.is_file() and zipped.is_file():
+        path = zipped
     raw = pd.read_csv(path, dtype=str, keep_default_na=False,
                       encoding='utf-8-sig', skip_blank_lines=False)
     required = {'cusip', 'DATE'}
@@ -90,13 +88,9 @@ def load_data(csv_path=DEFAULT_BONDS):
         'conversion_failure_counts': conversion_failures,
         'percent_columns_in_decimal_units': list(PERCENT_COLUMNS),
         'notes': [
-            'All source rows and columns retained; raw preserves original cell text.',
-            'Unknown fields remain strings. Conversion failures remain in raw.',
-            'COUPON and T_Yld_Pt retain source units; confirm definitions before return mapping.',
-            'Missing returns remain missing, not zero. No eligibility filters applied.',
-            'DATE is an observation label, not proof of information availability.',
-            'Verify release timing, vintage, and membership before a rolling backtest.',
-            'No source verification of benchmark membership or return definitions performed.',
+            'Raw cells are preserved; prepared values may contain missing data.',
+            'Yield/return fields with percent signs are converted to decimals.',
+            'No eligibility screening or return reconstruction is applied.',
         ],
     }
     return raw, prepared, report
@@ -239,24 +233,55 @@ def get_panel(data, value_column='RET_EOM'):
     return data.pivot(index='DATE', columns='cusip', values=value_column).sort_index()
 
 
-def print_first_rows(data):
-    """Show the first actual data record of every input, before and after processing.
+PREVIEW_START = pd.Timestamp('2016-01-01')
+PREVIEW_END = pd.Timestamp('2025-12-31')
 
-    Display fields vertically so all columns remain visible in a narrow terminal.
-    This is a spot check of row 1, not validation of every record in the file.
-    """
-    print("\nFIRST DATA ROW FROM EACH FILE (before and after processing)", flush=True)
-    for name, (raw, prepared, report) in data.items():
-        print(f"\n{name.upper()} — {Path(report['source']).name}", flush=True)
-        if prepared.empty:
-            print("No data rows: this file contains headers only.", flush=True)
+
+def preview_period(prepared, name):
+    """Rows dated 2016–2025; the full prepared table is not modified."""
+    date_column = 'DATE' if name == 'bonds' else 'Date'
+    return prepared.loc[prepared[date_column].between(PREVIEW_START, PREVIEW_END)]
+
+
+def print_first_rows(data):
+    """Report loading results and preview three rows per dataset for 2016–2025."""
+    print('\nDATA LOAD CHECK — 2016-01-01 to 2025-12-31')
+    all_loaded = True
+    for name in ('bonds', 'fred', 'curve', 'core_cpi'):
+        if name not in data:
             continue
-        preview = pd.DataFrame({
-            'Column': prepared.columns,
-            'Raw first-row value': raw.loc[prepared.index[0]].to_numpy(),
-            'Processed first-row value': prepared.iloc[0].to_numpy(),
-        })
-        print(preview.to_string(index=False, max_colwidth=None), flush=True)
+        raw, prepared, report = data[name]
+        sample = preview_period(prepared, name)
+        date_column = 'DATE' if name == 'bonds' else 'Date'
+        loaded = not sample.empty
+        all_loaded &= loaded
+        print(f"\n{name.upper()} — {'SUCCESS' if loaded else 'ERROR'} — {Path(report['source']).name}")
+        print(f'  Source rows: {len(raw):,}; aligned rows: {len(prepared):,}; 2016–2025 rows: {len(sample):,}')
+        if not loaded:
+            print('  ERROR: No observations from 2016 through 2025 in the aligned table.')
+            continue
+        print(f"  Dates: {sample[date_column].min():%Y-%m-%d} to {sample[date_column].max():%Y-%m-%d}")
+        months_present = set(sample[date_column].dt.to_period('M').unique())
+        missing_months = [str(m) for m in pd.period_range('2016-01', '2025-12', freq='M')
+                          if m not in months_present]
+        if missing_months:
+            displayed = ', '.join(missing_months[:12])
+            suffix = f', ... ({len(missing_months)} total)' if len(missing_months) > 12 else ''
+            print(f'  WARNING: Missing months: {displayed}{suffix}')
+        failed = {k: v for k, v in report.get('conversion_failure_counts', {}).items() if v}
+        if failed:
+            print('  WARNING: Nonmissing cells that failed conversion: '
+                  + ', '.join(f'{k}={v}' for k, v in failed.items()))
+        if name == 'bonds' and report.get('duplicate_cusip_date_rows', 0):
+            print(f"  WARNING: Duplicate CUSIP/date rows: {report['duplicate_cusip_date_rows']}")
+        ordered = [date_column] + (['cusip'] if name == 'bonds' else [])
+        ordered += [c for c in sample.columns if c not in ordered]
+        print('  First three rows (prepared data):')
+        print(sample.loc[:, ordered].head(3).to_string(index=False, max_cols=12, max_colwidth=22))
+        if len(ordered) > 12:
+            print(f'  Preview shows up to 12 of {len(ordered)} columns; saved data retains all columns.')
+    print(f"\nOVERALL: {'SUCCESS' if all_loaded else 'ERROR'} — dataset loading and 2016–2025 preview")
+    return all_loaded
 
 
 def main():
@@ -266,18 +291,26 @@ def main():
     parser.add_argument('--curve', default=str(DEFAULT_CURVE))
     parser.add_argument('--core-cpi')
     parser.add_argument('--output-dir', type=Path,
-                        help='New directory for all prepared/raw tables and preparation report')
+                        help='New directory for prepared/raw tables, reports, and three-row previews')
     args = parser.parse_args()
-    data = process_all_data(args.csv_path, args.fred, args.curve, args.core_cpi)
-    reports = {name: tables[2] for name, tables in data.items()}
-    print(json.dumps(reports, indent=2))
-    print_first_rows(data)
-    if args.output_dir is not None:
-        args.output_dir.mkdir(parents=True, exist_ok=False)
-        for name, (raw, prepared, report) in data.items():
-            raw.to_csv(args.output_dir / f'{name}_raw_cells.csv', index=False)
-            prepared.to_csv(args.output_dir / f'{name}_prepared.csv', index=False)
-        (args.output_dir / 'preparation_report.json').write_text(json.dumps(reports, indent=2) + '\n')
+    try:
+        data = process_all_data(args.csv_path, args.fred, args.curve, args.core_cpi)
+        if not print_first_rows(data):
+            parser.exit(1, '\nERROR: At least one dataset has no 2016–2025 rows.\n')
+        if args.output_dir is not None:
+            reports = {name: tables[2] for name, tables in data.items()}
+            args.output_dir.mkdir(parents=True, exist_ok=False)
+            for name, (raw, prepared, report) in data.items():
+                raw.to_csv(args.output_dir / f'{name}_raw_cells.csv', index=False)
+                prepared.to_csv(args.output_dir / f'{name}_prepared.csv', index=False)
+                if name in ('bonds', 'fred', 'curve', 'core_cpi'):
+                    preview_period(prepared, name).head(3).to_csv(
+                        args.output_dir / f'{name}_preview_2016_2025.csv', index=False)
+            (args.output_dir / 'preparation_report.json').write_text(
+                json.dumps(reports, indent=2) + '\n')
+            print(f'\nOutputs saved in: {args.output_dir.resolve()}')
+    except Exception as exc:
+        parser.exit(1, f'\nERROR: {type(exc).__name__}: {exc}\n')
 
 
 if __name__ == '__main__':
