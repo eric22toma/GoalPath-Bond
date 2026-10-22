@@ -280,6 +280,17 @@ def print_first_rows(data):
             warnings.append(f'Duplicate CUSIP/date source rows: {duplicate_count}')
 
         status = 'ERROR' if errors else 'LOADED WITH WARNINGS' if warnings else 'SUCCESS'
+        report['preview_2016_2025'] = {
+            'status': status,
+            'rows': int(len(period_data)),
+            'first_date': (str(period_data[date_column].min().date())
+                           if not period_data.empty else None),
+            'last_date': (str(period_data[date_column].max().date())
+                          if not period_data.empty else None),
+            'missing_months': missing_months,
+            'warnings': warnings,
+            'errors': errors,
+        }
         all_loaded &= not errors
         any_warnings |= bool(warnings)
         print(f"\n{name.upper()} — {status} — {Path(report['source']).name}")
@@ -312,7 +323,7 @@ def main():
     try:
         data = process_all_data(args.csv_path, args.fred, args.curve, args.core_cpi)
         if not print_first_rows(data):
-            parser.exit(1, '\nERROR: At least one dataset has no 2016–2025 rows.\n')
+            parser.exit(1, '\nERROR: One or more datasets failed validation; see the messages above.\n')
         if args.output_dir is not None:
             reports = {name: tables[2] for name, tables in data.items()}
             args.output_dir.mkdir(parents=True, exist_ok=False)
