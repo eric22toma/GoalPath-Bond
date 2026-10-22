@@ -218,3 +218,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+/01_Source_Data/Investable_universe_AGG.csv

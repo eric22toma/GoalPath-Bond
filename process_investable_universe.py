@@ -1,16 +1,21 @@
-"""Load and prepare bond holdings, FRED factors, and Treasury yield-curve data.
+"""Prepare all three source CSVs without filtering their rows or columns.
 
-Run: python process_investable_universe.py
-Optional exports: --output-dir NEW_DIRECTORY
+Requires pandas: pip install pandas
+Run from project root: python 02_Python_Code/process_investable_universe.py
+Optional exports: append --output-dir processed_universe (a NEW directory).
 
-Source data is left unchanged; converted tables are used by the modeling scripts.
+The supplied CSV and TA reference script are never modified. This adapts the
+TA's load/slice/pivot approach to long-form bond observations. It does not
+calculate returns from prices: the CSV already supplies RET_* observations.
+No missing-value imputation, eligibility screen, deduplication, or full-history
+survival filter is applied. No optimizer, forecasts, or benchmark weights are
+constructed here. The dataset name alone does not verify AGG membership.
 """
-
 import argparse
 import json
 from pathlib import Path
-
 import pandas as pd
+
 
 CODE_FOLDER = Path(__file__).resolve().parent
 PROJECT_ROOT = CODE_FOLDER.parent if CODE_FOLDER.name == "02_Python_Code" else CODE_FOLDER
