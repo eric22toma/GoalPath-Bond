@@ -1,9 +1,11 @@
-"""Pooled elastic net forecasting next-month bond yield changes.
+"""One-period (H=1) pooled elastic-net bond yield forecasting.
 
-Each bond-month has its own predictors; the model is trained across bonds.
-Forecasted changes are in percentage points, with basis-point output.
+Build bond-month predictors, tune alpha/lambda on prior chronological folds,
+and forecast next-month bond yield changes in percentage points.
 """
 import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import make_pipeline
@@ -132,22 +134,6 @@ def estimator(alpha, l1_ratio):
     )
 
 
-def build_horizon_panel(panel, horizon):
-    """Create an exact h-month target for each CUSIP without bridging gaps."""
-    if horizon == 1:
-        return panel
-    future = panel[['cusip', 'month', 'YIELD']].copy()
-    future['month'] = future.month - horizon
-    future = future.rename(columns={'YIELD': 'next_yield'})
-    p = panel.drop(columns=['next_yield', 'next_return', 'target_month', 'dy'])
-    p = p.merge(future, on=['cusip', 'month'], how='left',
-                validate='one_to_one')
-    p['target_month'] = p.month + horizon
-    p['dy'] = 100 * (p.next_yield - p.YIELD)
-    p['next_return'] = np.nan  # One-month RET_EOM is not an h-month return.
-    return p
-
-
 def training_rows(panel, asof, features):
     """Keep targets already realized by asof, with complete predictor rows."""
     return panel.loc[
@@ -238,14 +224,15 @@ def fit_forecast(panel, asof, features, mixing, penalty):
     return now, coef, len(known)
 
 
-def rolling_backtest(panel, features, final_asof, horizon, start_target,
+def rolling_backtest(panel, features, final_asof, start_target,
                      alphas, lambdas, fixed=None):
-    """Monthly expanding-window elastic-net forecasts, without future targets.
+    """Evaluate one-month-ahead forecasts with expanding monthly refits.
 
-    Retune at the first forecast month of each calendar year. Refit monthly.
+    Retune once per year and use only training targets observed by each as-of
+    date. Stop before the final as-of date for optimizer-compatible errors.
     """
-    first_asof = start_target - horizon
-    last_asof = final_asof - horizon
+    first_asof = start_target - 1
+    last_asof = final_asof - 1
     results = []
     selected_params = None
     last_tuning_year = None
@@ -272,16 +259,14 @@ def rolling_backtest(panel, features, final_asof, horizon, start_target,
         if valid.empty:
             continue
         valid['forecast_error_bp'] = (valid.dy - valid.predicted_dy_pp) * 100
-        valid['horizon'] = horizon
         valid['alpha_mixing'] = mixing
         valid['lambda_penalty'] = penalty
-        if horizon == 1:
-            # Historical return errors are retained for the optimizer's Theta.
-            valid['predicted_return'] = (
-                valid.COUPON / valid.PRICE_EOM / 12 -
-                valid.DURATION * valid.predicted_dy_pp / 100
-            )
-            valid['return_error'] = valid.next_return - valid.predicted_return
+        # These return errors are used by the single-period optimizer.
+        valid['predicted_return'] = (
+            valid.COUPON / valid.PRICE_EOM / 12 -
+            valid.DURATION * valid.predicted_dy_pp / 100
+        )
+        valid['return_error'] = valid.next_return - valid.predicted_return
         results.append(valid)
 
     if not results:
@@ -294,7 +279,7 @@ def rolling_metrics(backtest):
         return pd.DataFrame()
     result = backtest.copy()
     result['year'] = result.target_month.dt.year
-    return result.groupby(['horizon', 'year'], as_index=False).agg(
+    return result.groupby(['year'], as_index=False).agg(
         observations=('forecast_error_bp', 'size'),
         rmse_yield_bp=('forecast_error_bp',
                        lambda x: float(np.sqrt(np.mean(x ** 2)))),
@@ -303,8 +288,8 @@ def rolling_metrics(backtest):
     )
 
 
-def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
-    """Show each selected bond's predictors and next-month yield forecast."""
+def show_selected_bonds(now, coef, asof, cusips=None):
+    """Show bond predictors, next-month forecasts, and realized yield changes."""
     if cusips:
         requested = list(dict.fromkeys(cusips))
         missing = [c for c in requested if c not in set(now.cusip)]
@@ -321,8 +306,8 @@ def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
     feature_names = coef['feature'].tolist()
     beta = coef.set_index('feature').loc[feature_names, 'coefficient_original_units']
     intercept = float(coef.intercept_original_inputs.iloc[0])
-    target_month = asof + horizon
-    print(f'\n{horizon}-MONTH YIELD CHANGE: {asof} -> {target_month}')
+    target_month = asof + 1
+    print(f'\nONE-MONTH YIELD CHANGE: {asof} -> {target_month}')
     print(f'Bonds with complete predictors: {len(now):,}; displayed: {len(selected)}.')
 
     summaries = []
@@ -402,35 +387,31 @@ def data_readiness(panel, features, asof):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Monthly pooled elastic net with ordered CV and expanding-window refits'
+        description='H=1 pooled elastic net: one-month bond yield forecasts with chronological CV'
     )
     parser.add_argument('--bonds', default=str(DEFAULT_BONDS))
     parser.add_argument('--fred', default=str(DEFAULT_FRED))
     parser.add_argument('--curve', default=str(DEFAULT_CURVE))
     parser.add_argument('--asof', default='latest',
-                        help='Origin YYYY-MM, or latest complete month with observed next-month yields')
+                        help='Forecast origin YYYY-MM, or latest with observable next-month yields')
     parser.add_argument('--include-forward', action='store_true',
-                        help='Include optional forward-rate predictor if supplied')
-    parser.add_argument('--horizon', type=int, default=1,
-                        help='Forecast direct yield changes for h=1,...,H months')
+                        help='Also use forward_5y when supplied and complete')
     parser.add_argument('--cusips', nargs='+',
-                        help='CUSIPs to display; default shows three liquid bonds')
-    parser.add_argument('--alpha', type=float, default=.5,
-                        help='Elastic-net L1/L2 mixing alpha (0 < alpha < 1)')
-    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=.001,
-                        help='Elastic-net regularization strength lambda (> 0)')
+                        help='CUSIPs to display; default: three liquid bonds')
+    parser.add_argument('--alpha', type=float, default=0.5,
+                        help='Elastic-net mixing alpha, between 0 and 1')
+    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=0.001,
+                        help='Elastic-net regularization penalty lambda (> 0)')
     parser.add_argument('--no-tune', action='store_true',
-                        help='Use --alpha and --lambda instead of ordered CV tuning')
+                        help='Use --alpha and --lambda instead of chronological CV')
     parser.add_argument('--backtest', action='store_true',
-                        help='Run monthly expanding-window out-of-sample evaluation')
+                        help='Evaluate past one-month forecasts with monthly refits')
     parser.add_argument('--backtest-start', default='2019-01',
                         help='First out-of-sample target month (default 2019-01)')
     parser.add_argument('--output-dir', type=Path,
-                        help='New directory for forecast tables and optional backtest')
+                        help='New directory for forecasts, tuning results, and optional backtest')
     args = parser.parse_args()
 
-    if not 1 <= args.horizon <= 12:
-        parser.error('--horizon must be from 1 to 12 months')
     if not 0 < args.alpha < 1 or args.penalty_lambda <= 0:
         parser.error('Require 0 < --alpha < 1 and --lambda > 0')
 
@@ -451,113 +432,107 @@ def main():
         if not extra:
             parser.error('No forward-rate series found; omit --include-forward')
         features += extra
+
     panel = load_panel(data['bonds'][1], macro, curve_params)
     del data
-
     complete = panel[features].notna().all(axis=1)
     eligible_months = panel.loc[complete, 'month']
     if eligible_months.empty:
         counts = {name: int(panel[name].notna().sum()) for name in features}
         raise ValueError(
-            f'No complete bond predictor rows anywhere. Nonmissing values by predictor: {counts}'
+            f'No complete bond predictor rows. Nonmissing values by predictor: {counts}'
         )
     if args.asof == 'latest':
-        observed = panel.loc[complete & panel.dy.notna(), 'month']
-        asof = observed.max() if not observed.empty else eligible_months.max()
+        with_actual = panel.loc[complete & panel.dy.notna(), 'month']
+        asof = with_actual.max() if not with_actual.empty else eligible_months.max()
     else:
         asof = pd.Period(args.asof, freq='M')
     if not data_readiness(panel, features, asof):
-        raise ValueError(f'Cannot forecast {asof} with incomplete bond predictors. '
+        raise ValueError(f'Cannot forecast {asof}: missing required predictors. '
                          'Try --asof latest or omit --include-forward.')
+
     backtest_start = pd.Period(args.backtest_start, freq='M')
-    print(f'Data range: {months.min()} through {months.max()}')
+    print(f'Bond data range: {months.min()} through {months.max()}')
+    print(f'Forecast horizon: H=1 month ({asof} -> {asof + 1})')
     print(f'Predictors ({len(features)}): {", ".join(features)}')
-    print('Annual time-series CV tunes mixing alpha and penalty lambda; '
-          'coefficients are refitted using all data available by each forecast date.')
+    known = training_rows(panel, asof, features)
+    if known.empty:
+        raise ValueError(f'No historical bond yield changes to train on before {asof}')
+
+    cv_scores = None
+    if args.no_tune:
+        mixing, penalty = args.alpha, args.penalty_lambda
+        cv_info = 'Hyperparameter tuning disabled'
+    else:
+        print(f'Chronological CV: {len(CV_MIXING_GRID)} alpha values × '
+              f'{len(CV_PENALTY_GRID)} lambda values '
+              f'= {len(CV_MIXING_GRID) * len(CV_PENALTY_GRID)} settings')
+        mixing, penalty, score, folds, cv_scores = tune_elastic_net(
+            known, features, CV_MIXING_GRID, CV_PENALTY_GRID
+        )
+        cv_info = f'Validation RMSE: {score:.3f} bp; years: {folds}'
+        print('Five best elastic-net settings:')
+        print(cv_scores.head(5).to_string(index=False))
+
+    now, coefficients, training_count = fit_forecast(
+        panel, asof, features, mixing, penalty
+    )
+    print(f'\nELASTIC NET: {asof} -> {asof + 1}')
+    print(f'Training bond-month rows: {training_count:,}')
+    print(f'Selected alpha (mixing): {mixing:.2f}; lambda (penalty): {penalty:g}')
+    print(cv_info)
+    print('Elastic-net coefficients (original predictor units):')
+    print(coefficients[['feature', 'coefficient_original_units']].to_string(index=False))
+    show_selected_bonds(now, coefficients, asof, args.cusips)
+
+    history_errors = pd.DataFrame()
+    if args.backtest:
+        history_errors = rolling_backtest(
+            panel, features, asof, backtest_start,
+            CV_MIXING_GRID, CV_PENALTY_GRID,
+            fixed=(mixing, penalty) if args.no_tune else None
+        )
+        if history_errors.empty:
+            print('No historical one-month backtest observations available.')
+        else:
+            print('\nONE-MONTH EXPANDING-WINDOW BACKTEST')
+            print(rolling_metrics(history_errors).to_string(index=False))
+            earliest = history_errors.sort_values(
+                ['target_month', 'cusip']
+            ).head(3).copy()
+            earliest['predicted_change_bp'] = earliest.predicted_dy_pp * 100
+            earliest['actual_change_bp'] = earliest.dy * 100
+            print('First three out-of-sample bond yield-change forecasts:')
+            print(earliest[['cusip', 'month', 'target_month',
+                            'predicted_change_bp', 'actual_change_bp',
+                            'forecast_error_bp']].to_string(index=False))
 
     if args.output_dir is not None:
         args.output_dir.mkdir(parents=True, exist_ok=False)
-
-    alphas = CV_MIXING_GRID
-    lambdas = CV_PENALTY_GRID
-    print(f'Ordered CV grid: {len(alphas)} alpha × {len(lambdas)} lambda = '
-          f'{len(alphas) * len(lambdas)} elastic-net configurations')
-    for horizon in range(1, args.horizon + 1):
-        labeled = build_horizon_panel(panel, horizon)
-        known = training_rows(labeled, asof, features)
-        cv_scores = None
-        if args.no_tune:
-            mixing, penalty = args.alpha, args.penalty_lambda
-            cv_info = 'fixed parameters (tuning disabled)'
-        else:
-            mixing, penalty, score, folds, cv_scores = tune_elastic_net(
-                known, features, alphas, lambdas
+        now.to_csv(args.output_dir / 'forecast_h1.csv', index=False)
+        coefficients.to_csv(args.output_dir / 'coefficients_h1.csv', index=False)
+        if cv_scores is not None:
+            cv_scores.to_csv(args.output_dir / 'cv_grid_h1.csv', index=False)
+        if not history_errors.empty:
+            history_errors.to_csv(
+                args.output_dir / 'backtest_h1.csv', index=False
             )
-            cv_info = f'CV RMSE={score:.3f} bp; validation years={folds}'
-            print('Top five alpha/lambda configurations by CV RMSE:')
-            print(cv_scores.head(5).to_string(index=False))
-
-        now, coefficients, training_count = fit_forecast(
-            labeled, asof, features, mixing, penalty
-        )
-        print(f'\nHORIZON h={horizon}: {asof} -> {asof + horizon}')
-        print(f'Training bond-month rows: {training_count:,}')
-        print(f'Selected alpha (mix): {mixing:.2f}; lambda (penalty): {penalty:g}; {cv_info}')
-        print('Elastic-net coefficients (original predictor units):')
-        print(coefficients[['feature', 'coefficient_original_units']].to_string(index=False))
-        show_selected_bonds(now, coefficients, asof, args.cusips, horizon=horizon)
-
-        history_errors = pd.DataFrame()
-        if args.backtest:
-            history_errors = rolling_backtest(
-                labeled, features, asof, horizon, backtest_start,
-                alphas, lambdas,
-                fixed=(mixing, penalty) if args.no_tune else None
+            # Preserve the input contract of robust_mvo_one_period.py.
+            import pickle
+            errors = history_errors.dropna(
+                subset=['return_error', 'predicted_return', 'next_return']
             )
-            if history_errors.empty:
-                print('No historical backtest observations available for this horizon.')
-            else:
-                print('\nMONTHLY EXPANDING-WINDOW BACKTEST')
-                print(rolling_metrics(history_errors).to_string(index=False))
-                earliest = history_errors.sort_values(
-                    ['target_month', 'cusip']
-                ).head(3).copy()
-                print('First three out-of-sample bond predictions:')
-                earliest['predicted_change_bp'] = earliest.predicted_dy_pp * 100
-                earliest['actual_change_bp'] = earliest.dy * 100
-                print(earliest[['cusip', 'month', 'target_month',
-                                'predicted_change_bp', 'actual_change_bp',
-                                'forecast_error_bp']].to_string(index=False))
-
-        if args.output_dir is not None:
-            now.to_csv(args.output_dir / f'forecast_h{horizon}.csv', index=False)
-            coefficients.to_csv(args.output_dir / f'coefficients_h{horizon}.csv',
-                                index=False)
-            if cv_scores is not None:
-                cv_scores.to_csv(args.output_dir / f'cv_grid_h{horizon}.csv',
-                                 index=False)
-            if not history_errors.empty:
-                history_errors.to_csv(
-                    args.output_dir / f'backtest_h{horizon}.csv', index=False
-                )
-            if horizon == 1 and not history_errors.empty:
-                # Compatible with the existing single-period RMVO bundle format.
-                import pickle
-                errors = history_errors.dropna(
-                    subset=['return_error', 'predicted_return', 'next_return']
-                )
-                history = panel.loc[panel.month.between(asof - 35, asof)].copy()
-                bundle = {
-                    'asof': str(asof),
-                    'target_month': str(asof + 1),
-                    'snapshot': now,
-                    'history': history,
-                    'errors': errors,
-                    'curve_params': curve_params,
-                }
-                with (args.output_dir / 'elastic_net_outputs.pkl').open('wb') as fh:
-                    pickle.dump(bundle, fh)
-    if args.output_dir is not None:
+            history = panel.loc[panel.month.between(asof - 35, asof)].copy()
+            bundle = {
+                'asof': str(asof),
+                'target_month': str(asof + 1),
+                'snapshot': now,
+                'history': history,
+                'errors': errors,
+                'curve_params': curve_params,
+            }
+            with (args.output_dir / 'elastic_net_outputs.pkl').open('wb') as fh:
+                pickle.dump(bundle, fh)
         print(f'\nForecast outputs saved to {args.output_dir.resolve()}')
     else:
         print('\nForecasts displayed; no output files saved.')
