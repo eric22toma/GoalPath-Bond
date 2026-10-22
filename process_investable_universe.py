@@ -238,13 +238,14 @@ def print_first_rows(data):
     all_loaded = True
     any_warnings = False
 
-    for name in ('bonds', 'fred', 'curve', 'core_cpi'):
+    datasets = ['bonds', 'fred', 'curve']
+    if 'core_cpi' in data:
+        datasets.append('core_cpi')
+
+    for name in datasets:
         if name not in data:
-            if name == 'core_cpi':
-                print('\nCORE_CPI — SKIPPED (optional file not supplied)')
-            else:
-                print(f'\n{name.upper()} — ERROR: Required dataset was not loaded.')
-                all_loaded = False
+            print(f'\n{name.upper()} — ERROR: Required dataset was not loaded.')
+            all_loaded = False
             continue
 
         raw, prepared, report = data[name]
@@ -261,6 +262,12 @@ def print_first_rows(data):
             errors.append('No prepared observations dated 2016-01-01 to 2025-12-31.')
         elif len(period_data) < 3:
             warnings.append(f'Only {len(period_data)} period rows available; fewer than three can be displayed.')
+
+        if name == 'fred':
+            cpi_rows = (int(period_data['CPI'].notna().sum())
+                        if 'CPI' in period_data.columns else 0)
+            if not cpi_rows:
+                errors.append('FRED CPI data missing for 2016–2025.')
 
         months_present = set(period_data[date_column].dt.to_period('M'))
         missing_months = [str(m) for m in pd.period_range('2016-01', '2025-12', freq='M')
@@ -295,6 +302,9 @@ def print_first_rows(data):
         print(f"\n{name.upper()} — {status} — {Path(report['source']).name}")
         print(f'  Source rows: {len(raw):,} | Aligned rows: {len(prepared):,} '
               f'| 2016–2025 rows: {len(period_data):,}')
+        if name == 'fred' and cpi_rows:
+            print(f'  CPI: AVAILABLE — {cpi_rows:,} nonmissing observations '
+                  '(headline CPI, used for inflation features)')
         if not period_data.empty:
             print(f"  Dates in period: {period_data[date_column].min():%Y-%m-%d} "
                   f"to {period_data[date_column].max():%Y-%m-%d}")
