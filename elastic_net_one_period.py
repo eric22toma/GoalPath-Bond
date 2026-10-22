@@ -312,10 +312,14 @@ def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
             raise ValueError(f'No complete predictor row at {asof} for CUSIP(s): {missing}')
         selected = now.set_index('cusip').loc[requested].reset_index()
     else:
-        selected = now.sort_values(['T_DVolume', 'cusip'],
-                                   ascending=[False, True]).head(3).copy()
+        # Historical examples with realized next-month yields are easiest to verify.
+        selected = (now.assign(_has_actual=now.next_yield.notna())
+                    .sort_values(['_has_actual', 'T_DVolume', 'cusip'],
+                                 ascending=[False, False, True])
+                    .head(3).drop(columns='_has_actual').copy())
 
-    beta = coef.set_index('feature').loc[FEATURES, 'coefficient_original_units']
+    feature_names = coef['feature'].tolist()
+    beta = coef.set_index('feature').loc[feature_names, 'coefficient_original_units']
     intercept = float(coef.intercept_original_inputs.iloc[0])
     target_month = asof + horizon
     print(f'\n{horizon}-MONTH YIELD CHANGE: {asof} -> {target_month}')
@@ -361,9 +365,9 @@ def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
         else:
             print(f'  Actual yield ({target_month}):    not available')
 
-        values = selected.loc[selected.cusip.eq(row.cusip), FEATURES].iloc[0].astype(float)
+        values = selected.loc[selected.cusip.eq(row.cusip), feature_names].iloc[0].astype(float)
         table = pd.DataFrame({
-            'predictor': FEATURES,
+            'predictor': feature_names,
             'value': values.to_numpy(),
             'beta_original_units': beta.to_numpy(),
             'contribution_bp': values.to_numpy() * beta.to_numpy() * 100,
@@ -377,7 +381,7 @@ def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
         )
 
     print('Realized future yields are evaluation data, never model inputs.')
-    return pd.DataFrame(summaries), selected[['cusip'] + FEATURES].copy()
+    return pd.DataFrame(summaries), selected[['cusip'] + feature_names].copy()
 
 
 def data_readiness(panel, features, asof):
