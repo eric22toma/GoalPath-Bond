@@ -130,53 +130,90 @@ def estimator(alpha, l1_ratio):
     )
 
 
-def fit_forecast(panel, asof, features, alpha, l1_ratio):
-    """Train elastic net and evaluate earlier annual out-of-sample periods."""
-    model_factory = estimator(alpha, l1_ratio)
-    known = panel.loc[
-        (panel.target_month <= asof) &
-        (panel.month >= pd.Period('2016-01', 'M'))
+def build_horizon_panel(panel, horizon):
+    """Create an exact h-month target for each CUSIP without bridging gaps."""
+    if horizon == 1:
+        return panel
+    future = panel[['cusip', 'month', 'YIELD']].copy()
+    future['month'] = future.month - horizon
+    future = future.rename(columns={'YIELD': 'next_yield'})
+    p = panel.drop(columns=['next_yield', 'next_return', 'target_month', 'dy'])
+    p = p.merge(future, on=['cusip', 'month'], how='left',
+                validate='one_to_one')
+    p['target_month'] = p.month + horizon
+    p['dy'] = 100 * (p.next_yield - p.YIELD)
+    p['next_return'] = np.nan  # One-month RET_EOM is not an h-month return.
+    return p
+
+
+def training_rows(panel, asof, features):
+    """Keep targets already realized by asof, with complete predictor rows."""
+    return panel.loc[
+        (panel.month >= pd.Period('2016-01', 'M')) &
+        (panel.target_month <= asof)
     ].dropna(subset=features + ['dy']).copy()
+
+
+def tune_elastic_net(known, features, alphas=(.2, .4, .6, .8),
+                     lambdas=(1e-5, 1e-4, 1e-3, 1e-2, 1e-1)):
+    """Choose mixing alpha and penalty lambda by ordered annual validation.
+
+    Each validation year follows all its training months. More recent folds
+    are preferred to limit repeated fitting on the large bond panel.
+    """
     if known.empty:
-        raise ValueError('No complete training observations before the forecast month')
-
-    metrics, errors = [], []
-    # Start evaluation in 2019; refit annually with expanding training history.
-    for year in range(FIRST_OOS_YEAR, min(LAST_OOS_YEAR, asof.year) + 1):
+        raise ValueError('No historical yield-change observations for tuning')
+    years = sorted(set(known.target_month.dt.year))
+    folds = []
+    for year in years[1:]:
         first = pd.Period(f'{year}-01', 'M')
-        last = min(asof, pd.Period(f'{year}-12', 'M'))
-        train = known.loc[known.target_month < first]
-        valid = known.loc[known.target_month.between(first, last)]
-        if train.empty or valid.empty:
-            continue
-        assert train.target_month.max() < valid.target_month.min()
+        train = known.target_month < first
+        valid = known.target_month.between(first, pd.Period(f'{year}-12', 'M'))
+        if known.loc[train, 'target_month'].nunique() >= 12 and valid.any():
+            folds.append((train.to_numpy(), valid.to_numpy(), year))
+    folds = folds[-2:]
+    if not folds:
+        raise ValueError('At least 12 earlier monthly targets and one later validation year are needed for tuning')
 
-        predictor = estimator(alpha, l1_ratio).fit(train[features], train.dy)
-        pred = predictor.predict(valid[features])
-        metrics.append({
-            'year': year, 'model': 'elastic_net', 'train_rows': len(train),
-            'validation_rows': len(valid),
-            'last_training_target': str(train.target_month.max()),
-            'first_validation_target': str(valid.target_month.min()),
-            'rmse_yield_bp': float(np.sqrt(np.mean((valid.dy - pred)**2)) * 100),
-        })
+    grid = []
+    for mixing in alphas:
+        for penalty in lambdas:
+            rmses = []
+            for train, valid, _ in folds:
+                m = estimator(penalty, mixing).fit(
+                    known.loc[train, features], known.loc[train, 'dy']
+                )
+                pred = m.predict(known.loc[valid, features])
+                delta = known.loc[valid, 'dy'].to_numpy() - pred
+                rmses.append(float(np.sqrt(np.mean(delta ** 2)) * 100))
+            grid.append((float(np.mean(rmses)), mixing, penalty))
+    score, mixing, penalty = min(grid)
+    return float(mixing), float(penalty), score, [year for _, _, year in folds]
 
-        e = valid[['cusip', 'month', 'target_month', 'dy', 'next_return',
-                   'COUPON', 'PRICE_EOM', 'DURATION']].copy()
-        e['predicted_dy_pp'] = pred
-        # Approximate return forecast for subsequent portfolio risk estimation.
-        e['predicted_return'] = e.COUPON / e.PRICE_EOM / 12 - e.DURATION * pred / 100
-        e['return_error'] = e.next_return - e.predicted_return
-        errors.append(e)
 
-    model = model_factory.fit(known[features], known.dy)
-    now = panel.loc[panel.month == asof].dropna(subset=features).copy()
+def fit_forecast(panel, asof, features, mixing, penalty):
+    """Refit on an expanding window and forecast bond yields from asof."""
+    known = training_rows(panel, asof, features)
+    if known.empty:
+        raise ValueError(f'No training targets available by {asof}')
+    selection = panel.loc[panel.month == asof]
+    now = selection.dropna(subset=features).copy()
     if now.empty:
-        raise ValueError(f'No bonds with complete predictors in {asof}')
+        missing = {k: int(selection[k].isna().sum()) for k in features
+                   if k in selection and selection[k].isna().any()}
+        ready = sorted(str(x) for x in
+                       panel.loc[panel[features].notna().all(axis=1),
+                                 'month'].unique())
+        raise ValueError(
+            f'No bonds with complete predictors in {asof}. '
+            f'Bond rows in month: {len(selection):,}; missing fields: {missing}; '
+            f'latest usable months: {ready[-6:]}.'
+        )
+
+    model = estimator(penalty, mixing).fit(known[features], known.dy)
     now['predicted_dy_pp'] = model.predict(now[features])
-    standardized_intercept = float(model[-1].intercept_)
     original_intercept = float(
-        standardized_intercept -
+        model[-1].intercept_ -
         np.dot(model[-1].coef_ / model[0].scale_, model[0].mean_)
     )
     coef = pd.DataFrame({
@@ -186,14 +223,77 @@ def fit_forecast(panel, asof, features, alpha, l1_ratio):
         'training_mean': model[0].mean_,
         'training_scale': model[0].scale_,
     })
-    coef['intercept_standardized_inputs'] = standardized_intercept
+    coef['intercept_standardized_inputs'] = float(model[-1].intercept_)
     coef['intercept_original_inputs'] = original_intercept
-    return (now, pd.DataFrame(metrics),
-            pd.concat(errors, ignore_index=True) if errors else pd.DataFrame(),
-            coef)
+    return now, coef, len(known)
 
 
-def show_selected_bonds(now, coef, asof, cusips=None):
+def rolling_backtest(panel, features, final_asof, horizon, start_target,
+                     alphas, lambdas, fixed=None):
+    """Monthly expanding-window elastic-net forecasts, without future targets.
+
+    Retune at the first forecast month of each calendar year. Refit monthly.
+    """
+    first_asof = start_target - horizon
+    last_asof = final_asof - horizon
+    results = []
+    selected_params = None
+    last_tuning_year = None
+    for asof in pd.period_range(first_asof, last_asof, freq='M'):
+        candidates = panel.loc[panel.month == asof]
+        if candidates.empty or not candidates[features].notna().all(axis=1).any():
+            continue
+        known = training_rows(panel, asof, features)
+        if known.empty:
+            continue
+        if fixed is not None:
+            mixing, penalty = fixed
+        else:
+            if selected_params is None or asof.year != last_tuning_year:
+                mixing, penalty, _, _ = tune_elastic_net(
+                    known, features, alphas, lambdas
+                )
+                selected_params = (mixing, penalty)
+                last_tuning_year = asof.year
+            mixing, penalty = selected_params
+
+        now, _, _ = fit_forecast(panel, asof, features, mixing, penalty)
+        valid = now.dropna(subset=['dy']).copy()
+        if valid.empty:
+            continue
+        valid['forecast_error_bp'] = (valid.dy - valid.predicted_dy_pp) * 100
+        valid['horizon'] = horizon
+        valid['alpha_mixing'] = mixing
+        valid['lambda_penalty'] = penalty
+        if horizon == 1:
+            # Historical return errors are retained for the optimizer's Theta.
+            valid['predicted_return'] = (
+                valid.COUPON / valid.PRICE_EOM / 12 -
+                valid.DURATION * valid.predicted_dy_pp / 100
+            )
+            valid['return_error'] = valid.next_return - valid.predicted_return
+        results.append(valid)
+
+    if not results:
+        return pd.DataFrame()
+    return pd.concat(results, ignore_index=True)
+
+
+def rolling_metrics(backtest):
+    if backtest.empty:
+        return pd.DataFrame()
+    result = backtest.copy()
+    result['year'] = result.target_month.dt.year
+    return result.groupby(['horizon', 'year'], as_index=False).agg(
+        observations=('forecast_error_bp', 'size'),
+        rmse_yield_bp=('forecast_error_bp',
+                       lambda x: float(np.sqrt(np.mean(x ** 2)))),
+        mae_yield_bp=('forecast_error_bp',
+                      lambda x: float(np.mean(np.abs(x)))),
+    )
+
+
+def show_selected_bonds(now, coef, asof, cusips=None, horizon=1):
     """Show each selected bond's predictors and next-month yield forecast."""
     if cusips:
         requested = list(dict.fromkeys(cusips))
@@ -207,8 +307,8 @@ def show_selected_bonds(now, coef, asof, cusips=None):
 
     beta = coef.set_index('feature').loc[FEATURES, 'coefficient_original_units']
     intercept = float(coef.intercept_original_inputs.iloc[0])
-    target_month = asof + 1
-    print(f'\nMONTHLY YIELD CHANGE: {asof} -> {target_month}')
+    target_month = asof + horizon
+    print(f'\n{horizon}-MONTH YIELD CHANGE: {asof} -> {target_month}')
     print(f'Bonds with complete predictors: {len(now):,}; displayed: {len(selected)}.')
 
     summaries = []
@@ -266,7 +366,7 @@ def show_selected_bonds(now, coef, asof, cusips=None):
             row.predicted_dy_pp, atol=1e-10
         )
 
-    print('Actual next-month yields are evaluation data, never model inputs.')
+    print('Realized future yields are evaluation data, never model inputs.')
     return pd.DataFrame(summaries), selected[['cusip'] + FEATURES].copy()
 
 
