@@ -1,7 +1,7 @@
-"""One-period (H=1) pooled elastic-net bond yield forecasting.
+"""Pooled elastic net forecasting next-month bond yield changes.
 
-Build bond-month predictors, tune alpha/lambda on prior chronological folds,
-and forecast next-month bond yield changes in percentage points.
+Each bond-month has its own predictors; the model is trained across bonds.
+Forecasted changes are in percentage points, with basis-point output.
 """
 import argparse
 from pathlib import Path
