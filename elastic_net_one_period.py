@@ -14,6 +14,7 @@ from process_investable_universe import (process_all_data, history_for_features,
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
+OPTIONAL_FEATURES = ['forward_5y']
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
@@ -45,6 +46,8 @@ def macro_features(curve, fred, core=None):
     f['level'] = monthly.SVENY10
     f['slope'] = monthly.SVENY10-monthly.SVENY02
     f['curvature'] = 2*monthly.SVENY05-monthly.SVENY02-monthly.SVENY10
+    if 'SVENF05' in monthly:
+        f['forward_5y'] = monthly.SVENF05
     f['lag_level_change'] = f.level.shift(1)-f.level.shift(2)
     # Daily changes include the prior month's final trading day.
     f['rate_volatility'] = daily.SVENY10.diff().groupby(daily.index.to_period('M')).std()
@@ -66,9 +69,12 @@ def macro_features(curve, fred, core=None):
         comparable = supplied_yoy.notna() & computed_yoy.notna()
         if not np.allclose(supplied_yoy[comparable], computed_yoy[comparable], atol=1e-6, rtol=1e-6):
             raise ValueError('Inflation_YoY does not match 100*(CPI/CPI.shift(12)-1); verify units')
-        f['cpi_inflation_lag1'] = supplied_yoy.shift(1)
+        inflation = supplied_yoy
     else:
-        f['cpi_inflation_lag1'] = computed_yoy.shift(1)
+        inflation = computed_yoy
+    # At month t, use the latest value recorded by t-1, at most two months old.
+    # Filling occurs before the lag, so this never uses a future CPI release.
+    f['cpi_inflation_lag1'] = inflation.ffill(limit=2).shift(1)
     if core is not None:
         core = core.sort_values('Date').set_index('Date')
         if core.index.isna().any(): raise ValueError('Core CPI contains invalid dates')
