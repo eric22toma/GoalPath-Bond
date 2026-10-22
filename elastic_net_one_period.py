@@ -15,6 +15,8 @@ from process_investable_universe import (process_all_data, history_for_features,
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
 OPTIONAL_FEATURES = ['forward_5y']
+CV_MIXING_GRID = (0.20, 0.40, 0.60, 0.80, 0.95)
+CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
@@ -154,12 +156,11 @@ def training_rows(panel, asof, features):
     ].dropna(subset=features + ['dy']).copy()
 
 
-def tune_elastic_net(known, features, alphas=(.2, .4, .6, .8),
-                     lambdas=(1e-5, 1e-4, 1e-3, 1e-2, 1e-1)):
-    """Choose mixing alpha and penalty lambda by ordered annual validation.
+def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
+                     lambdas=CV_PENALTY_GRID):
+    """Tune elastic net through expanding, chronological annual validation.
 
-    Each validation year follows all its training months. More recent folds
-    are preferred to limit repeated fitting on the large bond panel.
+    Use up to three recent folds; each fold trains on earlier target months.
     """
     if known.empty:
         raise ValueError('No historical yield-change observations for tuning')
@@ -171,7 +172,7 @@ def tune_elastic_net(known, features, alphas=(.2, .4, .6, .8),
         valid = known.target_month.between(first, pd.Period(f'{year}-12', 'M'))
         if known.loc[train, 'target_month'].nunique() >= 12 and valid.any():
             folds.append((train.to_numpy(), valid.to_numpy(), year))
-    folds = folds[-2:]
+    folds = folds[-3:]
     if not folds:
         raise ValueError('At least 12 earlier monthly targets and one later validation year are needed for tuning')
 
@@ -186,9 +187,18 @@ def tune_elastic_net(known, features, alphas=(.2, .4, .6, .8),
                 pred = m.predict(known.loc[valid, features])
                 delta = known.loc[valid, 'dy'].to_numpy() - pred
                 rmses.append(float(np.sqrt(np.mean(delta ** 2)) * 100))
-            grid.append((float(np.mean(rmses)), mixing, penalty))
-    score, mixing, penalty = min(grid)
-    return float(mixing), float(penalty), score, [year for _, _, year in folds]
+            grid.append({
+                'alpha_mixing': float(mixing),
+                'lambda_penalty': float(penalty),
+                'mean_validation_rmse_bp': float(np.mean(rmses)),
+            })
+    scores = pd.DataFrame(grid).sort_values(
+        ['mean_validation_rmse_bp', 'alpha_mixing', 'lambda_penalty']
+    ).reset_index(drop=True)
+    best = scores.iloc[0]
+    return (float(best.alpha_mixing), float(best.lambda_penalty),
+            float(best.mean_validation_rmse_bp),
+            [year for _, _, year in folds], scores)
 
 
 def fit_forecast(panel, asof, features, mixing, penalty):
@@ -250,7 +260,7 @@ def rolling_backtest(panel, features, final_asof, horizon, start_target,
             mixing, penalty = fixed
         else:
             if selected_params is None or asof.year != last_tuning_year:
-                mixing, penalty, _, _ = tune_elastic_net(
+                mixing, penalty, _, _, _ = tune_elastic_net(
                     known, features, alphas, lambdas
                 )
                 selected_params = (mixing, penalty)
