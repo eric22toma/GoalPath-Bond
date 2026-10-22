@@ -287,7 +287,7 @@ def main():
     print(coef[['feature','coefficient_original_units']].to_string(index=False))
     print('Intercept:',coef.intercept_original_inputs.iloc[0])
     show_selected_bonds(now,coef,asof,args.cusips)
-    print(f'\\nOUT-OF-SAMPLE ELASTIC-NET VALIDATION ({FIRST_OOS_YEAR}–{LAST_OOS_YEAR})')
+    print(f'\nOUT-OF-SAMPLE ELASTIC-NET VALIDATION ({FIRST_OOS_YEAR}–{LAST_OOS_YEAR})')
     print('Expanding training history; coefficients refitted at each year start.')
     if metrics.empty:
         print('No historical validation periods before the requested as-of month.')
@@ -296,7 +296,7 @@ def main():
         early = errors.sort_values(['target_month', 'cusip']).head(3).copy()
         early['forecast_change_bp'] = early.predicted_dy_pp * 100
         early['actual_change_bp'] = early.dy * 100
-        print('\\nFIRST THREE HISTORICAL OUT-OF-SAMPLE BOND FORECASTS')
+        print('\nFIRST THREE HISTORICAL OUT-OF-SAMPLE BOND FORECASTS')
         print(early[['cusip', 'month', 'target_month', 'forecast_change_bp',
                      'actual_change_bp']].to_string(index=False))
     print('Forecasts displayed; no output files saved.')
