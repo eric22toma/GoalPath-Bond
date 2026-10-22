@@ -8,12 +8,14 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import ElasticNet, Ridge, Lasso
+from sklearn.linear_model import ElasticNet
 from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,
                                        DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
+FIRST_OOS_YEAR = 2019
+LAST_OOS_YEAR = 2025
 
 
 def sven_yield(tau, params):
@@ -112,47 +114,77 @@ def load_panel(prepared_bonds, macro, params):
     return p
 
 
-def estimator(kind, alpha, l1_ratio):
-    models = {'elastic_net':ElasticNet(alpha=alpha,l1_ratio=l1_ratio,max_iter=50000,tol=1e-7),
-              'ridge':Ridge(alpha=1.), 'lasso':Lasso(alpha=alpha,max_iter=50000,tol=1e-7)}
-    return make_pipeline(StandardScaler(), models[kind])
+def estimator(alpha, l1_ratio):
+    """Fit elastic net with both L1 and L2 regularization."""
+    if alpha <= 0 or not 0 < l1_ratio < 1:
+        raise ValueError('Elastic net requires alpha > 0 and 0 < l1_ratio < 1')
+    return make_pipeline(
+        StandardScaler(),
+        ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-7)
+    )
 
 
 def fit_forecast(panel, asof, features, alpha, l1_ratio):
-    known = panel.loc[(panel.target_month<=asof)&(panel.month>=pd.Period('2016-01','M'))]
-    known = known.dropna(subset=features+['dy']).copy()
+    """Train elastic net and evaluate earlier annual out-of-sample periods."""
+    model_factory = estimator(alpha, l1_ratio)
+    known = panel.loc[
+        (panel.target_month <= asof) &
+        (panel.month >= pd.Period('2016-01', 'M'))
+    ].dropna(subset=features + ['dy']).copy()
+    if known.empty:
+        raise ValueError('No complete training observations before the forecast month')
+
     metrics, errors = [], []
-    # Validate by year, using only earlier target months for training.
-    for year in [2021,2022,2023,2024]:
-        start = pd.Period(f'{year}-01','M')
-        train = known.loc[known.target_month<start]
-        valid = known.loc[(known.target_month>=start)&(known.target_month<=min(asof,pd.Period(f'{year}-12','M')))]
-        if len(train)==0 or len(valid)==0: continue
-        assert train.target_month.max()<valid.target_month.min()
-        for kind in ['elastic_net','ridge','lasso','no_change']:
-            pred = np.zeros(len(valid)) if kind=='no_change' else estimator(kind,alpha,l1_ratio).fit(train[features],train.dy).predict(valid[features])
-            metrics.append({'year':year,'model':kind,'train_rows':len(train),'validation_rows':len(valid),
-                            'last_training_target':str(train.target_month.max()),
-                            'first_validation_target':str(valid.target_month.min()),
-                            'rmse_yield_bp':float(np.sqrt(np.mean((valid.dy-pred)**2))*100)})
-            if kind=='elastic_net':
-                e=valid[['cusip','month','target_month','dy','next_return','COUPON','PRICE_EOM','DURATION']].copy()
-                e['predicted_dy_pp']=pred
-                # Return approximation for the downstream risk model.
-                e['predicted_return']=e.COUPON/e.PRICE_EOM/12-e.DURATION*pred/100
-                e['return_error']=e.next_return-e.predicted_return
-                errors.append(e)
-    model=estimator('elastic_net',alpha,l1_ratio).fit(known[features],known.dy)
-    now=panel.loc[panel.month==asof].dropna(subset=features).copy()
-    now['predicted_dy_pp']=model.predict(now[features])
-    standardized_intercept=float(model[-1].intercept_)
-    original_intercept=float(standardized_intercept-np.dot(model[-1].coef_/model[0].scale_,model[0].mean_))
-    coef=pd.DataFrame({'feature':features,'coefficient_per_standard_deviation':model[-1].coef_,
-                       'coefficient_original_units':model[-1].coef_/model[0].scale_,
-                       'training_mean':model[0].mean_,'training_scale':model[0].scale_})
-    coef['intercept_standardized_inputs']=standardized_intercept
-    coef['intercept_original_inputs']=original_intercept
-    return now,pd.DataFrame(metrics),pd.concat(errors,ignore_index=True),coef
+    # Start evaluation in 2019; refit annually with expanding training history.
+    for year in range(FIRST_OOS_YEAR, min(LAST_OOS_YEAR, asof.year) + 1):
+        first = pd.Period(f'{year}-01', 'M')
+        last = min(asof, pd.Period(f'{year}-12', 'M'))
+        train = known.loc[known.target_month < first]
+        valid = known.loc[known.target_month.between(first, last)]
+        if train.empty or valid.empty:
+            continue
+        assert train.target_month.max() < valid.target_month.min()
+
+        predictor = estimator(alpha, l1_ratio).fit(train[features], train.dy)
+        pred = predictor.predict(valid[features])
+        metrics.append({
+            'year': year, 'model': 'elastic_net', 'train_rows': len(train),
+            'validation_rows': len(valid),
+            'last_training_target': str(train.target_month.max()),
+            'first_validation_target': str(valid.target_month.min()),
+            'rmse_yield_bp': float(np.sqrt(np.mean((valid.dy - pred)**2)) * 100),
+        })
+
+        e = valid[['cusip', 'month', 'target_month', 'dy', 'next_return',
+                   'COUPON', 'PRICE_EOM', 'DURATION']].copy()
+        e['predicted_dy_pp'] = pred
+        # Approximate return forecast for subsequent portfolio risk estimation.
+        e['predicted_return'] = e.COUPON / e.PRICE_EOM / 12 - e.DURATION * pred / 100
+        e['return_error'] = e.next_return - e.predicted_return
+        errors.append(e)
+
+    model = model_factory.fit(known[features], known.dy)
+    now = panel.loc[panel.month == asof].dropna(subset=features).copy()
+    if now.empty:
+        raise ValueError(f'No bonds with complete predictors in {asof}')
+    now['predicted_dy_pp'] = model.predict(now[features])
+    standardized_intercept = float(model[-1].intercept_)
+    original_intercept = float(
+        standardized_intercept -
+        np.dot(model[-1].coef_ / model[0].scale_, model[0].mean_)
+    )
+    coef = pd.DataFrame({
+        'feature': features,
+        'coefficient_per_standard_deviation': model[-1].coef_,
+        'coefficient_original_units': model[-1].coef_ / model[0].scale_,
+        'training_mean': model[0].mean_,
+        'training_scale': model[0].scale_,
+    })
+    coef['intercept_standardized_inputs'] = standardized_intercept
+    coef['intercept_original_inputs'] = original_intercept
+    return (now, pd.DataFrame(metrics),
+            pd.concat(errors, ignore_index=True) if errors else pd.DataFrame(),
+            coef)
 
 
 def show_selected_bonds(now, coef, asof, cusips=None):
@@ -237,7 +269,7 @@ def main():
     parser.add_argument('--bonds',default=str(DEFAULT_BONDS))
     parser.add_argument('--fred',default=str(DEFAULT_FRED))
     parser.add_argument('--curve',default=str(DEFAULT_CURVE))
-    parser.add_argument('--asof',default='2024-12')
+    parser.add_argument('--asof',default='2025-11')
     parser.add_argument('--cusips',nargs='+',help='CUSIPs to display; default: 3 highest dollar-volume bonds. Does not restrict training.')
     parser.add_argument('--alpha',type=float,default=.001)
     parser.add_argument('--l1-ratio',type=float,default=.5)
@@ -255,8 +287,18 @@ def main():
     print(coef[['feature','coefficient_original_units']].to_string(index=False))
     print('Intercept:',coef.intercept_original_inputs.iloc[0])
     show_selected_bonds(now,coef,asof,args.cusips)
-    print('HISTORICAL VALIDATION RMSE (yield-change basis points):')
-    print(metrics[['year','model','rmse_yield_bp']].to_string(index=False))
+    print(f'\\nOUT-OF-SAMPLE ELASTIC-NET VALIDATION ({FIRST_OOS_YEAR}–{LAST_OOS_YEAR})')
+    print('Expanding training history; coefficients refitted at each year start.')
+    if metrics.empty:
+        print('No historical validation periods before the requested as-of month.')
+    else:
+        print(metrics[['year', 'train_rows', 'validation_rows', 'rmse_yield_bp']].to_string(index=False))
+        early = errors.sort_values(['target_month', 'cusip']).head(3).copy()
+        early['forecast_change_bp'] = early.predicted_dy_pp * 100
+        early['actual_change_bp'] = early.dy * 100
+        print('\\nFIRST THREE HISTORICAL OUT-OF-SAMPLE BOND FORECASTS')
+        print(early[['cusip', 'month', 'target_month', 'forecast_change_bp',
+                     'actual_change_bp']].to_string(index=False))
     print('Forecasts displayed; no output files saved.')
 
 
