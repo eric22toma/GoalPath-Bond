@@ -54,6 +54,10 @@ jobs:
         run: python audit_bond_yields.py
       - name: Real AGG / FRED / Treasury one-period smoke test
         run: python elastic_net_one_period.py --asof latest
+      - name: Earliest feasible H1 chronological test
+        run: |
+          python elastic_net_one_period.py --asof 2017-06
+          python elastic_net_one_period.py --asof 2017-06 --no-tune --backtest --backtest-start earliest --output-dir /tmp/goalpath-h1-earliest
       - name: H1 short backtest and optimizer input verification
         run: |
           python elastic_net_one_period.py --asof latest --no-tune --backtest --backtest-start 2025-09 --output-dir /tmp/goalpath-h1-ci
