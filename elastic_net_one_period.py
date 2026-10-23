@@ -17,6 +17,12 @@ from process_investable_universe import (process_all_data, history_for_features,
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
 OPTIONAL_FEATURES = ['forward_5y']
+BOND_COLUMNS = [
+    'cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
+    'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
+    'NCOUPS', 'nextcoup', 'DEFAULTED', 'CONV', 'BOND_TYPE',
+]
+MAX_CV_BONDS_PER_MONTH = 150
 CV_MIXING_GRID = (0.20, 0.40, 0.60, 0.80, 0.95)
 CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
@@ -97,9 +103,7 @@ def macro_features(curve, fred, core=None):
 
 
 def load_panel(prepared_bonds, macro, params):
-    cols = ['cusip','DATE','YIELD','MATURITY','RET_EOM','DURATION','COUPON',
-            'PRICE_EOM','COUPACC','AMOUNT_OUTSTANDING','T_DVolume',
-            'NCOUPS','nextcoup','DEFAULTED','CONV','BOND_TYPE']
+    cols = BOND_COLUMNS
     # Input yields are decimal fractions; yield changes use percentage points.
     p = prepared_bonds.loc[:, cols].copy()
     if p.DATE.isna().any() or p.cusip.str.strip().eq('').any():
@@ -142,6 +146,25 @@ def training_rows(panel, asof, features):
     ].dropna(subset=features + ['dy']).copy()
 
 
+def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
+    """Deterministically cap bonds per month for tractable hyperparameter tuning.
+
+    The final fitted model still uses every complete historical bond-month.
+    """
+    if limit <= 0:
+        return known
+    counts = known.groupby('month')['cusip'].transform('size')
+    if not (counts > limit).any():
+        return known
+    sample = known.copy()
+    ids = sample[['cusip', 'month']].astype(str)
+    sample['_cv_hash'] = pd.util.hash_pandas_object(ids, index=False).to_numpy()
+    sample['_cv_rank'] = sample.groupby('month')['_cv_hash'].rank(method='first')
+    return sample.loc[sample['_cv_rank'] <= limit].drop(
+        columns=['_cv_hash', '_cv_rank']
+    )
+
+
 def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
                      lambdas=CV_PENALTY_GRID):
     """Tune elastic net through expanding, chronological annual validation.
@@ -150,6 +173,12 @@ def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
     """
     if known.empty:
         raise ValueError('No historical yield-change observations for tuning')
+    original_rows = len(known)
+    known = limit_tuning_rows(known)
+    if len(known) < original_rows:
+        print(f'Tuning sample: {len(known):,} of {original_rows:,} bond-month rows '
+              f'(at most {MAX_CV_BONDS_PER_MONTH} per month); '
+              'final model refits on all observations.')
     years = sorted(set(known.target_month.dt.year))
     folds = []
     for year in years[1:]:
@@ -415,7 +444,9 @@ def main():
     if not 0 < args.alpha < 1 or args.penalty_lambda <= 0:
         parser.error('Require 0 < --alpha < 1 and --lambda > 0')
 
-    data = process_all_data(args.bonds, args.fred, args.curve)
+    data = process_all_data(
+        args.bonds, args.fred, args.curve, bond_columns=BOND_COLUMNS
+    )
     macro, curve_params = macro_features(
         history_for_features(data, 'curve'),
         history_for_features(data, 'fred')
