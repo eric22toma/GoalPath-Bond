@@ -21,3 +21,8 @@ jobs:
         run: python -m unittest -v test_goalpath_h1
       - name: Real AGG / FRED / Treasury one-period smoke test
         run: python elastic_net_one_period.py --asof latest
+      - name: H1 short backtest and optimizer input verification
+        run: |
+          python elastic_net_one_period.py --asof latest --no-tune --backtest --backtest-start 2025-09 --output-dir /tmp/goalpath-h1-ci
+          python -c "from robust_mvo_one_period import load_forecast_bundle; b,n,h,e,p = load_forecast_bundle('/tmp/goalpath-h1-ci/elastic_net_outputs.pkl'); assert len(n) > 0 and len(e) > 0; print('Optimizer bundle valid:', len(n), 'forecasts,', len(e), 'historical errors')"
+
