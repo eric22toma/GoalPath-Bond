@@ -20,4 +20,4 @@ jobs:
       - name: Data and forecast smoke tests
         run: python -m unittest -v test_goalpath_h1
       - name: Real AGG / FRED / Treasury one-period smoke test
-        run: python elastic_net_one_period.py --asof latest --no-tune
+        run: python elastic_net_one_period.py --asof latest
