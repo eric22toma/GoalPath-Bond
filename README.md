@@ -34,16 +34,21 @@ python3 elastic_net_one_period.py --asof latest
 
 This builds a predictor row per bond-month and trains a pooled elastic net to
 forecast the next calendar month's **change in bond yield**, not its total
-return. The default uses the most recent origin with complete predictors and
-observed next-month yields for comparison. An explicit date can be supplied
-with `--asof 2024-12`.
+return. The default selects the latest forecast origin for which the **following month's**
+quoted prices pass a basic cross-sectional movement check. The raw December
+2025 prices appear largely unchanged from November, so that month is flagged
+as unsuitable for performance assessment; by default, the latest verified
+comparison is October 2025 → November 2025. An explicit origin such as
+`--asof 2025-11` is allowed but will display the data-quality warning.
 
 The script tests 25 mixing-alpha/penalty-lambda combinations using chronological
-annual validation (up to three recent folds). Hyperparameter search samples up
+annual validation (up to three recent folds), or sequential monthly validation
+while the sample is too short for complete annual folds. Hyperparameter search samples up
 to 150 bond observations per month for tractable runtime; the final fit uses
 all complete historical training observations. The program reports the top
-settings, fitted coefficients, three bond-specific forecasts, observed yield
-changes if available, and a breakdown of predictor contributions.
+settings, fitted coefficients, three illustrative bond forecasts with actual
+yield and quoted-price changes (selected retrospectively *for display only*),
+full-sample error metrics for credible target months, and predictor contributions.
 
 Forward-rate inputs are optional (`--include-forward`). Override tuning with
 `--no-tune --alpha 0.5 --lambda 0.001` when debugging.
@@ -54,6 +59,12 @@ To evaluate monthly expanding-window forecasts and save output tables:
 python3 elastic_net_one_period.py --asof latest --backtest \
   --output-dir ~/GoalPath-H1-Results
 ```
+
+The backtest starts by default at the **earliest possible forecast target**
+after at least 12 observed training target months, instead of a hard-coded
+2019 start. Use `--backtest-start YYYY-MM` to override. Earlier observations
+remain in-sample training history. The full multi-year backtest can be
+computationally expensive because the model refits each month.
 
 The output directory must not already exist. With `--backtest`, the output
 includes `elastic_net_outputs.pkl`, which is the input format expected by
@@ -71,6 +82,12 @@ python3 robust_mvo_one_period.py ~/GoalPath-H1-Results/elastic_net_outputs.pkl \
 
 It currently tracks a candidate-subset proxy rather than the full AGG
 benchmark and does not yet implement the full investment-goal formulation.
+
+Run `python3 audit_bond_yields.py` to inspect the monthly AGG yield/price
+consistency. The 2025-12 source prices are especially suspicious: only
+17 of 8,291 matched bond pairs had both price and yield movements. This
+screen flags source-quality issues; it does **not** prove the underlying
+yield field or macro release timing is correct.
 
 ## Automated checks
 
