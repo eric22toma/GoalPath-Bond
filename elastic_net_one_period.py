@@ -23,6 +23,9 @@ BOND_COLUMNS = [
     'NCOUPS', 'nextcoup', 'DEFAULTED', 'CONV', 'BOND_TYPE',
 ]
 MAX_CV_BONDS_PER_MONTH = 150
+MIN_INITIAL_TRAIN_MONTHS = 12
+MIN_EVALUATION_PRICE_PAIRS = 100
+MIN_EVALUATION_PRICE_MOVEMENT_SHARE = 0.50
 CV_MIXING_GRID = (0.20, 0.40, 0.60, 0.80, 0.95)
 CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
@@ -119,9 +122,10 @@ def load_panel(prepared_bonds, macro, params):
         ix = p.loc[rows].index[p.loc[rows,'time_to_maturity']>0]
         p.loc[ix,'rich_cheap'] = 100*p.loc[ix,'YIELD']-sven_yield(p.loc[ix,'time_to_maturity'],params.loc[month])
     # Require the immediately following calendar month for realized targets.
-    future = p[['cusip','month','YIELD','RET_EOM']].copy()
+    future = p[['cusip','month','YIELD','RET_EOM','PRICE_EOM']].copy()
     future['month'] = future.month-1
-    future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return'})
+    future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return',
+                                    'PRICE_EOM':'next_price'})
     p = p.merge(future,on=['cusip','month'],how='left',validate='one_to_one')
     p['target_month'] = p.month+1
     p['dy'] = 100*(p.next_yield-p.YIELD)  # realized one-month yield change (pp)
@@ -189,7 +193,16 @@ def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
             folds.append((train.to_numpy(), valid.to_numpy(), year))
     folds = folds[-3:]
     if not folds:
-        raise ValueError('At least 12 earlier monthly targets and one later validation year are needed for tuning')
+        # Early history: validate the last three known months, one at a time.
+        # At least eight distinct prior targets precede each validation month.
+        months = sorted(known.target_month.unique())
+        for month in months[-3:]:
+            train = known.target_month < month
+            valid = known.target_month == month
+            if known.loc[train, 'target_month'].nunique() >= 8 and valid.any():
+                folds.append((train.to_numpy(), valid.to_numpy(), str(month)))
+    if not folds:
+        raise ValueError('Not enough chronological targets for elastic-net tuning')
 
     grid = []
     for mixing in alphas:
@@ -270,7 +283,7 @@ def rolling_backtest(panel, features, final_asof, start_target,
         if candidates.empty or not candidates[features].notna().all(axis=1).any():
             continue
         known = training_rows(panel, asof, features)
-        if known.empty:
+        if known.target_month.nunique() < MIN_INITIAL_TRAIN_MONTHS:
             continue
         if fixed is not None:
             mixing, penalty = fixed
@@ -326,11 +339,25 @@ def show_selected_bonds(now, coef, asof, cusips=None):
             raise ValueError(f'No complete predictor row at {asof} for CUSIP(s): {missing}')
         selected = now.set_index('cusip').loc[requested].reset_index()
     else:
-        # Historical examples with realized next-month yields are easiest to verify.
-        selected = (now.assign(_has_actual=now.next_yield.notna())
-                    .sort_values(['_has_actual', 'T_DVolume', 'cusip'],
-                                 ascending=[False, False, True])
-                    .head(3).drop(columns='_has_actual').copy())
+        # Diagnostic examples, not a security-selection rule for investing.
+        # Require an observed yield move and a changed next-month quoted price.
+        changed_yield = now.dy.notna() & now.dy.abs().gt(1e-10)
+        changed_price = (now.PRICE_EOM.notna() & now.next_price.notna() &
+                         (now.next_price-now.PRICE_EOM).abs().gt(1e-6))
+        demonstrable = now.loc[changed_yield & changed_price]
+        if len(demonstrable) >= 3:
+            selected = demonstrable.sort_values(
+                ['T_DVolume','cusip'], ascending=[False,True]
+            ).head(3).copy()
+            print('Examples selected after observing next-month yield and price '
+                  'movements, for diagnostic display only (not trading selection).')
+        else:
+            selected = (now.assign(_has_actual=now.next_yield.notna())
+                        .sort_values(['_has_actual','T_DVolume','cusip'],
+                                     ascending=[False,False,True])
+                        .head(3).drop(columns='_has_actual').copy())
+            print('WARNING: fewer than three bonds have both an observed yield '
+                  'and price move; check target-month data quality.')
 
     feature_names = coef['feature'].tolist()
     beta = coef.set_index('feature').loc[feature_names, 'coefficient_original_units']
@@ -398,6 +425,66 @@ def show_selected_bonds(now, coef, asof, cusips=None):
     return pd.DataFrame(summaries), selected[['cusip'] + feature_names].copy()
 
 
+def monthly_quote_coverage(panel):
+    """Observed month-to-month quote changes for identical CUSIPs.
+
+    A month with nearly identical quoted prices across the universe is
+    unsuitable as an evaluation target; this test never alters model inputs.
+    """
+    ordered = panel[['cusip','month','PRICE_EOM','YIELD']].sort_values(
+        ['cusip','month']).copy()
+    grouped = ordered.groupby('cusip', sort=False)
+    prior_month = grouped['month'].shift()
+    prev_price = grouped['PRICE_EOM'].shift()
+    prev_yield = grouped['YIELD'].shift()
+    consecutive = prior_month.eq(ordered.month - 1)
+    price_pairs = consecutive & ordered.PRICE_EOM.notna() & prev_price.notna()
+    yield_pairs = consecutive & ordered.YIELD.notna() & prev_yield.notna()
+    ordered['price_pair'] = price_pairs.astype(int)
+    ordered['price_moved'] = (
+        price_pairs & (ordered.PRICE_EOM-prev_price).abs().gt(1e-6)
+    ).astype(int)
+    ordered['yield_pair'] = yield_pairs.astype(int)
+    ordered['yield_moved'] = (
+        yield_pairs & (ordered.YIELD-prev_yield).abs().gt(1e-10)
+    ).astype(int)
+    summary = ordered.groupby('month').agg(
+        price_pairs=('price_pair','sum'),
+        price_moves=('price_moved','sum'),
+        yield_pairs=('yield_pair','sum'),
+        yield_moves=('yield_moved','sum')
+    )
+    summary['price_move_share'] = (summary.price_moves /
+                                   summary.price_pairs.replace(0,np.nan))
+    summary['yield_move_share'] = (summary.yield_moves /
+                                   summary.yield_pairs.replace(0,np.nan))
+    return summary
+
+
+def trustworthy_target_month(stats, month):
+    """Conservative data-coverage screen, not a predictive-performance test."""
+    if month not in stats.index:
+        return False
+    row = stats.loc[month]
+    return (row.price_pairs >= MIN_EVALUATION_PRICE_PAIRS and
+            row.price_move_share >= MIN_EVALUATION_PRICE_MOVEMENT_SHARE)
+
+
+def first_backtest_target(panel, features, final_asof):
+    """Find earliest month with 12 observed training targets and forecast inputs."""
+    available = panel[features].notna().all(axis=1)
+    targets = panel.loc[available & panel.dy.notna(), 'target_month']
+    unique_targets = sorted(targets.unique())
+    if len(unique_targets) < MIN_INITIAL_TRAIN_MONTHS:
+        raise ValueError('Insufficient observed months for initial training')
+    earliest_origin = unique_targets[MIN_INITIAL_TRAIN_MONTHS-1]
+    origins = panel.loc[available & panel.month.ge(earliest_origin) &
+                        panel.month.lt(final_asof), 'month']
+    if origins.empty:
+        raise ValueError('No eligible out-of-sample months after warm-up')
+    return origins.min() + 1
+
+
 def data_readiness(panel, features, asof):
     """Count complete bond predictors in the forecast month."""
     rows = panel.loc[panel.month == asof]
@@ -435,8 +522,8 @@ def main():
                         help='Use --alpha and --lambda instead of chronological CV')
     parser.add_argument('--backtest', action='store_true',
                         help='Evaluate past one-month forecasts with monthly refits')
-    parser.add_argument('--backtest-start', default='2019-01',
-                        help='First out-of-sample target month (default 2019-01)')
+    parser.add_argument('--backtest-start', default='earliest',
+                        help='First OOS target month YYYY-MM, or earliest with 12 training months (default)')
     parser.add_argument('--output-dir', type=Path,
                         help='New directory for forecasts, tuning results, and optional backtest')
     args = parser.parse_args()
@@ -473,16 +560,38 @@ def main():
         raise ValueError(
             f'No complete bond predictor rows. Nonmissing values by predictor: {counts}'
         )
+    quote_stats = monthly_quote_coverage(panel)
     if args.asof == 'latest':
         with_actual = panel.loc[complete & panel.dy.notna(), 'month']
-        asof = with_actual.max() if not with_actual.empty else eligible_months.max()
+        good_origins = [m for m in sorted(with_actual.unique())
+                        if trustworthy_target_month(quote_stats, m+1)]
+        asof = good_origins[-1] if good_origins else eligible_months.max()
     else:
         asof = pd.Period(args.asof, freq='M')
+    target = asof + 1
+    if target in quote_stats.index:
+        q = quote_stats.loc[target]
+        print(f'TARGET-MONTH QUOTE CHECK {target}: '
+              f'{int(q.price_moves):,}/{int(q.price_pairs):,} bonds '
+              f'changed quoted price; {int(q.yield_moves):,}/'
+              f'{int(q.yield_pairs):,} changed yield')
+        if not trustworthy_target_month(quote_stats, target):
+            print('WARNING: Target-month pricing appears stale or incomplete. '
+                  'Realized-yield comparisons are not reliable for this month.')
+    else:
+        print(f'Target month {target} has no matching quote observations yet.')
     if not data_readiness(panel, features, asof):
         raise ValueError(f'Cannot forecast {asof}: missing required predictors. '
                          'Try --asof latest or omit --include-forward.')
 
-    backtest_start = pd.Period(args.backtest_start, freq='M')
+    backtest_start = (
+        first_backtest_target(panel, features, asof)
+        if args.backtest_start == 'earliest'
+        else pd.Period(args.backtest_start, freq='M')
+    ) if args.backtest else None
+    if args.backtest:
+        print(f'Out-of-sample test begins at {backtest_start}, after at least '
+              f'{MIN_INITIAL_TRAIN_MONTHS} observed training target months.')
     print(f'Bond data range: {months.min()} through {months.max()}')
     print(f'Forecast horizon: H=1 month ({asof} -> {asof + 1})')
     print(f'Predictors ({len(features)}): {", ".join(features)}')
@@ -515,6 +624,20 @@ def main():
     print('Elastic-net coefficients (original predictor units):')
     print(coefficients[['feature', 'coefficient_original_units']].to_string(index=False))
     show_selected_bonds(now, coefficients, asof, args.cusips)
+
+    evaluated = now.loc[now.dy.notna()].copy()
+    if not evaluated.empty:
+        flat = int(evaluated.dy.abs().le(1e-10).sum())
+        valid = trustworthy_target_month(quote_stats, asof+1)
+        print(f'ALL-BOND EVALUATION: {len(evaluated):,} realized yield changes; '
+              f'{flat:,} unchanged ({flat/len(evaluated):.1%}).')
+        if valid:
+            residual_bp = (evaluated.dy-evaluated.predicted_dy_pp)*100
+            print(f'  Full-month RMSE: {np.sqrt(np.mean(residual_bp**2)):.2f} bp; '
+                  f'MAE: {np.mean(np.abs(residual_bp)):.2f} bp.')
+        else:
+            print('  RMSE omitted from summary because target price quotes fail '
+                  'the data-quality screen.')
 
     history_errors = pd.DataFrame()
     if args.backtest:
