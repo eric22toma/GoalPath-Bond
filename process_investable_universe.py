@@ -31,7 +31,7 @@ NUMERIC_COLUMNS = (
 PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 
-def load_data(csv_path=DEFAULT_BONDS):
+def load_data(csv_path=DEFAULT_BONDS, usecols=None):
     """Load raw bond cells and a type-converted copy.
 
     Percent-marked yields and returns become decimals. Other numeric units
@@ -41,7 +41,8 @@ def load_data(csv_path=DEFAULT_BONDS):
     zipped = Path(str(path) + '.zip')
     if path.suffix == '.csv' and not path.is_file() and zipped.is_file():
         path = zipped
-    raw = pd.read_csv(path, dtype=str, keep_default_na=False,
+    # Model callers can load only required columns to control memory use.
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False, usecols=usecols,
                       encoding='utf-8-sig', skip_blank_lines=False)
     required = {'cusip', 'DATE'}
     if not required.issubset(raw.columns):
@@ -125,13 +126,13 @@ def load_numeric_table(csv_path, sentinel=None):
 def process_all_data(bond_path=DEFAULT_BONDS,
                      fred_path=DEFAULT_FRED,
                      curve_path=DEFAULT_CURVE,
-                     core_path=None):
+                     core_path=None, bond_columns=None):
     """Load datasets and align prepared tables over overlapping months.
 
     Raw data stays unchanged. Historical warm-up observations are kept
     separately for downstream feature generation.
     """
-    data = {'bonds': load_data(bond_path),
+    data = {'bonds': load_data(bond_path, usecols=bond_columns),
             'fred': load_numeric_table(fred_path),
             'curve': load_numeric_table(curve_path, sentinel=-999.99)}
     if core_path is not None:
