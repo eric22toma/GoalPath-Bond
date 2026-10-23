@@ -21,6 +21,35 @@ jobs:
         run: python -m unittest -v test_goalpath_h1
       - name: Standalone full-data processing check
         run: python process_investable_universe.py
+      - name: Audit month-over-month bond yields and prices
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          path = '01_Source_Data/Investable_universe_AGG.csv.zip'
+          df = pd.read_csv(path, usecols=['cusip','DATE','YIELD','PRICE_EOM','RET_EOM'], dtype=str)
+          df['DATE'] = pd.to_datetime(df.DATE)
+          for k in ['YIELD','RET_EOM']:
+              df[k] = pd.to_numeric(df[k].str.strip().str.rstrip('%'), errors='coerce') / 100
+          df['PRICE_EOM'] = pd.to_numeric(df.PRICE_EOM, errors='coerce')
+          df['month'] = df.DATE.dt.to_period('M')
+          df = df.sort_values(['cusip','month'])
+          prev_month = df.groupby('cusip').month.shift()
+          consecutive = prev_month.eq(df.month - 1)
+          dy = df.YIELD - df.groupby('cusip').YIELD.shift()
+          dp = df.PRICE_EOM - df.groupby('cusip').PRICE_EOM.shift()
+          prev_price = df.groupby('cusip').PRICE_EOM.shift()
+          for month in ['2024-12', '2025-01', '2025-10', '2025-11', '2025-12']:
+              sel = df.month.eq(month)&consecutive & dy.notna()
+              moved = sel & dy.ne(0)
+              flat = sel & dy.eq(0)
+              price_changed = dp.abs().gt(1e-6) & prev_price.notna() & df.PRICE_EOM.notna()
+              print('AUDIT',month,'pairs=',int(sel.sum()),'flat_yield=',int(flat.sum()),'changed_yield=',int(moved.sum()),'changed_price_while_flat_yield=',int((flat&price_changed).sum()),'moved_yield_and_price=',int((moved&price_changed).sum()))
+              examples = df.loc[moved, ['cusip','YIELD','PRICE_EOM']].head(3)
+              print('NONZERO_YIELD_EXAMPLES',month, examples.to_dict('records'))
+          sel = consecutive & dy.notna()
+          print('AUDIT ALL','pairs=',int(sel.sum()),'flat_yield=',int((sel&dy.eq(0)).sum()),'nonzero_yield=',int((sel&dy.ne(0)).sum()),'price_changes_with_flat_yield=',int((sel&dy.eq(0)&dp.abs().gt(1e-6)).sum()))
+          print('YIELD change bp quantiles:', (dy.loc[sel]*10000).quantile([0,.01,.05,.5,.95,.99,1]).to_dict())
+          PY
       - name: Real AGG / FRED / Treasury one-period smoke test
         run: python elastic_net_one_period.py --asof latest
       - name: H1 short backtest and optimizer input verification
