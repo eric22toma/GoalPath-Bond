@@ -19,6 +19,8 @@ jobs:
         run: python -m py_compile process_investable_universe.py elastic_net_one_period.py robust_mvo_one_period.py
       - name: Data and forecast smoke tests
         run: python -m unittest -v test_goalpath_h1
+      - name: Standalone full-data processing check
+        run: python process_investable_universe.py
       - name: Real AGG / FRED / Treasury one-period smoke test
         run: python elastic_net_one_period.py --asof latest
       - name: H1 short backtest and optimizer input verification
