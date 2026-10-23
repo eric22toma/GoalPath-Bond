@@ -50,6 +50,8 @@ jobs:
           print('AUDIT ALL','pairs=',int(sel.sum()),'flat_yield=',int((sel&dy.eq(0)).sum()),'nonzero_yield=',int((sel&dy.ne(0)).sum()),'price_changes_with_flat_yield=',int((sel&dy.eq(0)&dp.abs().gt(1e-6)).sum()))
           print('YIELD change bp quantiles:', (dy.loc[sel]*10000).quantile([0,.01,.05,.5,.95,.99,1]).to_dict())
           PY
+      - name: Audit realized AGG yield changes and quoted prices
+        run: python audit_bond_yields.py
       - name: Real AGG / FRED / Treasury one-period smoke test
         run: python elastic_net_one_period.py --asof latest
       - name: H1 short backtest and optimizer input verification
