@@ -11,6 +11,7 @@ from process_investable_universe import load_data
 from elastic_net_one_period import (
     FEATURES, estimator, training_rows, tune_elastic_net, fit_forecast,
     rolling_backtest, rolling_metrics, limit_tuning_rows, load_panel,
+    monthly_quote_coverage, trustworthy_target_month, first_backtest_target,
 )
 
 
@@ -112,6 +113,45 @@ class DataChecks(unittest.TestCase):
         self.assertTrue((out.target_month <= pd.Period("2020-11")).all())
         self.assertTrue(out.return_error.notna().all())
         self.assertTrue(np.isfinite(rolling_metrics(out).rmse_yield_bp).all())
+
+    def test_earliest_possible_backtest_uses_prior_12_months(self):
+        sample = synthetic_panel()
+        initial = first_backtest_target(
+            sample, ['level', 'time_to_maturity'],
+            pd.Period('2018-06','M')
+        )
+        self.assertEqual(initial, pd.Period('2017-02','M'))
+
+    def test_early_chronological_cv_before_annual_folds(self):
+        panel = synthetic_panel()
+        known = training_rows(
+            panel, pd.Period('2017-01','M'),
+            ['level', 'time_to_maturity']
+        )
+        self.assertEqual(known.target_month.nunique(), 12)
+        mix, penalty, score, folds, table = tune_elastic_net(
+            known, ['level','time_to_maturity'],
+            alphas=(0.2,0.8), lambdas=(1e-3, 1e-2)
+        )
+        self.assertEqual(len(table),4)
+        self.assertTrue(folds)
+        self.assertTrue(all(str(m) <= '2017-01' for m in folds))
+
+    def test_stale_target_prices_trigger_quality_warning(self):
+        sample = synthetic_panel()
+        sample['PRICE_EOM'] = 100.0
+        flat = monthly_quote_coverage(sample)
+        self.assertFalse(trustworthy_target_month(flat, pd.Period('2020-06','M')))
+
+        sample['PRICE_EOM'] = (
+            100.0 + (sample.month.astype('int64') -
+                     sample.month.astype('int64').min())*0.1
+        )
+        changed = monthly_quote_coverage(sample)
+        # Only five synthetic bonds: use direct share to test the computed statistic.
+        self.assertEqual(changed.loc[pd.Period('2020-06','M'), 'price_pairs'],5)
+        self.assertAlmostEqual(changed.loc[pd.Period('2020-06','M'),'price_move_share'],1.0)
+
 
     def test_tuning_limit_does_not_drop_months(self):
         sample = synthetic_panel()
