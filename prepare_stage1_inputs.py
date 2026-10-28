@@ -352,7 +352,7 @@ def show_stage1_input_summary(stage, preview=5):
     factor_cov = np.asarray(stage['sigma_f'], dtype=float)
     candidate_q = np.asarray(stage['candidate_covariance'], dtype=float)
 
-    print('\\n' + '=' * 76)
+    print('\n' + '=' * 76)
     print('STAGE 1: FIVE REQUIRED INPUTS (DELIVERABLE 3, SECTION 5.2)')
     print('=' * 76)
     print(f'Decision month: {stage["asof"]}   Forecast target: {stage["target_month"]}')
@@ -385,10 +385,10 @@ def show_stage1_input_summary(stage, preview=5):
     show = e[['cusip','mu','benchmark_weight','current_weight','duration']].head(preview).copy()
     show['benchmark_dollars'] = show.benchmark_weight * capital
     show['pretrade_dollars'] = show.current_weight * capital
-    print(f'\\nSample of first {len(show)} eligible bonds '
+    print(f'\nSample of first {len(show)} eligible bonds '
           '(all rows saved in eligible_inputs.csv):')
     print(show.to_string(index=False, float_format=lambda v: f'{v:,.6f}'))
-    print('\\nPortfolio convention: optimizer invests 100% of the initial '
+    print('\nPortfolio convention: optimizer invests 100% of the initial '
           'capital in <= K bonds.')
     print('Stage 1 transaction fees are charged in the objective and reported '
           'separately; they are not deducted from the invested $100,000.')
