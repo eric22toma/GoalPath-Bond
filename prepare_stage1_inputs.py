@@ -156,6 +156,31 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     return np.maximum(psi.astype(float), 1e-10)
 
 
+def reduced_tracking_objective(stage):
+    """Precompute the candidate covariance and FULL-benchmark quadratic terms.
+
+    The reduced matrix is candidate_count squared, never eligible_count squared.
+    Noncandidate benchmark exposures are retained in the linear and constant
+    terms so tracking is evaluated against the complete eligible benchmark.
+    """
+    c = stage['candidates']
+    sigma_f = np.asarray(stage['sigma_f'], dtype=float)
+    B = c[[f'B_{name}' for name in FACTOR_NAMES]].to_numpy(float)
+    mu = c.mu.to_numpy(float)
+    psi = c.psi.to_numpy(float)
+    b = c.benchmark_weight.to_numpy(float)
+    factor_b = np.asarray(stage['benchmark_factor'], dtype=float)
+    mu_b = float(stage['benchmark_mu'])
+    Q = B @ sigma_f @ B.T + np.diag(psi)
+    H = Q + np.outer(mu, mu)
+    linear = -2.0 * (B @ sigma_f @ factor_b + mu * mu_b + psi * b)
+    constant = (
+        factor_b @ sigma_f @ factor_b + mu_b ** 2 +
+        psi @ (b ** 2) + stage['outside_benchmark_psi_constant']
+    )
+    return Q, (H+H.T)/2, linear, float(constant)
+
+
 def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
                  prior_portfolio=None, candidate_count=60,
                  lookback=RISK_WINDOW_MONTHS):
@@ -285,6 +310,11 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         'benchmark_positive_weights': benchmark_matched,
         'forced_outside_holdings': forced_outside
     }
+    Q, H, g, offset = reduced_tracking_objective(out)
+    out['candidate_covariance'] = Q
+    out['quadratic_matrix'] = H
+    out['quadratic_linear'] = g
+    out['quadratic_constant'] = offset
     return out
 
 
@@ -317,6 +347,13 @@ def main():
         pickle.dump(stage, handle)
     stage['eligible'].to_csv(args.output_dir / 'eligible_inputs.csv', index=False)
     stage['candidates'].to_csv(args.output_dir / 'candidate_inputs.csv', index=False)
+    labels = stage['candidates'].cusip.tolist()
+    pd.DataFrame(stage['candidate_covariance'], index=labels, columns=labels).to_csv(
+        args.output_dir / 'candidate_covariance.csv'
+    )
+    pd.DataFrame(stage['sigma_f'], index=FACTOR_NAMES, columns=FACTOR_NAMES).to_csv(
+        args.output_dir / 'factor_covariance.csv'
+    )
     report = {
         'asof': stage['asof'], 'target_month': stage['target_month'],
         'benchmark': stage['benchmark_type'],
@@ -332,7 +369,7 @@ def main():
     (args.output_dir / 'stage1_report.json').write_text(json.dumps(report, indent=2)+'\n')
     print('STAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
     print(json.dumps(report, indent=2))
-    print('Saved: stage1_inputs.pkl, eligible_inputs.csv, candidate_inputs.csv')
+    print('Saved: stage1_inputs.pkl, eligible_inputs.csv, candidate_inputs.csv, candidate_covariance.csv, factor_covariance.csv')
     if args.benchmark_proxy:
         print('WARNING: outstanding x price is NOT the original eligible AGG benchmark.')
 
