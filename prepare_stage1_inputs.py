@@ -1,10 +1,13 @@
 """Stage 1 inputs for GoalPath-Bond (Deliverable 3, Section 5.2).
 
-Construct the eligible bond universe, active-tracking return and factor-risk
-inputs, benchmark weights, pre-trade holdings and monthly duration exposures.
-No optimizer or forecasts are fitted here.
+Construct expected returns, three-factor covariance, benchmark and
+starting weights, and duration in a separate staging bundle. With no
+arguments, reuse the existing elastic-net code to forecast H=1 and write
+stage1_outputs/inputs/stage1_inputs.pkl, ready for the optimizer.
 
-Usage:
+VS Code: click Run Python File; no arguments required.
+
+Optional saved forecast bundle:
   python prepare_stage1_inputs.py forecasts/elastic_net_outputs.pkl \
       --benchmark-proxy --output-dir stage1_inputs_demo
 
@@ -463,9 +466,9 @@ def main():
     (args.output_dir / 'stage1_report.json').write_text(
         json.dumps(report, indent=2) + '\n'
     )
-    print('\\nSTAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
+    print('\nSTAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
     print(json.dumps(report, indent=2))
-    print(f'\\nSUCCESS: Stage 1 inputs saved to '
+    print(f'\nSUCCESS: Stage 1 inputs saved to '
           f'{(args.output_dir / "stage1_inputs.pkl").resolve()}')
     print('Run robust_mvo_one_period.py next using the VS Code Run arrow.')
     if proxy:
