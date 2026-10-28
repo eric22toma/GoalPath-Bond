@@ -193,7 +193,7 @@ def reduced_tracking_objective(stage):
 
 def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
                  prior_portfolio=None, candidate_count=60,
-                 lookback=RISK_WINDOW_MONTHS):
+                 lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0):
     """Create full-benchmark Stage 1 inputs, with a reduced tradable candidate set."""
     asof = pd.Period(bundle['asof'], freq='M')
     if pd.Period(bundle['target_month'], freq='M') != asof + 1:
@@ -210,6 +210,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         raise ValueError('Snapshot month does not agree with as-of month')
     if (benchmark_weights is None) == (not benchmark_proxy):
         raise ValueError('Supply exactly one of benchmark_weights or benchmark_proxy=True')
+    if not np.isfinite(initial_capital) or initial_capital <= 0:
+        raise ValueError('initial_capital must be positive and finite')
 
     # Section 5.2: only bonds with at least one year to maturity are investable.
     eligible = now.loc[
@@ -253,11 +255,16 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
     )
 
     if prior_portfolio is None:
-        # Only initial demonstration: a hypothetical portfolio equal to the
-        # current eligible benchmark before the first rebalance.
-        eligible['current_weight'] = eligible.benchmark_weight
+        # First investment: the investor starts with $100,000 in uninvested
+        # funding, NOT with thousands of AGG constituent positions.
+        # Stage 1 uses normalized bond weights. The first trade purchases
+        # 100% of capital in at most K bonds; transaction costs are objective
+        # penalties and are reported as fees paid separately from capital.
+        # A cash budget and self-financing constraint are Stage 2 additions.
+        eligible['current_weight'] = 0.0
+        initial_cash_weight = 1.0
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
-        holdings_type = 'initial_hypothetical_benchmark'
+        holdings_type = 'initial_cash_investment_zero_bond_holdings'
     else:
         prior = read_weight_file(prior_portfolio)
         old_snapshot = now.set_index('cusip')
@@ -275,6 +282,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         forced_outside = prior.loc[~prior.cusip.isin(eligible.cusip),
                                   ['cusip','current_weight']].copy()
         holdings_type = 'previous_posttrade_weights_drifted_by_current_month_returns'
+        initial_cash_weight = 0.0
 
     liquid = eligible.loc[eligible.T_DVolume.notna()].sort_values(
         ['T_DVolume','cusip'], ascending=[False,True]
@@ -300,7 +308,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         1. - candidates.current_weight.sum()
     )
     if not np.isclose(
-        eligible.current_weight.sum() + forced_outside.current_weight.sum(), 1.0,
+        eligible.current_weight.sum() + forced_outside.current_weight.sum()
+        + initial_cash_weight, 1.0,
         atol=1e-8
     ):
         raise ValueError('Initial/pre-trade holdings are not fully invested')
@@ -309,6 +318,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
     out = {
         'asof': str(asof), 'target_month': str(asof+1),
         'benchmark_type': benchmark_type, 'holdings_type': holdings_type,
+        'initial_capital': float(initial_capital),
+        'pretrade_cash_weight': float(initial_cash_weight),
         'eligible': eligible, 'candidates': candidates,
         'sigma_f': sigma_f, 'tenor_factor_betas': tenor_coef,
         'benchmark_factor': bload, 'benchmark_mu': bmu,
@@ -326,6 +337,62 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
     out['quadratic_linear'] = g
     out['quadratic_constant'] = offset
     return out
+
+
+def show_stage1_input_summary(stage, preview=5):
+    """Print Section 5.2's five inputs, without a massive N-by-N covariance."""
+    e = stage['eligible']
+    c = stage['candidates']
+    capital = float(stage['initial_capital'])
+    b = e.benchmark_weight.to_numpy(float)
+    current = e.current_weight.to_numpy(float)
+    factor_cov = np.asarray(stage['sigma_f'], dtype=float)
+    candidate_q = np.asarray(stage['candidate_covariance'], dtype=float)
+
+    print('\\n' + '=' * 76)
+    print('STAGE 1: FIVE REQUIRED INPUTS (DELIVERABLE 3, SECTION 5.2)')
+    print('=' * 76)
+    print(f'Decision month: {stage["asof"]}   Forecast target: {stage["target_month"]}')
+    print(f'Capital: ${capital:,.2f}   Eligible bonds: {len(e):,}   '
+          f'Tradable candidates: {len(c):,}')
+    print('1. EXPECTED RETURNS mu-hat_t: '
+          'mu_i = YIELD_i/12 - D_i * forecast_delta_y_i (decimal units)')
+    print(f'   Shape: ({len(e):,},)   Range: {e.mu.min():+.6f} to {e.mu.max():+.6f} '
+          f'per month; weighted benchmark mu = {stage["benchmark_mu"]:+.6f}')
+    print('2. RETURN COVARIANCE Q_t = B_t Sigma_f,t B_t.T + Psi_t')
+    print(f'   Full {len(e):,} x {len(e):,} Q is represented by '
+          '3 factor loadings per bond plus diagonal residual variances.')
+    print(f'   Materialized candidate covariance Q: {candidate_q.shape}')
+    print('   Monthly Treasury factor covariance Sigma_f (3 x 3):')
+    print(pd.DataFrame(factor_cov, index=FACTOR_NAMES,
+                       columns=FACTOR_NAMES).to_string(float_format=lambda x: f'{x:.7g}'))
+    print('3. BENCHMARK WEIGHTS b_t: full eligible universe')
+    print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; '
+          f'nonzero constituents = {(b > 0).sum():,}')
+    print('4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
+    print(f'   {stage["holdings_type"]}; bond weights sum = {current.sum():.6f}; '
+          f'cash/funding = {stage["pretrade_cash_weight"]:.6f}')
+    print(f'   Pre-trade bond value: ${capital * current.sum():,.2f}; '
+          f'available uninvested funding: '
+          f'${capital * stage["pretrade_cash_weight"]:,.2f}')
+    print('5. DURATION D_t: current WRDS bond duration observations')
+    print(f'   Individual durations: {e.duration.min():.2f} to '
+          f'{e.duration.max():.2f} years; '
+          f'benchmark duration = {stage["benchmark_duration"]:.4f} years')
+    show = e[['cusip','mu','benchmark_weight','current_weight','duration']].head(preview).copy()
+    show['benchmark_dollars'] = show.benchmark_weight * capital
+    show['pretrade_dollars'] = show.current_weight * capital
+    print(f'\\nSample of first {len(show)} eligible bonds '
+          '(all rows saved in eligible_inputs.csv):')
+    print(show.to_string(index=False, float_format=lambda v: f'{v:,.6f}'))
+    print('\\nPortfolio convention: optimizer invests 100% of the initial '
+          'capital in <= K bonds.')
+    print('Stage 1 transaction fees are charged in the objective and reported '
+          'separately; they are not deducted from the invested $100,000.')
+    if stage['benchmark_type'] != 'filtered_AGG_original_weights':
+        print('WARNING: This benchmark is an OUTSTANDING x PRICE PROXY, '
+              'not actual AGG ETF holdings.')
+    print('=' * 76)
 
 
 def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
@@ -408,11 +475,15 @@ def main():
     parser.add_argument('--candidates', type=int, default=20,
                         help='Number of candidate bonds (VS Code default: 20)')
     parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
+    parser.add_argument('--capital', type=float, default=100_000.0,
+                        help='Initial investment in dollars (default $100,000)')
     parser.add_argument('--output-dir', type=Path, default=DEFAULT_STAGE_DIR,
                         help='Output folder, default: stage1_outputs/inputs')
     args = parser.parse_args()
     if args.candidates < 2 or args.lookback < MIN_FACTOR_OBSERVATIONS + 1:
         parser.error('Require candidates >= 2 and lookback >= 13')
+    if not np.isfinite(args.capital) or args.capital <= 0:
+        parser.error('Require positive --capital')
     if args.no_tune and not (0 < args.alpha < 1 and args.penalty_lambda > 0):
         parser.error('Require 0 < alpha < 1 and lambda > 0')
 
@@ -437,7 +508,8 @@ def main():
         source, benchmark_weights=args.benchmark_weights,
         benchmark_proxy=proxy,
         prior_portfolio=args.prior_portfolio,
-        candidate_count=args.candidates, lookback=args.lookback
+        candidate_count=args.candidates, lookback=args.lookback,
+        initial_capital=args.capital
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with (args.output_dir / 'stage1_inputs.pkl').open('wb') as handle:
@@ -455,6 +527,11 @@ def main():
         'asof': stage['asof'], 'target_month': stage['target_month'],
         'benchmark': stage['benchmark_type'],
         'pretrade_holdings': stage['holdings_type'],
+        'initial_capital_dollars': stage['initial_capital'],
+        'initial_uninvested_funding_dollars':
+            stage['initial_capital'] * stage['pretrade_cash_weight'],
+        'pretrade_bond_value_dollars':
+            stage['initial_capital'] * stage['eligible'].current_weight.sum(),
         'eligible_bonds': len(stage['eligible']),
         'benchmark_constituents_with_positive_weight': stage['benchmark_positive_weights'],
         'tradable_candidates': len(stage['candidates']),
@@ -473,6 +550,7 @@ def main():
     print('Run robust_mvo_one_period.py next using the VS Code Run arrow.')
     if proxy:
         print('WARNING: proxy benchmark is not the actual eligible AGG benchmark.')
+    show_stage1_input_summary(stage)
 
 
 if __name__ == '__main__':
