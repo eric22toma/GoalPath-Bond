@@ -67,10 +67,40 @@ remain in-sample training history. The full multi-year backtest can be
 computationally expensive because the model refits each month.
 
 The output directory must not already exist. With `--backtest`, the output
-includes `elastic_net_outputs.pkl`, which is the input format expected by
-`robust_mvo_one_period.py`.
+includes `elastic_net_outputs.pkl`, which can be passed directly to
+`prepare_stage1_inputs.py`; otherwise staging invokes the existing
+elastic-net functions itself.
 
 ## Stage 1 tracking initialization and one-month optimization
+
+### Run directly in VS Code
+
+With the repository open and Python/Gurobi dependencies installed, use the
+**Run Python File** arrow in this order:
+
+1. `process_investable_universe.py` — reports data loading.
+2. `elastic_net_one_period.py` — displays the one-month forecasts (unchanged).
+3. `prepare_stage1_inputs.py` — **no arguments required**. Because the
+   elastic-net Run button doesn't save a pickle by default, staging calls the
+   existing elastic-net functions to rebuild its own H=1 forecast and compute
+   portfolio inputs. It automatically uses an **explicitly labeled proxy**
+   benchmark if no AGG constituent-weight file has been supplied.
+4. `robust_mvo_one_period.py` — **no arguments required**. Reads the staging
+   file written by Step 3 and solves the Stage 1 portfolio.
+
+Files are written under `stage1_outputs/inputs/` and
+`stage1_outputs/results/` (ignored by Git). Re-running either script updates
+its own generated files, so you don't need to create new directories.
+For a fast demonstration, defaults are 20 candidate bonds, K=5, 0.1% trading
+costs, and a ±0.5-year duration band, using the relax-and-fix method.
+Both Python scripts resolve paths from the repository location rather than
+the current VS Code working directory.
+
+This automatic staging re-fits the elastic net because the unchanged
+forecasting script prints but does not save a bundle on an ordinary Run.
+When a saved bundle exists, optionally provide its file path to avoid
+re-fitting. To see the source data's first rows, run the processing script
+independently (no saved preprocessing files are required).
 
 Section 5 of Deliverable 3 defines the H=1 objective as expected **squared
 active return**, not a separate reward for exceeding expected benchmark return:
@@ -104,7 +134,8 @@ python3 prepare_stage1_inputs.py ~/GoalPath-H1-Results/elastic_net_outputs.pkl \
     --candidates 60 --output-dir ~/GoalPath-Stage1-Inputs
 ```
 
-For **mechanics testing only**, use the explicit `--benchmark-proxy` option.
+For **mechanics testing only**, the no-argument VS Code run defaults to the
+explicitly labeled proxy; the `--benchmark-proxy` option is also available.
 This normalizes outstanding amount times price, not actual AGG holdings:
 
 ```bash
@@ -140,7 +171,9 @@ cross-month quote-consistency checks were retained in CI.
 
 ## Automated checks
 
-GitHub Actions runs `python -m py_compile`, the H=1 regression suite
+GitHub Actions additionally checks the two no-argument VS Code entry points
+with real source data and a Gurobi Stage 1 solve. It also runs
+`python -m py_compile`, the H=1 regression suite
 (`python -m unittest -v test_goalpath_h1`), and an elastic-net forecasting
 smoke test against the repository's real source files. Successful execution
 does not establish data quality, predictive validity, or absence of
