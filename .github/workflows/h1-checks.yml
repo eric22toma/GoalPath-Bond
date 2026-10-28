@@ -14,9 +14,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: python -m pip install numpy pandas scipy scikit-learn
+        run: python -m pip install numpy pandas scipy scikit-learn gurobipy
       - name: Syntax check
-        run: python -m py_compile process_investable_universe.py elastic_net_one_period.py robust_mvo_one_period.py
+        run: python -m py_compile process_investable_universe.py elastic_net_one_period.py prepare_stage1_inputs.py robust_mvo_one_period.py
       - name: Data and forecast smoke tests
         run: python -m unittest -v test_goalpath_h1
       - name: Verify AGG holdings and credit-rating input fields
@@ -30,6 +30,8 @@ jobs:
           print('BOND_REQUIRED_COLUMNS:',{k:k in cols for k in check})
           print('WEIGHT_FIELD_CANDIDATES:',[k for k in cols if 'weight' in k.lower() or 'holding' in k.lower()])
           PY
+      - name: Stage 1 unit and optimizer tests
+        run: python -m unittest -v test_stage1
       - name: Standalone full-data processing check
         run: python process_investable_universe.py
       - name: Audit month-over-month bond yields and prices
@@ -72,5 +74,7 @@ jobs:
       - name: H1 short backtest and optimizer input verification
         run: |
           python elastic_net_one_period.py --asof latest --no-tune --backtest --backtest-start 2025-09 --output-dir /tmp/goalpath-h1-ci
-          python -c "from robust_mvo_one_period import load_forecast_bundle; b,n,h,e,p = load_forecast_bundle('/tmp/goalpath-h1-ci/elastic_net_outputs.pkl'); assert len(n) > 0 and len(e) > 0; print('Optimizer bundle valid:', len(n), 'forecasts,', len(e), 'historical errors')"
+          python prepare_stage1_inputs.py /tmp/goalpath-h1-ci/elastic_net_outputs.pkl --benchmark-proxy --candidates 20 --output-dir /tmp/goalpath-stage1
+          python robust_mvo_one_period.py /tmp/goalpath-stage1/stage1_inputs.pkl --method heuristic --max-holdings 5 --duration-tolerance 3 --output /tmp/goalpath-stage1-solution
+          python -c "import json; r=json.load(open('/tmp/goalpath-stage1-solution/stage1_optimization_report.json')); assert r['heuristic']['holdings_count'] <= 5; print('STAGE 1 VERIFIED:',r['heuristic'])"
 
