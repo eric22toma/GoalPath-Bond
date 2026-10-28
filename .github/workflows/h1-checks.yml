@@ -73,6 +73,6 @@ jobs:
         run: |
           python elastic_net_one_period.py --asof latest --no-tune --backtest --backtest-start 2025-09 --output-dir /tmp/goalpath-h1-ci
           python prepare_stage1_inputs.py /tmp/goalpath-h1-ci/elastic_net_outputs.pkl --benchmark-proxy --candidates 20 --output-dir /tmp/goalpath-stage1
-          python robust_mvo_one_period.py /tmp/goalpath-stage1/stage1_inputs.pkl --method heuristic --max-holdings 5 --duration-tolerance 3 --output /tmp/goalpath-stage1-solution
-          python -c "import json; r=json.load(open('/tmp/goalpath-stage1-solution/stage1_optimization_report.json')); assert r['heuristic']['holdings_count'] <= 5; print('STAGE 1 VERIFIED:',r['heuristic'])"
+          python robust_mvo_one_period.py /tmp/goalpath-stage1/stage1_inputs.pkl --method both --max-holdings 5 --duration-tolerance 0.5 --time-limit 30 --output /tmp/goalpath-stage1-solution
+          python -c "import json; r=json.load(open('/tmp/goalpath-stage1-solution/stage1_optimization_report.json')); assert r['heuristic']['holdings_count'] <= 5 and r['exact']['holdings_count'] <= 5; assert abs(r['heuristic']['duration_gap']) <= 0.50001 and abs(r['exact']['duration_gap']) <= 0.50001; print('STAGE 1 HEURISTIC/EXACT VERIFIED:',r['comparison'])"
 
