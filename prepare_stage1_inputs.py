@@ -304,8 +304,11 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         (candidates.psi.to_numpy(float) *
          np.square(candidates.benchmark_weight.to_numpy(float))).sum()
     )
+    # Only actual bond positions omitted from the candidate set must be
+    # liquidated. Uninvested initial funding is NOT an outside bond holding.
     outside_current = float(
-        1. - candidates.current_weight.sum()
+        eligible.current_weight.sum() + forced_outside.current_weight.sum()
+        - candidates.current_weight.sum()
     )
     if not np.isclose(
         eligible.current_weight.sum() + forced_outside.current_weight.sum()
