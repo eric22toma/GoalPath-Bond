@@ -8,6 +8,7 @@ import pandas as pd
 
 from prepare_stage1_inputs import (
     read_weight_file, bond_loadings, curve_factor_model, build_inputs,
+    reduced_tracking_objective,
 )
 from robust_mvo_one_period import (
     objective_matrices, report_solution, run_solver, validate_stage,
@@ -41,6 +42,9 @@ def sample_stage():
                benchmark_duration=float(duration@benchmark),
                outside_benchmark_psi_constant=float(data.psi.iloc[4]*.2**2),
                outside_pretrade_weight=.2)
+    Q, H, g, c0 = reduced_tracking_objective(stage)
+    stage.update(candidate_covariance=Q, quadratic_matrix=H,
+                 quadratic_linear=g, quadratic_constant=c0)
     return stage
 
 
