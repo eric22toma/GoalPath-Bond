@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from prepare_stage1_inputs import DEFAULT_STAGE_DIR, DEFAULT_RESULTS
 
 FACTOR_NAMES = ('level', 'slope', 'curvature')
 
@@ -244,23 +245,33 @@ def run_solver(stage, method='heuristic', k=10, max_weight=1.0,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage_file', type=Path, help='stage1_inputs.pkl from prepare_stage1_inputs.py')
-    parser.add_argument('--output', type=Path, required=True, help='New results folder')
+    parser.add_argument('stage_file', nargs='?', type=Path,
+                        default=DEFAULT_STAGE_DIR / 'stage1_inputs.pkl',
+                        help='Optional staging pickle (default: stage1_outputs/inputs/stage1_inputs.pkl)')
+    parser.add_argument('--output', type=Path, default=DEFAULT_RESULTS / 'results',
+                        help='Results folder (default: stage1_outputs/results)')
     parser.add_argument('--method', choices=['heuristic','exact','both'], default='heuristic')
-    parser.add_argument('--max-holdings', type=int, default=10, help='Stage 1 K')
+    parser.add_argument('--max-holdings', type=int, default=5,
+                        help='Stage 1 K; VS Code demonstration default: 5')
     parser.add_argument('--max-weight', type=float, default=1.0)
     parser.add_argument('--trade-cost', type=float, default=0.001,
                         help='0.1%% of traded portfolio value by default')
     parser.add_argument('--duration-tolerance', type=float, default=0.5)
     parser.add_argument('--time-limit', type=float, default=60)
     args = parser.parse_args()
+    if not args.stage_file.is_file():
+        parser.error(
+            f'Stage 1 inputs not found: {args.stage_file}. '
+            'Click Run on prepare_stage1_inputs.py first, then run this file.'
+        )
+    print(f'Loading staged inputs: {args.stage_file.resolve()}')
     stage = pd.read_pickle(args.stage_file)
     results = run_solver(
         stage, method=args.method, k=args.max_holdings,
         max_weight=args.max_weight, transaction_cost=args.trade_cost,
         duration_tolerance=args.duration_tolerance, time_limit=args.time_limit
     )
-    args.output.mkdir(parents=True, exist_ok=False)
+    args.output.mkdir(parents=True, exist_ok=True)
     report = {}
     for method, (answer, metrics) in results.items():
         candidates = stage['candidates'].copy()
@@ -285,6 +296,7 @@ def main():
     (args.output/'stage1_optimization_report.json').write_text(
         json.dumps(report,indent=2)+'\n'
     )
+    print(f'\nSUCCESS: Results saved to {args.output.resolve()}')
 
 
 if __name__ == '__main__':
