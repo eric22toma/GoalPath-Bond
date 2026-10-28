@@ -193,8 +193,14 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
         eligible['benchmark_weight'] = eligible.cusip.map(weights.set_index('cusip').weight).fillna(0.)
         benchmark_type = 'filtered_AGG_original_weights'
     else:
-        eligible['benchmark_weight'] = eligible.AMOUNT_OUTSTANDING * eligible.PRICE_EOM
+        outstanding = pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce')
+        # Missing/nonpositive outstanding amount cannot establish a proxy
+        # benchmark position; those securities receive zero benchmark weight.
+        proxy_notional = outstanding.where(outstanding.gt(0), 0.0).fillna(0.0)
+        eligible['benchmark_weight'] = proxy_notional * eligible.PRICE_EOM
         benchmark_type = 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
+    if not np.isfinite(eligible.benchmark_weight.to_numpy(float)).all():
+        raise ValueError('Nonfinite benchmark weights after staging')
     if eligible.benchmark_weight.sum() <= 0:
         raise ValueError('No positive benchmark weights match the eligible forecast bonds')
     eligible['benchmark_weight'] /= eligible.benchmark_weight.sum()
