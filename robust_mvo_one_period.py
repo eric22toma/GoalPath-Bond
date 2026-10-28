@@ -61,26 +61,24 @@ def validate_stage(stage, k):
 
 
 def objective_matrices(stage):
-    """Reduced-candidate quadratic matrix, preserving FULL benchmark offsets."""
-    c = stage['candidates']
-    b_factor = np.asarray(stage['benchmark_factor'], float)
-    b_mu = float(stage['benchmark_mu'])
-    sigma = np.asarray(stage['sigma_f'], float)
-    b = c.benchmark_weight.to_numpy(float)
-    mu = c.mu.to_numpy(float)
-    psi = c.psi.to_numpy(float)
-    B = c[[f'B_{name}' for name in FACTOR_NAMES]].to_numpy(float)
-    # (B'w-B_b)'Sigma(B'w-B_b)+(mu'w-mu_b)^2
-    # + sum_c psi_i(w_i-b_i)^2 + sum_out psi_j b_j^2.
-    A = B @ sigma @ B.T + np.outer(mu, mu) + np.diag(psi)
-    linear = -2*(B @ sigma @ b_factor + mu*b_mu + psi*b)
-    constant = (b_factor @ sigma @ b_factor + b_mu*b_mu
-                + psi @ np.square(b)
-                + float(stage['outside_benchmark_psi_constant']))
-    A = (A+A.T)/2
-    if np.linalg.eigvalsh(A).min() < -1e-7:
-        raise ValueError('Stage 1 active-risk quadratic is not PSD')
-    return A, linear, float(constant)
+    """Use the covariance and objective assembled by prepare_stage1_inputs.py."""
+    n = len(stage['candidates'])
+    required = ['candidate_covariance', 'quadratic_matrix',
+                'quadratic_linear', 'quadratic_constant']
+    absent = [key for key in required if key not in stage]
+    if absent:
+        raise ValueError(f'Incomplete Stage 1 initialization: {absent}')
+    covariance = np.asarray(stage['candidate_covariance'], dtype=float)
+    A = np.asarray(stage['quadratic_matrix'], dtype=float)
+    linear = np.asarray(stage['quadratic_linear'], dtype=float)
+    constant = float(stage['quadratic_constant'])
+    if (covariance.shape != (n,n) or A.shape != (n,n)
+            or linear.shape != (n,) or not np.isfinite(constant)
+            or not np.isfinite(A).all() or not np.isfinite(linear).all()):
+        raise ValueError('Invalid staged candidate covariance or quadratic terms')
+    if np.linalg.eigvalsh((A+A.T)/2).min() < -1e-7:
+        raise ValueError('Staged objective matrix must be positive semidefinite')
+    return A, linear, constant
 
 
 def solve_quadratic(stage, allowed, k, max_weight, transaction_cost,
