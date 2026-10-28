@@ -70,24 +70,73 @@ The output directory must not already exist. With `--backtest`, the output
 includes `elastic_net_outputs.pkl`, which is the input format expected by
 `robust_mvo_one_period.py`.
 
-## Portfolio optimization
+## Stage 1 tracking initialization and one-month optimization
 
-The robust one-period optimizer is a separate prototype and requires an
-installed, licensed Gurobi environment:
+Section 5 of Deliverable 3 defines the H=1 objective as expected **squared
+active return**, not a separate reward for exceeding expected benchmark return:
 
-```bash
-python3 robust_mvo_one_period.py ~/GoalPath-H1-Results/elastic_net_outputs.pkl \
-  --output ~/GoalPath-MVO-Results
+```text
+(w-b)' Q (w-b) + (mu' (w-b))^2 + 0.001 * total traded weight
+Q = B Sigma_f B' + Psi
+mu = YIELD / 12 - WRDS_Duration * (forecast_yield_change_pp / 100)
 ```
 
-It currently tracks a candidate-subset proxy rather than the full AGG
-benchmark and does not yet implement the full investment-goal formulation.
+The new `prepare_stage1_inputs.py` computes all five inputs independently:
+the expected-return vector, Treasury level/slope/curvature factor covariance,
+eligible benchmark weights, pre-trade portfolio weights, and WRDS duration.
+It estimates residual Psi from historical returns, using rating/maturity bucket
+fallbacks for short bond histories. Securities with remaining maturity below
+one year are excluded from the tradable universe. The initial portfolio is
+**explicitly** set to the same weights as the current benchmark for a first
+one-period illustration; supply `--prior-portfolio previous.csv` (CUSIP and
+posttrade weight) at later rebalances to drift holdings using the current
+month's observed bond returns.
 
-Run `python3 audit_bond_yields.py` to inspect the monthly AGG yield/price
-consistency. The 2025-12 source prices are especially suspicious: only
-17 of 8,291 matched bond pairs had both price and yield movements. This
-screen flags source-quality issues; it does **not** prove the underlying
-yield field or macro release timing is correct.
+**Important benchmark-data limitation:** The checked-in bond-level CSV has
+`AMOUNT_OUTSTANDING`, but NO original AGG ETF constituent-weight field.
+Section 3.2 calls for renormalized original AGG holdings weights at each
+month. A separate monthly file with `DATE,cusip,weight` (decimal weights)
+is required for that benchmark:
+
+```bash
+python3 prepare_stage1_inputs.py ~/GoalPath-H1-Results/elastic_net_outputs.pkl \
+    --benchmark-weights eligible_AGG_holdings.csv \
+    --candidates 60 --output-dir ~/GoalPath-Stage1-Inputs
+```
+
+For **mechanics testing only**, use the explicit `--benchmark-proxy` option.
+This normalizes outstanding amount times price, not actual AGG holdings:
+
+```bash
+python3 prepare_stage1_inputs.py ~/GoalPath-H1-Results/elastic_net_outputs.pkl \
+    --benchmark-proxy --candidates 60 \
+    --output-dir ~/GoalPath-Stage1-Inputs-Demo
+```
+
+Then solve Stage 1 for one month:
+
+```bash
+python3 -m pip install gurobipy
+python3 robust_mvo_one_period.py \
+    ~/GoalPath-Stage1-Inputs-Demo/stage1_inputs.pkl \
+    --method heuristic --max-holdings 10 --trade-cost 0.001 \
+    --duration-tolerance 0.5 --output ~/GoalPath-Stage1-Solution
+```
+
+`--method both` also runs the exact cardinality MIQP on the *same reduced*
+candidate universe for comparison. Heuristic uses continuous optimization,
+retains the largest K positions and resolves with that support. The objective
+preserves aggregate factor/return exposures of **all eligible benchmark
+constituents**, including those outside the candidate subset, instead of
+renormalizing the benchmark to only the selected candidates.
+
+Stage 2 items—robust forecast-error penalties, convexity, KRD, cash account
+and self-financing—are intentionally excluded. The Gurobi installation and
+license are required to solve the MIQP. The current run is **one period only**;
+rolling H=1 portfolio re-solving and full AGG-weight backtesting remain to do.
+
+The temporary `audit_bond_yields.py` script was removed after its useful
+cross-month quote-consistency checks were retained in CI.
 
 ## Automated checks
 
