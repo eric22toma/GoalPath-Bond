@@ -19,6 +19,17 @@ jobs:
         run: python -m py_compile process_investable_universe.py elastic_net_one_period.py robust_mvo_one_period.py
       - name: Data and forecast smoke tests
         run: python -m unittest -v test_goalpath_h1
+      - name: Verify AGG holdings and credit-rating input fields
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          src='01_Source_Data/Investable_universe_AGG.csv.zip'
+          cols = pd.read_csv(src,nrows=0).columns.tolist()
+          print('BOND_SOURCE_COLUMNS:',cols)
+          check=['RATING_NUM','AMOUNT_OUTSTANDING','DURATION','PRICE_EOM','RET_EOM']
+          print('BOND_REQUIRED_COLUMNS:',{k:k in cols for k in check})
+          print('WEIGHT_FIELD_CANDIDATES:',[k for k in cols if 'weight' in k.lower() or 'holding' in k.lower()])
+          PY
       - name: Standalone full-data processing check
         run: python process_investable_universe.py
       - name: Audit month-over-month bond yields and prices
