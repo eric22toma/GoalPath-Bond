@@ -91,6 +91,11 @@ With the repository open and Python/Gurobi dependencies installed, use the
 Files are written under `stage1_outputs/inputs/` and
 `stage1_outputs/results/` (ignored by Git). Re-running either script updates
 its own generated files, so you don't need to create new directories.
+The staging script **prints the five Section 5.2 inputs at the end**: forecast
+expected returns, three-factor risk covariance, benchmark weights, pre-trade
+holdings (zero initially), and durations. All eligible bond observations are
+saved in `eligible_inputs.csv`; full N-by-N covariance is represented in factor
+form, not materialized. The optimizer prints a $100,000 funding/buy/fee summary.
 For a fast demonstration, defaults are 20 candidate bonds, K=5, 0.1% trading
 costs, and a ±0.5-year duration band, using the relax-and-fix method.
 Both Python scripts resolve paths from the repository location rather than
@@ -116,11 +121,12 @@ the expected-return vector, Treasury level/slope/curvature factor covariance,
 eligible benchmark weights, pre-trade portfolio weights, and WRDS duration.
 It estimates residual Psi from historical returns, using rating/maturity bucket
 fallbacks for short bond histories. Securities with remaining maturity below
-one year are excluded from the tradable universe. The initial portfolio is
-**explicitly** set to the same weights as the current benchmark for a first
-one-period illustration; supply `--prior-portfolio previous.csv` (CUSIP and
-posttrade weight) at later rebalances to drift holdings using the current
-month's observed bond returns.
+one year are excluded from the tradable universe. **At the first rebalance,
+our actual bond holdings are zero and the $100,000 initial investment is
+uninvested funding**. The full eligible benchmark weights remain separate and
+sum to one. The first optimization buys at most K bonds. Supply
+`--prior-portfolio previous.csv` (CUSIP and posttrade weight) at later
+rebalances to drift holdings using realized returns.
 
 **Important benchmark-data limitation:** The checked-in bond-level CSV has
 `AMOUNT_OUTSTANDING`, but NO original AGG ETF constituent-weight field.
@@ -161,8 +167,12 @@ preserves aggregate factor/return exposures of **all eligible benchmark
 constituents**, including those outside the candidate subset, instead of
 renormalizing the benchmark to only the selected candidates.
 
-Stage 2 items—robust forecast-error penalties, convexity, KRD, cash account
-and self-financing—are intentionally excluded. The Gurobi installation and
+Stage 2 items—robust forecast-error penalties, convexity, KRD, an explicit cash
+account and self-financing—are intentionally excluded. In Stage 1, the opening
+$100,000 is an **external funding convention**, not a budget state variable:
+100% is invested in bonds, and 0.1% purchase transaction fees ($100 initially)
+are charged as a penalty and reported separately, not deducted from the
+$100,000. No fictitious sale of thousands of benchmark constituents occurs. The Gurobi installation and
 license are required to solve the MIQP. The current run is **one period only**;
 rolling H=1 portfolio re-solving and full AGG-weight backtesting remain to do.
 
