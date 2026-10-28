@@ -43,5 +43,11 @@ jobs:
           assert outcome['holdings_count'] <= 5
           assert abs(outcome['duration_gap']) <= 0.5 + 1e-5
           assert outcome['benchmark_type'] == 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
-          print('NO-ARGUMENT STAGE 1 VERIFIED:',outcome['asof'],outcome['holdings_count'])
+          assert abs(outcome['initial_uninvested_cash_dollars'] - 100_000) < 1e-4
+          assert abs(outcome['buy_notional_dollars'] - 100_000) < .10
+          assert abs(outcome['sell_notional_dollars']) < .10
+          assert abs(outcome['transaction_cost_dollars'] - 100.0) < .10
+          print('NO-ARGUMENT STAGE 1 VERIFIED:',outcome['asof'],outcome['holdings_count'],
+                'initial capital:', outcome['portfolio_capital_dollars'],
+                'buy-only fee:',outcome['transaction_cost_dollars'])
           PY
