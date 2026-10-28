@@ -52,13 +52,20 @@ def validate_stage(stage, k):
         raise ValueError('Factor covariance not positive semidefinite')
     if (c.psi <= 0).any() or (eligible.psi <= 0).any():
         raise ValueError('Residual covariance diagonal must be positive')
+    cash = float(stage.get('pretrade_cash_weight', 0.0))
+    if cash < -1e-8 or cash > 1+1e-8:
+        raise ValueError('Pre-trade funding weight must be between 0 and 1')
     if stage['outside_pretrade_weight'] < -1e-8:
         raise ValueError('Negative forced sale weight')
     if not np.isclose(
-        c.current_weight.sum() + stage['outside_pretrade_weight'], 1.0,
-        atol=1e-8
+        c.current_weight.sum() + stage['outside_pretrade_weight'] + cash,
+        1.0, atol=1e-8
     ):
-        raise ValueError('Pre-trade holdings must sum to one across all CUSIPs')
+        raise ValueError('Pre-trade bond holdings plus initial funding must '
+                         'sum to one')
+    if cash > 1-1e-8 and (c.current_weight.abs().max() > 1e-8 or
+                           stage['outside_pretrade_weight'] > 1e-8):
+        raise ValueError('New investment must start with zero existing bonds')
 
 
 def objective_matrices(stage):
@@ -168,8 +175,11 @@ def report_solution(stage, answer, k, costs, method):
     residual_variance = float(psi @ np.square(w-b)
                               + stage['outside_benchmark_psi_constant'])
     tracking_variance = max(0., factor_variance + residual_variance)
-    tc = float(costs * (sum(answer['buys']) + sum(answer['sells'])
-                        + stage['outside_pretrade_weight']))
+    buy_total = float(sum(answer['buys']))
+    sell_total = float(sum(answer['sells']) + stage['outside_pretrade_weight'])
+    traded_fraction = buy_total + sell_total
+    tc = float(costs * traded_fraction)
+    capital = float(stage.get('initial_capital', 100_000.0))
     expected_sq = tracking_variance + active_mean**2
     actual_duration = float(c.duration @ w)
     held = int((w > 1e-6).sum())
@@ -197,9 +207,17 @@ def report_solution(stage, answer, k, costs, method):
         'expected_squared_active_return': expected_sq,
         'expected_monthly_tracking_error': float(np.sqrt(expected_sq)),
         'transaction_cost_fraction': tc,
+        'transaction_cost_dollars': tc * capital,
+        'portfolio_capital_dollars': capital,
+        'initial_uninvested_cash_dollars':
+            capital * float(stage.get('pretrade_cash_weight', 0.0)),
+        'buy_notional_dollars': capital * buy_total,
+        'sell_notional_dollars': capital * sell_total,
+        'gross_traded_fraction': traded_fraction,
+        'transaction_cost_budget_convention':
+            'Stage 1 fee penalty; fees funded separately from invested capital',
         'objective_value': expected_sq + tc,
-        'one_way_turnover': float(0.5*(sum(answer['buys'])+sum(answer['sells'])
-                                       +stage['outside_pretrade_weight'])),
+        'one_way_turnover': float(0.5*traded_fraction),
         'benchmark_duration': float(stage['benchmark_duration']),
         'portfolio_duration': actual_duration,
         'duration_gap': actual_duration-stage['benchmark_duration'],
@@ -296,6 +314,22 @@ def main():
     (args.output/'stage1_optimization_report.json').write_text(
         json.dumps(report,indent=2)+'\n'
     )
+    print('\nONE-PERIOD INVESTMENT SUMMARY')
+    print(f'Initial capital: ${float(stage.get("initial_capital", 100_000.0)):,.2f}')
+    print(f'Pretrade cash funding: '
+          f'${float(stage.get("initial_capital", 100_000.0)) * float(stage.get("pretrade_cash_weight", 0.0)):,.2f}')
+    print('Benchmark: full eligible universe (proxy unless original AGG '
+          'holding weights supplied)')
+    for label, metrics in report.items():
+        if label == 'comparison':
+            continue
+        print(f'{label}: {metrics["holdings_count"]} selected bonds; '
+              f'capital invested ${metrics["portfolio_capital_dollars"]:,.2f}; '
+              f'buys ${metrics["buy_notional_dollars"]:,.2f}; '
+              f'sells ${metrics["sell_notional_dollars"]:,.2f}; '
+              f'transaction fees ${metrics["transaction_cost_dollars"]:,.2f}')
+    print('Stage 1 fees are not deducted from invested capital; '
+          'explicit cash/self-financing is deferred to Stage 2.')
     print(f'\nSUCCESS: Results saved to {args.output.resolve()}')
 
 
