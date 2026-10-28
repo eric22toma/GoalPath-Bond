@@ -1,6 +1,8 @@
 """Checks for Deliverable 3 Section 5 portfolio initialization and optimization."""
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +10,7 @@ import pandas as pd
 
 from prepare_stage1_inputs import (
     read_weight_file, bond_loadings, curve_factor_model, build_inputs,
-    reduced_tracking_objective,
+    reduced_tracking_objective, show_stage1_input_summary,
 )
 from robust_mvo_one_period import (
     objective_matrices, report_solution, run_solver, validate_stage,
@@ -81,6 +83,49 @@ class Stage1Tests(unittest.TestCase):
         B=bond_loadings(bonds,coefs)
         self.assertTrue(np.allclose(B[:,0],[-.04,-.05,-.06]))
         self.assertTrue(np.allclose(B[:,1:],0))
+
+    def test_new_investor_starts_with_cash_not_benchmark_holdings(self):
+        stage = sample_stage()
+        stage['eligible']['current_weight'] = 0.0
+        stage['candidates']['current_weight'] = 0.0
+        stage['outside_pretrade_weight'] = 0.0
+        stage['pretrade_cash_weight'] = 1.0
+        stage['initial_capital'] = 100_000.0
+        stage['holdings_type'] = 'initial_cash_investment_zero_bond_holdings'
+        validate_stage(stage, 2)
+        self.assertAlmostEqual(stage['eligible'].benchmark_weight.sum(), 1.0)
+        self.assertAlmostEqual(stage['eligible'].current_weight.sum(), 0.0)
+        self.assertEqual(stage['outside_pretrade_weight'], 0.0)
+        output = StringIO()
+        with redirect_stdout(output):
+            show_stage1_input_summary(stage)
+        for term in ['1. EXPECTED RETURNS', '2. RETURN COVARIANCE',
+                     '3. BENCHMARK WEIGHTS', '4. PRE-TRADE HOLDINGS',
+                     '5. DURATION', '$100,000.00']:
+            self.assertIn(term, output.getvalue())
+
+    def test_initial_investment_cost_is_buy_only(self):
+        try:
+            import gurobipy
+        except ImportError:
+            self.skipTest('Gurobi not installed')
+        stage = sample_stage()
+        stage['eligible']['current_weight'] = 0.0
+        stage['candidates']['current_weight'] = 0.0
+        stage['outside_pretrade_weight'] = 0.0
+        stage['pretrade_cash_weight'] = 1.0
+        stage['initial_capital'] = 100_000.0
+        answer, result = run_solver(
+            stage, method='heuristic', k=2,
+            duration_tolerance=1.0, time_limit=15
+        )['heuristic']
+        self.assertAlmostEqual(result['buy_notional_dollars'], 100_000.0,
+                               delta=0.10)
+        self.assertAlmostEqual(result['sell_notional_dollars'], 0.0,
+                               delta=0.10)
+        self.assertAlmostEqual(result['transaction_cost_dollars'], 100.0,
+                               delta=0.10)
+        self.assertEqual(result['holdings_count'], 2)
 
     def test_gurobi_support_and_duration(self):
         try:
