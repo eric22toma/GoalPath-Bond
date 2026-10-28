@@ -220,3 +220,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 /01_Source_Data/Investable_universe_AGG.csv
+
+# Locally generated Stage 1 bond forecasts, covariance inputs, portfolios
+/stage1_outputs/
