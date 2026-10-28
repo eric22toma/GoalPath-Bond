@@ -20,7 +20,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import sven_yield
+from elastic_net_one_period import (
+    sven_yield, FEATURES, BOND_COLUMNS, CV_MIXING_GRID, CV_PENALTY_GRID,
+    process_all_data, history_for_features, PROJECT_ROOT,
+    macro_features, load_panel, monthly_quote_coverage,
+    trustworthy_target_month, training_rows, tune_elastic_net, fit_forecast,
+)
+DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
+DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
 
 FACTOR_NAMES = ('level', 'slope', 'curvature')
 TENORS = np.arange(1.0, 31.0)
@@ -318,31 +325,118 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
     return out
 
 
+def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
+    """Build H=1 inputs using the existing elastic-net and processing functions.
+
+    The standard elastic-net Run button prints forecasts but saves no pickle.
+    This function reuses its modeling functions without changing either script.
+    """
+    print('No saved elastic-net bundle supplied; constructing H=1 forecasts '
+          'with the existing forecasting functions.')
+    data = process_all_data(bond_columns=BOND_COLUMNS)
+    macro, curve_params = macro_features(
+        history_for_features(data, 'curve'),
+        history_for_features(data, 'fred'),
+    )
+    dates = data['bonds'][1].DATE.dt.to_period('M')
+    if dates.empty:
+        raise ValueError('No prepared bond observations')
+    calendar = pd.period_range(dates.min(), dates.max(), freq='M')
+    macro = macro.reindex(calendar)
+    curve_params = curve_params.reindex(calendar)
+    panel = load_panel(data['bonds'][1], macro, curve_params)
+    del data
+    complete = panel[FEATURES].notna().all(axis=1)
+    if not complete.any():
+        raise ValueError('No bonds have the elastic-net predictor set')
+    if asof == 'latest':
+        coverage = monthly_quote_coverage(panel)
+        realized = panel.loc[complete & panel.dy.notna(), 'month'].unique()
+        good_months = [m for m in sorted(realized)
+                       if trustworthy_target_month(coverage, m + 1)]
+        if not good_months:
+            raise ValueError('No month has complete predictors and credible '
+                             'next-month quotes; pass --asof YYYY-MM explicitly')
+        chosen = good_months[-1]
+    else:
+        chosen = pd.Period(asof, freq='M')
+    prior = training_rows(panel, chosen, FEATURES)
+    if prior.empty:
+        raise ValueError(f'No historical training observations for {chosen}')
+    if fixed is None:
+        alpha, penalty, rmse, folds, _ = tune_elastic_net(
+            prior, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID
+        )
+        print(f'Chronological CV: alpha={alpha:g}, lambda={penalty:g}, '
+              f'validation RMSE={rmse:.2f} bp (folds: {folds})')
+    else:
+        alpha, penalty = fixed
+        print(f'Using supplied elastic-net alpha={alpha:g}, lambda={penalty:g}')
+    now, _, count = fit_forecast(panel, chosen, FEATURES, alpha, penalty)
+    print(f'Elastic net: {count:,} training rows; {len(now):,} bond forecasts '
+          f'for {chosen} -> {chosen + 1}')
+    return {
+        'asof': str(chosen),
+        'target_month': str(chosen + 1),
+        'snapshot': now,
+        'history': panel.loc[panel.month.between(chosen - 35, chosen)].copy(),
+        'errors': pd.DataFrame(),
+        'curve_params': curve_params,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('forecast_file', type=Path,
-                        help='elastic_net_outputs.pkl from an H=1 forecasting backtest')
-    benchmark = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument('forecast_file', nargs='?', type=Path, default=None,
+                        help='Optional existing elastic_net_outputs.pkl')
+    benchmark = parser.add_mutually_exclusive_group()
     benchmark.add_argument('--benchmark-weights', type=Path,
-                           help='AGG holdings CSV with DATE, cusip, weight (decimal values)')
+                           help='AGG holdings CSV with DATE, cusip, weight')
     benchmark.add_argument('--benchmark-proxy', action='store_true',
-                           help='DEMO ONLY: approximate weights by outstanding x price')
+                           help='Demonstration benchmark: outstanding amount times price')
     parser.add_argument('--prior-portfolio', type=Path,
-                        help='Prior-month posttrade holdings CSV (cusip, weight); drift using t returns')
-    parser.add_argument('--candidates', type=int, default=60)
+                        help='Previous post-trade holdings (cusip,weight)')
+    parser.add_argument('--asof', default='latest',
+                        help='Forecast month if no bundle was supplied')
+    parser.add_argument('--no-tune', action='store_true',
+                        help='Use fixed elastic-net parameters instead of CV if rebuilding forecasts')
+    parser.add_argument('--alpha', type=float, default=0.5)
+    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=0.001)
+    parser.add_argument('--candidates', type=int, default=20,
+                        help='Number of candidate bonds (VS Code default: 20)')
     parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
-    parser.add_argument('--output-dir', type=Path, required=True)
+    parser.add_argument('--output-dir', type=Path, default=DEFAULT_STAGE_DIR,
+                        help='Output folder, default: stage1_outputs/inputs')
     args = parser.parse_args()
     if args.candidates < 2 or args.lookback < MIN_FACTOR_OBSERVATIONS + 1:
         parser.error('Require candidates >= 2 and lookback >= 13')
-    source = pd.read_pickle(args.forecast_file)
+    if args.no_tune and not (0 < args.alpha < 1 and args.penalty_lambda > 0):
+        parser.error('Require 0 < alpha < 1 and lambda > 0')
+
+    if args.forecast_file is not None:
+        if not args.forecast_file.is_file():
+            parser.error(f'Elastic-net bundle not found: {args.forecast_file}')
+        print(f'Reading elastic-net bundle: {args.forecast_file.resolve()}')
+        source = pd.read_pickle(args.forecast_file)
+    else:
+        source = forecast_bundle_from_elastic_net(
+            args.asof,
+            fixed=(args.alpha, args.penalty_lambda) if args.no_tune else None,
+        )
+
+    # No original constituent weights in the checked-in WRDS bond file.
+    # A no-argument VS Code run explicitly uses the demonstration proxy.
+    proxy = args.benchmark_proxy or args.benchmark_weights is None
+    if proxy:
+        print('BENCHMARK: DEMONSTRATION PROXY (outstanding amount × price); '
+              'NOT original AGG holdings.')
     stage = build_inputs(
         source, benchmark_weights=args.benchmark_weights,
-        benchmark_proxy=args.benchmark_proxy,
+        benchmark_proxy=proxy,
         prior_portfolio=args.prior_portfolio,
         candidate_count=args.candidates, lookback=args.lookback
     )
-    args.output_dir.mkdir(parents=True, exist_ok=False)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
     with (args.output_dir / 'stage1_inputs.pkl').open('wb') as handle:
         pickle.dump(stage, handle)
     stage['eligible'].to_csv(args.output_dir / 'eligible_inputs.csv', index=False)
@@ -366,12 +460,16 @@ def main():
         'outside_pretrade_weight_forced_sale': stage['outside_pretrade_weight'],
         'risk_factor_months': stage['factor_months'],
     }
-    (args.output_dir / 'stage1_report.json').write_text(json.dumps(report, indent=2)+'\n')
-    print('STAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
+    (args.output_dir / 'stage1_report.json').write_text(
+        json.dumps(report, indent=2) + '\n'
+    )
+    print('\\nSTAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
     print(json.dumps(report, indent=2))
-    print('Saved: stage1_inputs.pkl, eligible_inputs.csv, candidate_inputs.csv, candidate_covariance.csv, factor_covariance.csv')
-    if args.benchmark_proxy:
-        print('WARNING: outstanding x price is NOT the original eligible AGG benchmark.')
+    print(f'\\nSUCCESS: Stage 1 inputs saved to '
+          f'{(args.output_dir / "stage1_inputs.pkl").resolve()}')
+    print('Run robust_mvo_one_period.py next using the VS Code Run arrow.')
+    if proxy:
+        print('WARNING: proxy benchmark is not the actual eligible AGG benchmark.')
 
 
 if __name__ == '__main__':
