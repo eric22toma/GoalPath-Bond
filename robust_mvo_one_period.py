@@ -1,186 +1,293 @@
-"""One-period mixed-integer robust MVO, Deliverable 2 section 4.1.
+"""Stage 1 H=1 bond benchmark tracking (Deliverable 3, Sections 5.2–5.3).
 
-Reads the single saved elastic-net output file. DOES NOT fit elastic net or reload raw data.
-Run: python robust_mvo_one_period.py results/elastic_net_outputs.pkl --output new_folder
+Reads ONLY the prepared stage1_inputs.pkl. All bond, forecast, benchmark
+and factor-covariance preparation belongs in prepare_stage1_inputs.py.
 
-Return mapping: mu_i = carry_i - D_i*dy_i + .5*C_i*dy_i**2 (dy decimal).
-Minimize gamma*(w-b)'Q(w-b) - [mu'w-epsilon_mu*||sqrt(Theta)w||]
-         + kappa_buy'u_plus + kappa_sell'u_minus.
-Full investment, trade balance, long-only/binary cardinality, duration,
-convexity and key-rate exposure bands, are implemented below. Investor wealth/required-return constraints are excluded.
-The benchmark/risk-analytics prototype limitations remain in force.
+Minimize expected squared active return plus 0.1% of traded value:
+   (mu' (w-b))^2 + (w-b)' (B Sigma_f B' + Psi) (w-b)
+      + kappa * sum(buys + sells).
+The full eligible benchmark is retained in the benchmark exposure offsets,
+even when the tradable candidate universe is reduced for a test solve.
+
+Methods:
+  heuristic: relax cardinality, select K largest weights, convex re-solve
+  exact:     binary cardinality via MIQP on the reduced candidate universe
+  both:      compare identical inputs with both methods
 """
 import argparse
-import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import sven_yield
-from scipy.optimize import brentq
-from sklearn.covariance import LedoitWolf
-
-KEYS = np.array([1., 2., 5., 10., 20., 30.])
+FACTOR_NAMES = ('level', 'slope', 'curvature')
 
 
-def bond_exposures(row, params):
-    """Approximate regular coupon cash flows, curve+constant-spread valuation.
+def validate_stage(stage, k):
+    """Validate the staged model inputs before opening a solver."""
+    if pd.Period(stage['target_month'], 'M') != pd.Period(stage['asof'], 'M') + 1:
+        raise ValueError('Stage 1 accepts H=1 only')
+    eligible = stage['eligible']
+    c = stage['candidates']
+    needed = ['cusip', 'mu', 'psi', 'duration', 'benchmark_weight',
+              'current_weight'] + [f'B_{x}' for x in FACTOR_NAMES]
+    for name, table in [('eligible', eligible), ('candidates', c)]:
+        missing = set(needed) - set(table.columns)
+        if missing:
+            raise ValueError(f'{name}: missing Stage 1 fields {sorted(missing)}')
+        if table.cusip.duplicated().any():
+            raise ValueError(f'{name}: duplicate CUSIPs')
+        if not np.isfinite(table[needed[1:]].to_numpy(dtype=float)).all():
+            raise ValueError(f'{name}: nonfinite model inputs')
+    if k < 1 or k > len(c):
+        raise ValueError('K must be between 1 and number of candidates')
+    if not np.isclose(eligible.benchmark_weight.sum(), 1.0, atol=1e-8):
+        raise ValueError('Full eligible benchmark weights must total 1')
+    sigma = np.asarray(stage['sigma_f'], dtype=float)
+    if sigma.shape != (3,3) or not np.isfinite(sigma).all():
+        raise ValueError('Factor covariance must be finite and 3x3')
+    if np.linalg.eigvalsh((sigma+sigma.T)/2).min() < -1e-8:
+        raise ValueError('Factor covariance not positive semidefinite')
+    if (c.psi <= 0).any() or (eligible.psi <= 0).any():
+        raise ValueError('Residual covariance diagonal must be positive')
+    if stage['outside_pretrade_weight'] < -1e-8:
+        raise ValueError('Negative forced sale weight')
+    if not np.isclose(
+        c.current_weight.sum() + stage['outside_pretrade_weight'], 1.0,
+        atol=1e-8
+    ):
+        raise ValueError('Pre-trade holdings must sum to one across all CUSIPs')
 
-    Face=100; coupon in percent; calendar schedule from nextcoup backwards
-    from maturity. Actual day-count, irregular coupons and options are not
-    modeled. These are estimated exposures, NOT source-verified bond analytics.
-    """
-    freq=int(row.NCOUPS)
-    if freq not in [1,2,4,12]: raise ValueError('Unsupported coupon frequency')
-    date=row.MATURITY
-    dates=[]
-    while date>row.DATE:
-        dates.append(date)
-        date=date-pd.DateOffset(months=12//freq)
-    times=np.array([(d-row.DATE).days/365.25 for d in dates])
-    cf=np.full(len(times),row.COUPON/freq); cf[0]+=100
-    zero=sven_yield(times,params)/100
-    dirty=float(row.PRICE_EOM+row.COUPACC)
-    if dirty<=0: raise ValueError('Nonpositive dirty price')
-    price=lambda spread,bump: np.sum(cf*np.exp(-(zero+spread+bump)*times))
-    spread=brentq(lambda s:price(s,0)-dirty,-0.5,5.)
-    h=0.0001
-    base=price(spread,0)
-    d=(price(spread,-h)-price(spread,h))/(2*h*base)
-    c=(price(spread,-h)+price(spread,h)-2*base)/(h*h*base)
-    hat=np.array([np.interp(times,KEYS,np.eye(len(KEYS))[k]) for k in range(len(KEYS))])
-    krd=np.array([(price(spread,-h*hat[k])-price(spread,h*hat[k]))/(2*h*base) for k in range(len(KEYS))])
-    return d,c,krd
+
+def objective_matrices(stage):
+    """Reduced-candidate quadratic matrix, preserving FULL benchmark offsets."""
+    c = stage['candidates']
+    b_factor = np.asarray(stage['benchmark_factor'], float)
+    b_mu = float(stage['benchmark_mu'])
+    sigma = np.asarray(stage['sigma_f'], float)
+    b = c.benchmark_weight.to_numpy(float)
+    mu = c.mu.to_numpy(float)
+    psi = c.psi.to_numpy(float)
+    B = c[[f'B_{name}' for name in FACTOR_NAMES]].to_numpy(float)
+    # (B'w-B_b)'Sigma(B'w-B_b)+(mu'w-mu_b)^2
+    # + sum_c psi_i(w_i-b_i)^2 + sum_out psi_j b_j^2.
+    A = B @ sigma @ B.T + np.outer(mu, mu) + np.diag(psi)
+    linear = -2*(B @ sigma @ b_factor + mu*b_mu + psi*b)
+    constant = (b_factor @ sigma @ b_factor + b_mu*b_mu
+                + psi @ np.square(b)
+                + float(stage['outside_benchmark_psi_constant']))
+    A = (A+A.T)/2
+    if np.linalg.eigvalsh(A).min() < -1e-7:
+        raise ValueError('Stage 1 active-risk quadratic is not PSD')
+    return A, linear, float(constant)
 
 
-def solve_period(now,panel,errors,params,args):
-    import gurobipy as gp
-    from gurobipy import GRB
-    asof=pd.Period(args.asof,'M')
-    history=panel.loc[(panel.month>=asof-35)&(panel.month<=asof)]
-    returns=history.pivot(index='month',columns='cusip',values='RET_EOM').reindex(pd.period_range(asof-35,asof,freq='M'))
-    # Historical completeness uses only pre-decision data, never future returns.
-    complete=returns.columns[returns.notna().all()]
-    candidates=now.loc[now.cusip.isin(complete)&(now.time_to_maturity>1/12)&
-                       now.DEFAULTED.eq('N')&now.CONV.eq(0)].copy()
-    candidates=candidates.dropna(subset=['PRICE_EOM','COUPACC','COUPON','NCOUPS','AMOUNT_OUTSTANDING','T_DVolume'])
-    candidates=candidates.loc[(candidates.PRICE_EOM>0)&(candidates.AMOUNT_OUTSTANDING>0)&
-                              candidates.NCOUPS.isin([1,2,4,12])]
-    # Deterministic as-of liquidity screen. Callable status is NOT supplied;
-    # eligibility for the final conventional-bond model remains unverified.
-    candidates=candidates.sort_values(['T_DVolume','cusip'],ascending=[False,True]).head(args.candidates).copy()
-    if len(candidates)<args.max_holdings: raise ValueError('Too few candidates')
-    exposures=[bond_exposures(r,params.loc[asof].to_numpy()) for r in candidates.itertuples()]
-    D=np.array([e[0] for e in exposures]); C=np.array([e[1] for e in exposures]); KRD=np.stack([e[2] for e in exposures],axis=1)
-    ids=candidates.cusip.tolist(); n=len(ids)
-    b=(candidates.AMOUNT_OUTSTANDING*candidates.PRICE_EOM).to_numpy(); b=b/b.sum()
-    current=b.copy()  # Illustrative existing portfolio, not an initial cash purchase.
-    carry=(candidates.COUPON/(candidates.PRICE_EOM+candidates.COUPACC)/12).to_numpy()
-    dy=candidates.predicted_dy_pp.to_numpy()/100
-    mu=carry-D*dy+0.5*C*dy**2
-    Q=LedoitWolf().fit(returns[ids].to_numpy()).covariance_
-    # Theta uses genuine earlier fixed-configuration validation predictions.
-    variances=errors.groupby('cusip').return_error.agg(['var','count'])
-    pooled=float(errors.return_error.var())
-    theta=np.array([variances.loc[i,'var'] if i in variances.index and variances.loc[i,'count']>=12 else pooled for i in ids])
-    theta=np.maximum(theta,1e-12)
-    if not 0 < args.max_weight <= 1 or args.max_holdings*args.max_weight < 1:
-        raise ValueError('max_weight must be in (0,1] and max_holdings*max_weight >= 1')
-    if args.gamma < 0 or args.epsilon_mu <= 0 or args.trade_cost < 0:
-        raise ValueError('Require gamma >= 0, epsilon_mu > 0, trade_cost >= 0')
-    m=gp.Model('Deliverable2_one_period_no_goal'); m.Params.OutputFlag=0; m.Params.TimeLimit=60; m.Params.MIPGap=1e-5
-    w=m.addMVar(n,lb=0,ub=args.max_weight,name='w'); buy=m.addMVar(n,lb=0,name='u_plus'); sell=m.addMVar(n,lb=0,name='u_minus')
-    selected=m.addMVar(n,vtype=GRB.BINARY,name='delta'); eta=m.addVar(lb=0,name='eta')
-    # SOC epigraph of ||Theta^(1/2) w||. The objective penalizes eta;
-    # epsilon_mu > 0 forces tightness at the optimum.
-    m.addConstr(w.sum()==1,name='full_investment')
-    m.addConstr(w-current==buy-sell,name='trade_definition')
-    m.addConstr(w<=selected,name='selection_link'); m.addConstr(selected.sum()<=args.max_holdings,name='cardinality')
-    m.addConstr(gp.quicksum(theta[i]*w[i]*w[i] for i in range(n))<=eta*eta,name='robust_norm')
-    for name,x,tol in [('duration',D,args.duration_tolerance),('convexity',C,args.convexity_tolerance)]+[(f'krd_{k:g}',KRD[j],args.krd_tolerance) for j,k in enumerate(KEYS)]:
-        m.addConstr(x@w-x@b<=tol,name=name+'_upper'); m.addConstr(x@b-x@w<=tol,name=name+'_lower')
-    robust=mu@w-args.epsilon_mu*eta
-    te=(w-b)@Q@(w-b); tc=args.trade_cost*(buy.sum()+sell.sum())
-    tracking_variance=m.addVar(lb=0,name='tracking_variance')
-    m.addConstr(te<=tracking_variance,name='tracking_variance_epigraph')
-    m.setObjective(args.gamma*tracking_variance-robust+tc,GRB.MINIMIZE)
+def solve_quadratic(stage, allowed, k, max_weight, transaction_cost,
+                    time_limit, exact):
+    """Solve a convex quadratic tracking problem, optionally with cardinality."""
+    try:
+        import gurobipy as gp
+        from gurobipy import GRB
+    except ImportError as exc:
+        raise RuntimeError('Install gurobipy and configure a Gurobi license') from exc
+    c = stage['candidates']
+    n = len(c)
+    if allowed is not None and len(allowed)*max_weight < 1-1e-9:
+        raise ValueError('Allowed support and max weight cannot sum to one')
+    if exact and k*max_weight < 1-1e-9:
+        raise ValueError('K times max_weight must be >= 1')
+    A, lin, const = objective_matrices(stage)
+    previous = c.current_weight.to_numpy(dtype=float)
+    durations = c.duration.to_numpy(dtype=float)
+
+    m = gp.Model('GoalPath_Stage1_H1_Active_Tracking')
+    m.Params.OutputFlag = 0
+    m.Params.TimeLimit = float(time_limit)
+    m.Params.MIPGap = 0.001
+    nvars = range(n)
+    w = m.addVars(nvars, lb=0, ub=max_weight, name='w')
+    buy = m.addVars(nvars, lb=0, name='buy')
+    sell = m.addVars(nvars, lb=0, name='sell')
+    m.addConstr(gp.quicksum(w[i] for i in nvars) == 1, 'full_investment')
+    for i in nvars:
+        m.addConstr(w[i] - previous[i] == buy[i] - sell[i], f'trade_balance_{i}')
+        if allowed is not None and i not in allowed:
+            m.addConstr(w[i] == 0, f'fixed_zero_{i}')
+    if exact:
+        z = m.addVars(nvars, vtype=GRB.BINARY, name='held')
+        for i in nvars:
+            m.addConstr(w[i] <= max_weight * z[i], f'cardinality_link_{i}')
+        m.addConstr(gp.quicksum(z[i] for i in nvars) <= k, 'cardinality')
+    dbenchmark = float(stage['benchmark_duration'])
+    exposure = gp.quicksum(durations[i]*w[i] for i in nvars)
+    eps = float(stage['duration_tolerance'])
+    m.addConstr(exposure <= dbenchmark + eps, 'duration_upper')
+    m.addConstr(exposure >= dbenchmark - eps, 'duration_lower')
+
+    quadratic = gp.QuadExpr()
+    for i in nvars:
+        quadratic.add(A[i,i] * w[i] * w[i])
+        for j in range(i+1,n):
+            if abs(A[i,j]) > 1e-17:
+                quadratic.add(2*A[i,j]*w[i]*w[j])
+    linear = gp.quicksum(lin[i]*w[i] for i in nvars)
+    traded = gp.quicksum(buy[i] + sell[i] for i in nvars)
+    m.setObjective(quadratic + linear + const
+                   + transaction_cost*(traded+stage['outside_pretrade_weight']),
+                   GRB.MINIMIZE)
     m.optimize()
-    candidates['forecast_return']=mu; candidates['estimated_duration']=D; candidates['estimated_convexity']=C
-    candidates['theta_return_variance']=theta; candidates['benchmark_proxy_weight']=b
-    for j,k in enumerate(KEYS): candidates[f'estimated_krd_{k:g}']=KRD[j]
-    info={'solver_status':m.Status,'solution_count':m.SolCount,'wealth_goal_enabled':False,'max_bond_weight':args.max_weight,
-          'candidate_count':n,'benchmark':'normalized amount outstanding times clean price of selected candidate subset; NOT AGG',
-          'current_portfolio':'same as proxy benchmark, illustrative', 'portfolio_feasible':False}
-    if m.SolCount:
-        weights=w.X
-        candidates['weight']=weights; candidates['buy']=buy.X; candidates['sell']=sell.X
-        true_robust=float(mu@weights-args.epsilon_mu*np.sqrt(theta@(weights**2)))
-        checks={'budget_error':abs(weights.sum()-1),'holdings':int((weights>1e-6).sum()),
-                'duration_deviation':float(abs(D@(weights-b))), 'convexity_deviation':float(abs(C@(weights-b))),
-                'maximum_krd_deviation':float(np.max(abs(KRD@(weights-b)))),
-                'maximum_bond_weight':float(weights.max()),
-                'trade_balance_error':float(np.max(abs(weights-current-buy.X+sell.X)))}
-        assert checks['budget_error']<1e-5 and checks['holdings']<=args.max_holdings
-        assert checks['maximum_bond_weight']<=args.max_weight+1e-5 and checks['trade_balance_error']<1e-5
-        assert checks['duration_deviation']<=args.duration_tolerance+1e-5
-        assert checks['convexity_deviation']<=args.convexity_tolerance+1e-5
-        assert checks['maximum_krd_deviation']<=args.krd_tolerance+1e-5
-        info.update(portfolio_feasible=True,optimal=m.Status==GRB.OPTIMAL,mip_gap=m.MIPGap,
-                    nominal_monthly_return=float(mu@weights),robust_monthly_return=true_robust,
-                    monthly_tracking_error=float(np.sqrt(max(0,(weights-b)@Q@(weights-b)))),
-                    transaction_cost_fraction=float(tc.getValue()),turnover=float(0.5*np.sum(buy.X+sell.X)),checks=checks)
-    elif m.Status==GRB.INFEASIBLE:
-        m.computeIIS(); m.write(str(Path(args.output)/'infeasible.ilp'))
-        info['infeasible_constraints']=[c.ConstrName for c in m.getConstrs() if c.IISConstr]
-    return candidates,info,Q,theta
+    if m.SolCount == 0:
+        status = str(m.Status)
+        if m.Status == GRB.INFEASIBLE:
+            m.computeIIS()
+            bad = [q.ConstrName for q in m.getConstrs() if q.IISConstr]
+            raise RuntimeError(f'Infeasible Stage 1 optimization; IIS: {bad[:15]}')
+        raise RuntimeError(f'Gurobi found no feasible portfolio; status={status}')
+    weights = np.array([w[i].X for i in nvars])
+    buys = np.array([buy[i].X for i in nvars])
+    sells = np.array([sell[i].X for i in nvars])
+    return {
+        'weights': weights, 'buys': buys, 'sells': sells,
+        'solver_status': int(m.Status),
+        'optimal': bool(m.Status == GRB.OPTIMAL),
+        'mip_gap': float(m.MIPGap) if exact else None
+    }
 
 
-def load_forecast_bundle(path):
-    """Read the locally generated elastic-net output; no raw data reload/refit."""
-    b=pd.read_pickle(path)
-    asof=pd.Period(b['asof'],'M')
-    if pd.Period(b['target_month'],'M')!=asof+1: raise ValueError('Expected one-month forecast horizon')
-    now=b['snapshot'].copy();history=b['history'].copy();errors=b['errors'].copy()
-    if now.cusip.duplicated().any() or not now.month.eq(asof).all(): raise ValueError('Invalid forecast snapshot')
-    if not np.isfinite(now.predicted_dy_pp).all(): raise ValueError('Missing yield forecasts')
-    if not history.month.between(asof-35,asof).all(): raise ValueError('History exceeds as-of window')
-    if not (pd.PeriodIndex(errors.target_month,freq='M')<=asof).all(): raise ValueError('Future uncertainty observations')
-    return b,now,history,errors,b['curve_params']
+def report_solution(stage, answer, k, costs, method):
+    """Recalculate the full-benchmark objective directly for auditability."""
+    c = stage['candidates']
+    w = answer['weights']
+    b = c.benchmark_weight.to_numpy(float)
+    mu = c.mu.to_numpy(float)
+    psi = c.psi.to_numpy(float)
+    B = c[[f'B_{name}' for name in FACTOR_NAMES]].to_numpy(float)
+    fac = B.T @ w - stage['benchmark_factor']
+    active_mean = float(mu @ w - stage['benchmark_mu'])
+    factor_variance = float(fac @ stage['sigma_f'] @ fac)
+    residual_variance = float(psi @ np.square(w-b)
+                              + stage['outside_benchmark_psi_constant'])
+    tracking_variance = max(0., factor_variance + residual_variance)
+    tc = float(costs * (sum(answer['buys']) + sum(answer['sells'])
+                        + stage['outside_pretrade_weight']))
+    expected_sq = tracking_variance + active_mean**2
+    actual_duration = float(c.duration @ w)
+    held = int((w > 1e-6).sum())
+    if held > k or abs(w.sum()-1) > 1e-5:
+        raise AssertionError('Portfolio violates cardinality or investment constraints')
+    if abs(actual_duration-stage['benchmark_duration']) > stage['duration_tolerance']+1e-5:
+        raise AssertionError('Duration band violated')
+    if not np.allclose(
+        w - c.current_weight.to_numpy(float),
+        answer['buys'] - answer['sells'], atol=1e-5
+    ):
+        raise AssertionError('Trade definition violated')
+    return {
+        'method': method, 'asof': stage['asof'],
+        'target_month': stage['target_month'],
+        'benchmark_type': stage['benchmark_type'],
+        'initial_holdings_type': stage['holdings_type'],
+        'candidate_count': len(c), 'holdings_count': held, 'K': k,
+        'portfolio_expected_return': float(mu @ w),
+        'benchmark_expected_return': float(stage['benchmark_mu']),
+        'expected_active_return': active_mean,
+        'active_factor_variance': factor_variance,
+        'active_residual_variance': residual_variance,
+        'tracking_variance': tracking_variance,
+        'expected_squared_active_return': expected_sq,
+        'expected_monthly_tracking_error': float(np.sqrt(expected_sq)),
+        'transaction_cost_fraction': tc,
+        'objective_value': expected_sq + tc,
+        'one_way_turnover': float(0.5*(sum(answer['buys'])+sum(answer['sells'])
+                                       +stage['outside_pretrade_weight'])),
+        'benchmark_duration': float(stage['benchmark_duration']),
+        'portfolio_duration': actual_duration,
+        'duration_gap': actual_duration-stage['benchmark_duration'],
+        'forced_sale_outside_candidates': float(stage['outside_pretrade_weight']),
+        'solver_status': answer['solver_status'],
+        'optimal': answer['optimal'],
+        'mip_gap': answer['mip_gap']
+    }
+
+
+def run_solver(stage, method='heuristic', k=10, max_weight=1.0,
+               transaction_cost=0.001, duration_tolerance=0.5,
+               time_limit=60):
+    if method not in ('heuristic','exact','both'):
+        raise ValueError('method must be heuristic, exact, or both')
+    if not 0 < max_weight <= 1 or transaction_cost < 0 or duration_tolerance < 0:
+        raise ValueError('Invalid weight, transaction-cost, or duration parameters')
+    stage = dict(stage)
+    stage['duration_tolerance'] = duration_tolerance
+    validate_stage(stage, k)
+    if k*max_weight < 1-1e-9:
+        raise ValueError('K * max_weight must be >= 1')
+    results = {}
+    if method in ('heuristic','both'):
+        relaxed = solve_quadratic(
+            stage, None, k, max_weight, transaction_cost, time_limit, exact=False
+        )
+        top = np.argsort(-relaxed['weights'], kind='stable')[:k]
+        restricted = solve_quadratic(
+            stage, set(top.tolist()), k, max_weight, transaction_cost,
+            time_limit, exact=False
+        )
+        results['heuristic'] = (restricted, report_solution(
+            stage, restricted, k, transaction_cost, 'relax_and_fix'))
+    if method in ('exact','both'):
+        exact = solve_quadratic(
+            stage, None, k, max_weight, transaction_cost, time_limit, exact=True
+        )
+        results['exact'] = (exact, report_solution(
+            stage, exact, k, transaction_cost, 'exact_miqp'))
+    return results
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('forecast_file',type=Path,help='elastic_net_outputs.pkl generated locally by elastic net')
-    p.add_argument('--output',type=Path,required=True,help='NEW output directory')
-    for name,kind in [('max-weight',float),('candidates',int),('max-holdings',int),
-                      ('gamma',float),('epsilon-mu',float),('trade-cost',float),
-                      ('duration-tolerance',float),('convexity-tolerance',float),('krd-tolerance',float)]:
-        p.add_argument('--'+name,type=kind,default=None)
-    cli=p.parse_args()
-    manifest,now,history,errors,params=load_forecast_bundle(cli.forecast_file)
-    settings=dict(candidates=40,max_holdings=10,gamma=10.,epsilon_mu=.5,trade_cost=.001,
-                  duration_tolerance=.5,convexity_tolerance=10.,krd_tolerance=.5,max_weight=.20)
-    for name,value in vars(cli).items():
-        if value is not None and name not in ['forecast_file','output']: settings[name]=value
-    settings['asof']=manifest['asof'];settings['output']=str(cli.output)
-    cli.output.mkdir(parents=True,exist_ok=False)
-    holdings,result,Q,theta=solve_period(now,history,errors,params,SimpleNamespace(**settings))
-    holdings.to_csv(cli.output/'portfolio.csv',index=False)
-    report={'forecast_source':str(cli.forecast_file.resolve()),'asof':manifest['asof'],
-            'target_month':manifest['target_month'],'settings':settings,'optimization':result,
-            'limitations':['Candidate-subset proxy benchmark, not AGG.',
-             'Estimated coupon-bond risk analytics; eligibility and release vintages unverified.',
-             'No goal-achievement probability from this single-period solve.',
-             'No target-period realized returns used or evaluated by this solver.']}
-    (cli.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-    print('ONE-PERIOD ROBUST MVO — no wealth goal; default maximum bond weight 20%')
-    print(json.dumps(result,indent=2))
-    print('Selected positive-weight holdings:')
-    if 'weight' in holdings:
-        print(holdings.loc[holdings.weight>1e-6,['cusip','predicted_dy_pp','forecast_return','weight','buy','sell']].to_string(index=False))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('stage_file', type=Path, help='stage1_inputs.pkl from prepare_stage1_inputs.py')
+    parser.add_argument('--output', type=Path, required=True, help='New results folder')
+    parser.add_argument('--method', choices=['heuristic','exact','both'], default='heuristic')
+    parser.add_argument('--max-holdings', type=int, default=10, help='Stage 1 K')
+    parser.add_argument('--max-weight', type=float, default=1.0)
+    parser.add_argument('--trade-cost', type=float, default=0.001,
+                        help='0.1%% of traded portfolio value by default')
+    parser.add_argument('--duration-tolerance', type=float, default=0.5)
+    parser.add_argument('--time-limit', type=float, default=60)
+    args = parser.parse_args()
+    stage = pd.read_pickle(args.stage_file)
+    results = run_solver(
+        stage, method=args.method, k=args.max_holdings,
+        max_weight=args.max_weight, transaction_cost=args.trade_cost,
+        duration_tolerance=args.duration_tolerance, time_limit=args.time_limit
+    )
+    args.output.mkdir(parents=True, exist_ok=False)
+    report = {}
+    for method, (answer, metrics) in results.items():
+        candidates = stage['candidates'].copy()
+        candidates['optimized_weight'] = answer['weights']
+        candidates['buy'] = answer['buys']
+        candidates['sell'] = answer['sells']
+        candidates.to_csv(args.output / f'portfolio_{method}.csv', index=False)
+        report[method] = metrics
+        print(f'\n{method.upper()} (Stage 1, H=1)')
+        print(json.dumps(metrics, indent=2))
+        selected = candidates.loc[candidates.optimized_weight > 1e-6,
+                                  ['cusip','optimized_weight','mu','duration',
+                                   'benchmark_weight','current_weight']]
+        print(selected.to_string(index=False))
+    if 'exact' in report and 'heuristic' in report:
+        report['comparison'] = {
+            'heuristic_minus_exact_objective': (
+                report['heuristic']['objective_value'] -
+                report['exact']['objective_value']
+            )
+        }
+    (args.output/'stage1_optimization_report.json').write_text(
+        json.dumps(report,indent=2)+'\n'
+    )
 
 
-if __name__=='__main__': main()
+if __name__ == '__main__':
+    main()
