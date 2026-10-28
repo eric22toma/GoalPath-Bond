@@ -1,0 +1,47 @@
+name: Stage 1 VS Code Run-arrow smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'prepare_stage1_inputs.py'
+      - 'robust_mvo_one_period.py'
+      - '.github/workflows/stage1-run-arrow.yml'
+  pull_request:
+    paths:
+      - 'prepare_stage1_inputs.py'
+      - 'robust_mvo_one_period.py'
+  workflow_dispatch:
+
+jobs:
+  default-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install requirements
+        run: python -m pip install pandas numpy scipy scikit-learn gurobipy
+      - name: Compile unchanged upstream and updated Stage 1 code
+        run: python -m py_compile process_investable_universe.py elastic_net_one_period.py prepare_stage1_inputs.py robust_mvo_one_period.py
+      - name: VS Code Run arrow - staging (no arguments)
+        run: python prepare_stage1_inputs.py
+      - name: VS Code Run arrow - optimizer (no arguments)
+        run: python robust_mvo_one_period.py
+      - name: Validate generated files and solver output
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          d = Path('stage1_outputs')
+          assert (d/'inputs'/'stage1_inputs.pkl').exists()
+          assert (d/'inputs'/'candidate_covariance.csv').exists()
+          assert (d/'results'/'portfolio_heuristic.csv').exists()
+          report = json.loads((d/'results'/'stage1_optimization_report.json').read_text())
+          outcome = report['heuristic']
+          assert outcome['holdings_count'] <= 5
+          assert abs(outcome['duration_gap']) <= 0.5 + 1e-5
+          assert outcome['benchmark_type'] == 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
+          print('NO-ARGUMENT STAGE 1 VERIFIED:',outcome['asof'],outcome['holdings_count'])
+          PY
