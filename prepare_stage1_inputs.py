@@ -353,12 +353,12 @@ def show_stage1_input_summary(stage, preview=5):
     candidate_q = np.asarray(stage['candidate_covariance'], dtype=float)
 
     print('\n' + '=' * 76)
-    print('STAGE 1: FIVE REQUIRED INPUTS (DELIVERABLE 3, SECTION 5.2)')
+    print('The FIVE REQUIRED INPUTS for stage 1')
     print('=' * 76)
     print(f'Decision month: {stage["asof"]}   Forecast target: {stage["target_month"]}')
     print(f'Capital: ${capital:,.2f}   Eligible bonds: {len(e):,}   '
           f'Tradable candidates: {len(c):,}')
-    print('1. EXPECTED RETURNS mu-hat_t: '
+    print('1. EXPECTED RETURNS (Yield-based carry variant) mu-hat_t: '
           'mu_i = YIELD_i/12 - D_i * forecast_delta_y_i (decimal units)')
     print(f'   Shape: ({len(e):,},)   Range: {e.mu.min():+.6f} to {e.mu.max():+.6f} '
           f'per month; weighted benchmark mu = {stage["benchmark_mu"]:+.6f}')
