@@ -369,7 +369,7 @@ def show_stage1_input_summary(stage, preview=5):
     print('   Monthly Treasury factor covariance Sigma_f (3 x 3):')
     print(pd.DataFrame(factor_cov, index=FACTOR_NAMES,
                        columns=FACTOR_NAMES).to_string(float_format=lambda x: f'{x:.7g}'))
-    print('3. BENCHMARK WEIGHTS b_t: full eligible universe')
+    print('3. BENCHMARK WEIGHTS b_t: full eligible universe calculated as b_{i,t} = (A_{i,t} × P_{i,t}) / Σ_j (A_{j,t} × P_{j,t})')
     print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; '
           f'nonzero constituents = {(b > 0).sum():,}')
     print('4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
