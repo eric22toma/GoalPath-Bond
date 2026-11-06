@@ -31,7 +31,7 @@ LAST_OOS_YEAR = 2025
 
 # Save file location for prepare_stage1_inputs.
 DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'
-                           / 'elastic_net_outputs.pkl')
+                           / 'elastic_net_outputs.pkl.gz')
 
 
 def sven_yield(tau, params):
@@ -685,7 +685,8 @@ def main():
 
     DEFAULT_FORECAST_BUNDLE.parent.mkdir(parents=True, exist_ok=True)
     temp_bundle = DEFAULT_FORECAST_BUNDLE.with_suffix('.pkl.tmp')
-    with temp_bundle.open('wb') as fh:
+    import gzip
+    with gzip.open(temp_bundle, 'wb', compresslevel=6) as fh:
         pickle.dump(bundle, fh, protocol=pickle.HIGHEST_PROTOCOL)
     temp_bundle.replace(DEFAULT_FORECAST_BUNDLE)
     print(f'\\nStage 1 H=1 forecast saved to '
@@ -702,7 +703,7 @@ def main():
         if not history_errors.empty:
             history_errors.to_csv(args.output_dir / 'backtest_h1.csv', index=False)
         # Keep the existing --output-dir contract for explicit CLI runs.
-        target_bundle = args.output_dir / 'elastic_net_outputs.pkl'
+        target_bundle = args.output_dir / 'elastic_net_outputs.pkl.gz'
         if target_bundle.resolve() != DEFAULT_FORECAST_BUNDLE.resolve():
             import shutil
             shutil.copyfile(DEFAULT_FORECAST_BUNDLE, target_bundle)
