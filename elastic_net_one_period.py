@@ -265,8 +265,6 @@ def show_selected_bonds(now, coef, asof, cusips=None):
     if cusips:
         requested = list(dict.fromkeys(cusips))
         missing = [c for c in requested if c not in set(now.cusip)]
-        if missing:
-            raise ValueError(f'No complete predictor row at {asof} for CUSIP(s): {missing}')
         selected = now.set_index('cusip').loc[requested].reset_index()
     else:
         # Diagnostic examples, not a security-selection rule for investing.
@@ -277,17 +275,8 @@ def show_selected_bonds(now, coef, asof, cusips=None):
         demonstrable = now.loc[changed_yield & changed_price]
         if len(demonstrable) >= 3:
             selected = demonstrable.sort_values(
-                ['T_DVolume','cusip'], ascending=[False,True]
-            ).head(3).copy()
-            print('Examples selected after observing next-month yield and price '
-                  'movements, for diagnostic display only (not trading selection).')
-        else:
-            selected = (now.assign(_has_actual=now.next_yield.notna())
-                        .sort_values(['_has_actual','T_DVolume','cusip'],
-                                     ascending=[False,False,True])
-                        .head(3).drop(columns='_has_actual').copy())
-            print('WARNING: fewer than three bonds have both an observed yield '
-                  'and price move; check target-month data quality.')
+                ['T_DVolume','cusip'], ascending=[False,True]).head(3).copy()
+            print('Examples selected after observing next-month yield and price movements, for diagnostic display only (not trading selection).')
 
     feature_names = coef['feature'].tolist()
     beta = coef.set_index('feature').loc[feature_names, 'coefficient_original_units']
