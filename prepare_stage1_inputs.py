@@ -476,7 +476,8 @@ def main():
     if not args.forecast_file.is_file():
         parser.error(
             f'Forecast bundle not found: {args.forecast_file}. '
-            'First click Run on elastic_net_one_period.py; '
+            'Run git pull to obtain the shared GitHub forecast (or run '
+            'elastic_net_one_period.py to generate a new one); '
             'then run prepare_stage1_inputs.py.'
         )
     print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
