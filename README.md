@@ -29,8 +29,15 @@ to Git.
 ## Elastic-net yield forecast (H = 1 month only)
 
 ```bash
-python3 elastic_net_one_period.py --asof latest
+python3 elastic_net_one_period.py
 ```
+
+**A normal Run-arrow execution now saves one reusable H=1 handoff** to
+`stage1_outputs/forecasts/elastic_net_outputs.pkl`. Staging reads that
+file directly; it does not retrain elastic net. The bundle stores the
+forecast snapshot, compact 36-month bond-return history needed for risk,
+Treasury curve parameters, and selected hyperparameters. It does not need
+an expensive rolling backtest to be usable.
 
 This builds a predictor row per bond-month and trains a pooled elastic net to
 forecast the next calendar month's **change in bond yield**, not its total
@@ -66,10 +73,10 @@ after at least 12 observed training target months, instead of a hard-coded
 remain in-sample training history. The full multi-year backtest can be
 computationally expensive because the model refits each month.
 
-The output directory must not already exist. With `--backtest`, the output
-includes `elastic_net_outputs.pkl`, which can be passed directly to
-`prepare_stage1_inputs.py`; otherwise staging invokes the existing
-elastic-net functions itself.
+The optional output directory must not already exist. With `--backtest`, the
+historical errors are included in the saved bundle and exported separately.
+Even without `--backtest`, the default reusable bundle is saved and
+replaced each run. The entire `stage1_outputs/` directory is ignored by Git.
 
 ## Stage 1 tracking initialization and one-month optimization
 
@@ -79,12 +86,13 @@ With the repository open and Python/Gurobi dependencies installed, use the
 **Run Python File** arrow in this order:
 
 1. `process_investable_universe.py` — reports data loading.
-2. `elastic_net_one_period.py` — displays the one-month forecasts (unchanged).
-3. `prepare_stage1_inputs.py` — **no arguments required**. Because the
-   elastic-net Run button doesn't save a pickle by default, staging calls the
-   existing elastic-net functions to rebuild its own H=1 forecast and compute
-   portfolio inputs. It automatically uses an **explicitly labeled proxy**
-   benchmark if no AGG constituent-weight file has been supplied.
+2. `elastic_net_one_period.py` — runs the existing forecasting model,
+   prints the one-month predictions, and **saves the forecast pickle**.
+3. `prepare_stage1_inputs.py` — **no arguments required**. Reads that
+   saved forecast (no duplicate fit), then computes the Section 5.2
+   portfolio inputs. If the forecast is missing, it asks you to run
+   elastic net first. Without AGG constituent weights it uses an
+   **explicitly labeled proxy** benchmark.
 4. `robust_mvo_one_period.py` — **no arguments required**. Reads the staging
    file written by Step 3 and solves the Stage 1 portfolio.
 
@@ -101,11 +109,11 @@ costs, and a ±0.5-year duration band, using the relax-and-fix method.
 Both Python scripts resolve paths from the repository location rather than
 the current VS Code working directory.
 
-This automatic staging re-fits the elastic net because the unchanged
-forecasting script prints but does not save a bundle on an ordinary Run.
-When a saved bundle exists, optionally provide its file path to avoid
-re-fitting. To see the source data's first rows, run the processing script
-independently (no saved preprocessing files are required).
+Forecasting **runs only in `elastic_net_one_period.py`**. To update the
+forecasts, click its Run arrow again, then run staging and optimization
+sequentially. You may still pass an explicit historical forecast pickle
+to staging if needed. To see the source data's first rows, run processing
+independently; it needs no saved intermediate file.
 
 Section 5 of Deliverable 3 defines the H=1 objective as expected **squared
 active return**, not a separate reward for exceeding expected benchmark return:
@@ -181,10 +189,11 @@ cross-month quote-consistency checks were retained in CI.
 
 ## Automated checks
 
-GitHub Actions additionally checks the two no-argument VS Code entry points
-with real source data and a Gurobi Stage 1 solve. It also runs
-`python -m py_compile`, the H=1 regression suite
-(`python -m unittest -v test_goalpath_h1`), and an elastic-net forecasting
-smoke test against the repository's real source files. Successful execution
-does not establish data quality, predictive validity, or absence of
-publication-timing look-ahead in all macro features.
+A single GitHub Actions workflow runs syntax and unit checks and then
+verifies the **four-file sequence on the real data**, including the
+saved forecast bundle, staging handoff, and Gurobi optimization. Previously
+generated data under `03_Results/` and archived experiments are historical
+materials, not active dependencies of the new pipeline.
+
+Successful execution does not establish data quality, predictive validity,
+or absence of publication-timing look-ahead in all macro features.
