@@ -221,9 +221,17 @@ __marimo__/
 
 /01_Source_Data/Investable_universe_AGG.csv
 
-# Keep only the shared, reproducible H=1 forecast artifact on GitHub.
-# Optimization inputs and results are generated locally (not version-controlled).
+# Shared forecast and all six Stage 1 input artifacts are tracked in GitHub.
+# Optimization results are still generated locally until explicitly shared.
 /stage1_outputs/*
 !/stage1_outputs/forecasts/
+!/stage1_outputs/inputs/
 /stage1_outputs/forecasts/*
 !/stage1_outputs/forecasts/elastic_net_outputs.pkl.gz
+/stage1_outputs/inputs/*
+!/stage1_outputs/inputs/stage1_inputs.pkl
+!/stage1_outputs/inputs/eligible_inputs.csv
+!/stage1_outputs/inputs/candidate_inputs.csv
+!/stage1_outputs/inputs/candidate_covariance.csv
+!/stage1_outputs/inputs/factor_covariance.csv
+!/stage1_outputs/inputs/stage1_report.json
