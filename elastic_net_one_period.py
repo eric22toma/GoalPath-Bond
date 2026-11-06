@@ -294,31 +294,12 @@ def show_selected_bonds(now, coef, asof, cusips=None):
         actual_change_bp = row.dy * 100 if pd.notna(row.dy) else np.nan
         error_bp = actual_change_bp - forecast_change_bp if pd.notna(actual_change_bp) else np.nan
 
-        summary = {
-            'cusip': row.cusip,
-            'asof_month': str(asof),
-            'target_month': str(target_month),
-            'current_yield_percent': start_yield_pct,
-            'expected_change_yield_bp': forecast_change_bp,
-            'expected_next_yield_percent': forecast_yield_pct,
-            'realized_next_yield_percent': actual_yield_pct,
-            'realized_change_yield_bp': actual_change_bp,
-            'forecast_error_bp': error_bp,
-            'observed_return_asof_percent': row.RET_EOM * 100,
-            'realized_next_month_return_percent': row.next_return * 100,
-        }
-        summaries.append(summary)
-
         print(f'\nCUSIP: {row.cusip}')
         print(f'  Observed yield ({asof}):        {start_yield_pct:.4f}%')
         print(f'  Forecast yield change:          {forecast_change_bp:+.2f} bp')
         print(f'  Forecast yield ({target_month}):  {forecast_yield_pct:.4f}%')
-
         if pd.notna(actual_yield_pct):
-            np.testing.assert_allclose(
-                actual_change_bp, (actual_yield_pct - start_yield_pct) * 100,
-                atol=1e-8
-            )
+            np.testing.assert_allclose(actual_change_bp, (actual_yield_pct - start_yield_pct) * 100, atol=1e-8)
             print(f'  Actual yield ({target_month}):    {actual_yield_pct:.4f}% [evaluation only]')
             print(f'  Actual yield change:            {actual_change_bp:+.2f} bp [evaluation only]')
             print(f'  Forecast error (actual - pred): {error_bp:+.2f} bp')
@@ -326,30 +307,23 @@ def show_selected_bonds(now, coef, asof, cusips=None):
             print(f'  Actual yield ({target_month}):    not available')
 
         values = selected.loc[selected.cusip.eq(row.cusip), feature_names].iloc[0].astype(float)
-        table = pd.DataFrame({
-            'predictor': feature_names,
-            'value': values.to_numpy(),
-            'beta_original_units': beta.to_numpy(),
-            'contribution_bp': values.to_numpy() * beta.to_numpy() * 100,
-        })
-        print('  Predictors and forecast contributions:')
+        table = pd.DataFrame({'predictor': feature_names, 'value': values.to_numpy(), 'beta_original_units': beta.to_numpy(), 'contribution_bp': values.to_numpy() * beta.to_numpy() * 100,})
+        print('Predictors and forecast contributions:')
         print(table.to_string(index=False))
         print(f'  Intercept contribution: {intercept * 100:+.2f} bp')
         np.testing.assert_allclose(
             intercept + values.to_numpy() @ beta.to_numpy(),
-            row.predicted_dy_pp, atol=1e-10
-        )
-
+            row.predicted_dy_pp, atol=1e-10)
+        
     print('Realized future yields are evaluation data, never model inputs.')
     return pd.DataFrame(summaries), selected[['cusip'] + feature_names].copy()
 
 
 def monthly_quote_coverage(panel):
     """Observed month-to-month quote changes for identical CUSIPs.
-
     A month with nearly identical quoted prices across the universe is
-    unsuitable as an evaluation target; this test never alters model inputs.
-    """
+    unsuitable as an evaluation target; this test never alters model inputs."""
+    
     ordered = panel[['cusip','month','PRICE_EOM','YIELD']].sort_values(
         ['cusip','month']).copy()
     grouped = ordered.groupby('cusip', sort=False)
