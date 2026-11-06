@@ -15,8 +15,7 @@ from process_investable_universe import (process_all_data, history_for_features,
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
 OPTIONAL_FEATURES = ['forward_5y']
-BOND_COLUMNS = [
-    'cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
+BOND_COLUMNS = ['cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
     'NCOUPS', 'nextcoup', 'DEFAULTED', 'CONV', 'BOND_TYPE', 'RATING_NUM']
 
@@ -111,11 +110,7 @@ def load_panel(prepared_bonds, macro, params):
     cols = BOND_COLUMNS
     # Input yields are decimal fractions; yield changes use percentage points.
     p = prepared_bonds.loc[:, cols].copy()
-    if p.DATE.isna().any() or p.cusip.str.strip().eq('').any():
-        raise ValueError('Bond panel requires valid DATE and nonblank CUSIP')
     p['month'] = p.DATE.dt.to_period('M')
-    if p.duplicated(['cusip','month']).any():
-        raise ValueError('Duplicate bond-month keys')
     p = p.merge(macro, left_on='month', right_index=True, how='left', validate='many_to_one')
     p['time_to_maturity'] = (p.MATURITY-p.DATE).dt.days/365.25
     p['rich_cheap'] = np.nan
@@ -126,8 +121,7 @@ def load_panel(prepared_bonds, macro, params):
     # Require the immediately following calendar month for realized targets.
     future = p[['cusip','month','YIELD','RET_EOM','PRICE_EOM']].copy()
     future['month'] = future.month-1
-    future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return',
-                                    'PRICE_EOM':'next_price'})
+    future = future.rename(columns={'YIELD':'next_yield','RET_EOM':'next_return','PRICE_EOM':'next_price'})
     p = p.merge(future,on=['cusip','month'],how='left',validate='one_to_one')
     p['target_month'] = p.month+1
     p['dy'] = 100*(p.next_yield-p.YIELD)  # realized one-month yield change (pp)
@@ -135,21 +129,11 @@ def load_panel(prepared_bonds, macro, params):
 
 
 def estimator(alpha, l1_ratio):
-    """Fit elastic net with both L1 and L2 regularization."""
-    if alpha <= 0 or not 0 < l1_ratio < 1:
-        raise ValueError('Elastic net requires alpha > 0 and 0 < l1_ratio < 1')
-    return make_pipeline(
-        StandardScaler(),
-        ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-7)
-    )
-
+    return make_pipeline(StandardScaler(),ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-7))
 
 def training_rows(panel, asof, features):
     """Keep targets already realized by asof, with complete predictor rows."""
-    return panel.loc[
-        (panel.month >= pd.Period('2016-01', 'M')) &
-        (panel.target_month <= asof)
-    ].dropna(subset=features + ['dy']).copy()
+    return panel.loc[(panel.month >= pd.Period('2016-01', 'M')) & (panel.target_month <= asof)].dropna(subset=features + ['dy']).copy()
 
 
 def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
@@ -165,8 +149,7 @@ def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
     sample['_cv_hash'] = pd.util.hash_pandas_object(ids, index=False).to_numpy()
     sample['_cv_rank'] = sample.groupby('month')['_cv_hash'].rank(method='first')
     return sample.loc[sample['_cv_rank'] <= limit].drop(
-        columns=['_cv_hash', '_cv_rank']
-    )
+        columns=['_cv_hash', '_cv_rank'])
 
 
 def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
