@@ -1,78 +1,70 @@
-name: GoalPath H1 checks
+name: GoalPath-Bond sequential pipeline checks
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  smoke:
+  stage1:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
+      - name: Install requirements
         run: python -m pip install numpy pandas scipy scikit-learn gurobipy
-      - name: Syntax check
-        run: python -m py_compile process_investable_universe.py elastic_net_one_period.py prepare_stage1_inputs.py robust_mvo_one_period.py
-      - name: Data and forecast smoke tests
-        run: python -m unittest -v test_goalpath_h1
-      - name: Verify AGG holdings and credit-rating input fields
+      - name: Syntax and unit tests
         run: |
-          python - <<'PY'
-          import pandas as pd
-          src='01_Source_Data/Investable_universe_AGG.csv.zip'
-          cols = pd.read_csv(src,nrows=0).columns.tolist()
-          print('BOND_SOURCE_COLUMNS:',cols)
-          check=['RATING_NUM','AMOUNT_OUTSTANDING','DURATION','PRICE_EOM','RET_EOM']
-          print('BOND_REQUIRED_COLUMNS:',{k:k in cols for k in check})
-          print('WEIGHT_FIELD_CANDIDATES:',[k for k in cols if 'weight' in k.lower() or 'holding' in k.lower()])
-          PY
-      - name: Stage 1 unit and optimizer tests
-        run: python -m unittest -v test_stage1
-      - name: Standalone full-data processing check
+          python -m py_compile process_investable_universe.py elastic_net_one_period.py prepare_stage1_inputs.py robust_mvo_one_period.py
+          python -m unittest -v test_goalpath_h1 test_stage1
+      - name: Data processing (Run arrow 1)
         run: python process_investable_universe.py
-      - name: Audit month-over-month bond yields and prices
+      - name: Elastic net forecasts (Run arrow 2, saves handoff)
+        run: python elastic_net_one_period.py
+      - name: Verify saved H1 forecast bundle and lean history
         run: |
           python - <<'PY'
           import pandas as pd
-          path = '01_Source_Data/Investable_universe_AGG.csv.zip'
-          df = pd.read_csv(path, usecols=['cusip','DATE','YIELD','PRICE_EOM','RET_EOM'], dtype=str)
-          df['DATE'] = pd.to_datetime(df.DATE)
-          for k in ['YIELD','RET_EOM']:
-              df[k] = pd.to_numeric(df[k].str.strip().str.rstrip('%'), errors='coerce') / 100
-          df['PRICE_EOM'] = pd.to_numeric(df.PRICE_EOM, errors='coerce')
-          df['month'] = df.DATE.dt.to_period('M')
-          df = df.sort_values(['cusip','month'])
-          prev_month = df.groupby('cusip').month.shift()
-          consecutive = prev_month.eq(df.month - 1)
-          dy = df.YIELD - df.groupby('cusip').YIELD.shift()
-          dp = df.PRICE_EOM - df.groupby('cusip').PRICE_EOM.shift()
-          prev_price = df.groupby('cusip').PRICE_EOM.shift()
-          for month in ['2024-12', '2025-01', '2025-10', '2025-11', '2025-12']:
-              sel = df.month.eq(month)&consecutive & dy.notna()
-              moved = sel & dy.ne(0)
-              flat = sel & dy.eq(0)
-              price_changed = dp.abs().gt(1e-6) & prev_price.notna() & df.PRICE_EOM.notna()
-              print('AUDIT',month,'pairs=',int(sel.sum()),'flat_yield=',int(flat.sum()),'changed_yield=',int(moved.sum()),'changed_price_while_flat_yield=',int((flat&price_changed).sum()),'moved_yield_and_price=',int((moved&price_changed).sum()))
-              examples = df.loc[moved, ['cusip','YIELD','PRICE_EOM']].head(3)
-              print('NONZERO_YIELD_EXAMPLES',month, examples.to_dict('records'))
-          sel = consecutive & dy.notna()
-          print('AUDIT ALL','pairs=',int(sel.sum()),'flat_yield=',int((sel&dy.eq(0)).sum()),'nonzero_yield=',int((sel&dy.ne(0)).sum()),'price_changes_with_flat_yield=',int((sel&dy.eq(0)&dp.abs().gt(1e-6)).sum()))
-          print('YIELD change bp quantiles:', (dy.loc[sel]*10000).quantile([0,.01,.05,.5,.95,.99,1]).to_dict())
+          from elastic_net_one_period import DEFAULT_FORECAST_BUNDLE
+          assert DEFAULT_FORECAST_BUNDLE.is_file(), 'Forecast pickle missing'
+          obj = pd.read_pickle(DEFAULT_FORECAST_BUNDLE)
+          assert pd.Period(obj['target_month']) == pd.Period(obj['asof']) + 1
+          assert len(obj['snapshot']) > 100
+          expected = {'cusip','month','RET_EOM','DURATION','time_to_maturity','RATING_NUM'}
+          assert set(obj['history'].columns) == expected
+          assert len(obj['history']) > len(obj['snapshot'])
+          print('FORECAST HANDOFF:',obj['asof'],'->',obj['target_month'],
+                len(obj['snapshot']),'bonds;',DEFAULT_FORECAST_BUNDLE.stat().st_size,
+                'bytes (no historical backtest required)')
           PY
-      - name: Real AGG / FRED / Treasury one-period smoke test
-        run: python elastic_net_one_period.py --asof latest
-      - name: Earliest feasible H1 chronological test
+      - name: Prepare optimization inputs (Run arrow 3, reads saved forecast)
+        run: python prepare_stage1_inputs.py
+      - name: Optimize one period (Run arrow 4)
+        run: python robust_mvo_one_period.py
+      - name: Check saved staging and initial funded trade
         run: |
-          python elastic_net_one_period.py --asof 2017-06
-          python elastic_net_one_period.py --asof 2017-06 --no-tune --backtest --backtest-start earliest --output-dir /tmp/goalpath-h1-earliest
-      - name: H1 short backtest and optimizer input verification
-        run: |
-          python elastic_net_one_period.py --asof latest --no-tune --backtest --backtest-start 2025-09 --output-dir /tmp/goalpath-h1-ci
-          python prepare_stage1_inputs.py /tmp/goalpath-h1-ci/elastic_net_outputs.pkl --benchmark-proxy --candidates 20 --output-dir /tmp/goalpath-stage1
-          python robust_mvo_one_period.py /tmp/goalpath-stage1/stage1_inputs.pkl --method both --max-holdings 5 --duration-tolerance 0.5 --time-limit 30 --output /tmp/goalpath-stage1-solution
-          python -c "import json; r=json.load(open('/tmp/goalpath-stage1-solution/stage1_optimization_report.json')); assert r['heuristic']['holdings_count'] <= 5 and r['exact']['holdings_count'] <= 5; assert abs(r['heuristic']['duration_gap']) <= 0.50001 and abs(r['exact']['duration_gap']) <= 0.50001; print('STAGE 1 HEURISTIC/EXACT VERIFIED:',r['comparison'])"
-
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          d = Path('stage1_outputs')
+          inputs = pd.read_pickle(d/'inputs'/'stage1_inputs.pkl')
+          from elastic_net_one_period import DEFAULT_FORECAST_BUNDLE
+          forecast = pd.read_pickle(DEFAULT_FORECAST_BUNDLE)
+          assert inputs['asof'] == forecast['asof']
+          assert inputs['target_month'] == forecast['target_month']
+          assert inputs['pretrade_cash_weight'] == 1.0
+          assert inputs['eligible'].current_weight.eq(0).all()
+          assert (d/'inputs'/'candidate_covariance.csv').is_file()
+          report = json.loads((d/'results'/'stage1_optimization_report.json').read_text())
+          h = report['heuristic']
+          assert h['holdings_count'] <= 5
+          assert abs(h['duration_gap']) <= 0.50001
+          assert abs(h['buy_notional_dollars'] - 100_000) < .10
+          assert abs(h['sell_notional_dollars']) < .10
+          assert abs(h['transaction_cost_dollars'] - 100) < .10
+          print('SEQUENTIAL PIPELINE PASSED:',h['holdings_count'],'bonds; $100 initial buy fees')
+          PY
