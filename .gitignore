@@ -221,5 +221,9 @@ __marimo__/
 
 /01_Source_Data/Investable_universe_AGG.csv
 
-# Locally generated Stage 1 bond forecasts, covariance inputs, portfolios
-/stage1_outputs/
+# Keep only the shared, reproducible H=1 forecast artifact on GitHub.
+# Optimization inputs and results are generated locally (not version-controlled).
+/stage1_outputs/*
+!/stage1_outputs/forecasts/
+/stage1_outputs/forecasts/*
+!/stage1_outputs/forecasts/elastic_net_outputs.pkl.gz
