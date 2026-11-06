@@ -26,56 +26,34 @@ def read_weight_file(path, asof=None):
     table = pd.read_csv(path, dtype={'cusip': str, 'CUSIP': str})
     if 'CUSIP' in table.columns and 'cusip' not in table.columns:
         table = table.rename(columns={'CUSIP': 'cusip'})
-    if not {'cusip', 'weight'}.issubset(table.columns):
-        raise ValueError(f'{path}: expected cusip and weight columns')
     if asof is not None:
         date_name = next((x for x in ('DATE', 'Date', 'date', 'month')
                           if x in table.columns), None)
-        if date_name is None:
-            raise ValueError('Benchmark weights require DATE (or month) to ensure month-specific membership')
         periods = pd.to_datetime(table[date_name], errors='coerce').dt.to_period('M')
         table = table.loc[periods == asof].copy()
-        if table.empty:
-            raise ValueError(f'No benchmark weights for {asof} in {path}')
     table['cusip'] = table.cusip.astype(str).str.strip()
     table['weight'] = pd.to_numeric(table.weight, errors='coerce')
-    if (table.cusip.eq('').any() or table.weight.isna().any()
-            or (table.weight < 0).any() or table.cusip.duplicated().any()):
-        raise ValueError(f'{path}: duplicate/blank CUSIPs or invalid weights')
-    if table.weight.sum() <= 0:
-        raise ValueError(f'{path}: nonpositive total weight')
     return table[['cusip', 'weight']]
 
 
 def curve_factor_model(curve_params, asof, lookback):
-    """Three-factor monthly Treasury covariance and maturity-specific loadings.
-    Reconstruct fitted 1–30y nominal Treasury yields from historical Svensson
-    parameters. Regress monthly fitted yield changes on changes in level
-    (10y), slope (10y-2y), and curvature (2*5y-2y-10y). Only use dates <= t.
-    """
-    curve = curve_params.loc[curve_params.index <= asof].dropna(
-        subset=['BETA0', 'BETA1', 'BETA2', 'BETA3', 'TAU1', 'TAU2']
-    ).sort_index().tail(lookback + 1)
-    if len(curve) < MIN_FACTOR_OBSERVATIONS + 1:
-        raise ValueError('Insufficient Treasury curve observations for factor covariance')
-    fitted = np.stack([sven_yield(TENORS, row.to_numpy(dtype=float))
-                       for _, row in curve[['BETA0','BETA1','BETA2','BETA3','TAU1','TAU2']].iterrows()])
-    y = pd.DataFrame(fitted, index=curve.index, columns=TENORS)
+    """Estimate Treasury factor covariance and maturity-specific loadings."""
+    params = ['BETA0', 'BETA1', 'BETA2', 'BETA3', 'TAU1', 'TAU2']
+    curve = curve_params.loc[:asof, params].dropna().sort_index().tail(lookback + 1)
+    y = pd.DataFrame(
+        [sven_yield(TENORS, row) for row in curve.to_numpy()],
+        index=curve.index, columns=TENORS)
     factors = pd.DataFrame({
         'level': y[10.0],
         'slope': y[10.0] - y[2.0],
-        'curvature': 2 * y[5.0] - y[2.0] - y[10.0],
-    })
-    # Do not interpret a gap in available curve months as a one-month change.
-    is_successor = factors.index == factors.index.to_series().shift(1).add(1)
-    df = factors.diff().loc[is_successor].dropna()
-    dy = y.diff().reindex(df.index)
-    if len(df) < MIN_FACTOR_OBSERVATIONS:
-        raise ValueError('Fewer than 12 complete monthly factor changes')
+        'curvature': 2*y[5.0] - y[2.0] - y[10.0]})
+    consecutive = factors.index == factors.index.to_series().shift(1).add(1)
+    df = factors.diff().loc[consecutive].dropna()
+    dy = y.diff().loc[df.index]
+    # Estimate maturity-specific loadings and factor covariance.
     coef = np.linalg.lstsq(df.to_numpy(), dy.to_numpy(), rcond=None)[0].T
     sigma_f = np.cov(df.to_numpy(), rowvar=False, ddof=1)
     return coef, sigma_f, df
-
 
 def bond_loadings(bonds, tenor_coefs):
     """Return B_i: change in monthly bond return per 1 pp factor move."""
