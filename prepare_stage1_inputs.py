@@ -2,7 +2,7 @@
 
 Construct expected returns, three-factor covariance, benchmark and
 starting weights, and duration in a separate staging bundle. With no
-arguments, reuse the existing elastic-net code to forecast H=1 and write
+arguments, read the forecast saved by elastic_net_one_period.py and write
 stage1_outputs/inputs/stage1_inputs.pkl, ready for the optimizer.
 
 VS Code: click Run Python File; no arguments required.
@@ -24,10 +24,7 @@ import numpy as np
 import pandas as pd
 
 from elastic_net_one_period import (
-    sven_yield, FEATURES, BOND_COLUMNS, CV_MIXING_GRID, CV_PENALTY_GRID,
-    process_all_data, history_for_features, PROJECT_ROOT,
-    macro_features, load_panel, monthly_quote_coverage,
-    trustworthy_target_month, training_rows, tune_elastic_net, fit_forecast,
+    sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,
 )
 DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
 DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
@@ -400,70 +397,11 @@ def show_stage1_input_summary(stage, preview=5):
     print('=' * 76)
 
 
-def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
-    """Build H=1 inputs using the existing elastic-net and processing functions.
-
-    The standard elastic-net Run button prints forecasts but saves no pickle.
-    This function reuses its modeling functions without changing either script.
-    """
-    print('No saved elastic-net bundle supplied; constructing H=1 forecasts '
-          'with the existing forecasting functions.')
-    data = process_all_data(bond_columns=BOND_COLUMNS)
-    macro, curve_params = macro_features(
-        history_for_features(data, 'curve'),
-        history_for_features(data, 'fred'),
-    )
-    dates = data['bonds'][1].DATE.dt.to_period('M')
-    if dates.empty:
-        raise ValueError('No prepared bond observations')
-    calendar = pd.period_range(dates.min(), dates.max(), freq='M')
-    macro = macro.reindex(calendar)
-    curve_params = curve_params.reindex(calendar)
-    panel = load_panel(data['bonds'][1], macro, curve_params)
-    del data
-    complete = panel[FEATURES].notna().all(axis=1)
-    if not complete.any():
-        raise ValueError('No bonds have the elastic-net predictor set')
-    if asof == 'latest':
-        coverage = monthly_quote_coverage(panel)
-        realized = panel.loc[complete & panel.dy.notna(), 'month'].unique()
-        good_months = [m for m in sorted(realized)
-                       if trustworthy_target_month(coverage, m + 1)]
-        if not good_months:
-            raise ValueError('No month has complete predictors and credible '
-                             'next-month quotes; pass --asof YYYY-MM explicitly')
-        chosen = good_months[-1]
-    else:
-        chosen = pd.Period(asof, freq='M')
-    prior = training_rows(panel, chosen, FEATURES)
-    if prior.empty:
-        raise ValueError(f'No historical training observations for {chosen}')
-    if fixed is None:
-        alpha, penalty, rmse, folds, _ = tune_elastic_net(
-            prior, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID
-        )
-        print(f'Chronological CV: alpha={alpha:g}, lambda={penalty:g}, '
-              f'validation RMSE={rmse:.2f} bp (folds: {folds})')
-    else:
-        alpha, penalty = fixed
-        print(f'Using supplied elastic-net alpha={alpha:g}, lambda={penalty:g}')
-    now, _, count = fit_forecast(panel, chosen, FEATURES, alpha, penalty)
-    print(f'Elastic net: {count:,} training rows; {len(now):,} bond forecasts '
-          f'for {chosen} -> {chosen + 1}')
-    return {
-        'asof': str(chosen),
-        'target_month': str(chosen + 1),
-        'snapshot': now,
-        'history': panel.loc[panel.month.between(chosen - 35, chosen)].copy(),
-        'errors': pd.DataFrame(),
-        'curve_params': curve_params,
-    }
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('forecast_file', nargs='?', type=Path, default=None,
-                        help='Optional existing elastic_net_outputs.pkl')
+    parser.add_argument('forecast_file', nargs='?', type=Path,
+                        default=DEFAULT_FORECAST_BUNDLE,
+                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl)')
     benchmark = parser.add_mutually_exclusive_group()
     benchmark.add_argument('--benchmark-weights', type=Path,
                            help='AGG holdings CSV with DATE, cusip, weight')
@@ -471,12 +409,6 @@ def main():
                            help='Demonstration benchmark: outstanding amount times price')
     parser.add_argument('--prior-portfolio', type=Path,
                         help='Previous post-trade holdings (cusip,weight)')
-    parser.add_argument('--asof', default='latest',
-                        help='Forecast month if no bundle was supplied')
-    parser.add_argument('--no-tune', action='store_true',
-                        help='Use fixed elastic-net parameters instead of CV if rebuilding forecasts')
-    parser.add_argument('--alpha', type=float, default=0.5)
-    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=0.001)
     parser.add_argument('--candidates', type=int, default=20,
                         help='Number of candidate bonds (VS Code default: 20)')
     parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
@@ -489,19 +421,15 @@ def main():
         parser.error('Require candidates >= 2 and lookback >= 13')
     if not np.isfinite(args.capital) or args.capital <= 0:
         parser.error('Require positive --capital')
-    if args.no_tune and not (0 < args.alpha < 1 and args.penalty_lambda > 0):
-        parser.error('Require 0 < alpha < 1 and lambda > 0')
-
-    if args.forecast_file is not None:
-        if not args.forecast_file.is_file():
-            parser.error(f'Elastic-net bundle not found: {args.forecast_file}')
-        print(f'Reading elastic-net bundle: {args.forecast_file.resolve()}')
-        source = pd.read_pickle(args.forecast_file)
-    else:
-        source = forecast_bundle_from_elastic_net(
-            args.asof,
-            fixed=(args.alpha, args.penalty_lambda) if args.no_tune else None,
+    if not args.forecast_file.is_file():
+        parser.error(
+            f'Forecast bundle not found: {args.forecast_file}. '
+            'First click Run on elastic_net_one_period.py; '
+            'then run prepare_stage1_inputs.py.'
         )
+    print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
+          f'{args.forecast_file.resolve()}')
+    source = pd.read_pickle(args.forecast_file)
 
     # No original constituent weights in the checked-in WRDS bond file.
     # A no-argument VS Code run explicitly uses the demonstration proxy.
