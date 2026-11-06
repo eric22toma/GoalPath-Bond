@@ -314,25 +314,44 @@ def first_backtest_target(panel, features, final_asof):
     available = panel[features].notna().all(axis=1)
     targets = panel.loc[available & panel.dy.notna(), 'target_month']
     unique_targets = sorted(targets.unique())
-    if len(unique_targets) < MIN_INITIAL_TRAIN_MONTHS:
-        raise ValueError('Insufficient observed months for initial training')
     earliest_origin = unique_targets[MIN_INITIAL_TRAIN_MONTHS-1]
-    origins = panel.loc[available & panel.month.ge(earliest_origin) &
-                        panel.month.lt(final_asof), 'month']
-    if origins.empty:
-        raise ValueError('No eligible out-of-sample months after warm-up')
+    origins = panel.loc[available & panel.month.ge(earliest_origin) & panel.month.lt(final_asof), 'month']
     return origins.min() + 1
 
 
 def main():
-    """Run one H=1 forecast and save the bundle consumed by Stage 1."""
-    # Change these two settings when needed; no command-line arguments required.
-    forecast_month = '2025-10'  # Forecast October -> November 2025.
-    run_backtest = False       # Optional expanding-window historical evaluation.
-    features = FEATURES.copy()
+    parser = argparse.ArgumentParser(
+        description='H = 1 pooled elastic net:'
+    )
+    parser.add_argument('--bonds', default=str(DEFAULT_BONDS))
+    parser.add_argument('--fred', default=str(DEFAULT_FRED))
+    parser.add_argument('--curve', default=str(DEFAULT_CURVE))
+    parser.add_argument('--asof', default='latest',
+                        help='Forecast origin YYYY-MM, or latest with realized next-month yields (unscreened)')
+    parser.add_argument('--include-forward', action='store_true',
+                        help='Also use forward_5y when supplied and complete')
+    parser.add_argument('--cusips', nargs='+',
+                        help='CUSIPs to display; default: three liquid bonds')
+    parser.add_argument('--alpha', type=float, default=0.5,
+                        help='Elastic-net mixing alpha, between 0 and 1')
+    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=0.001,
+                        help='Elastic-net regularization penalty lambda (> 0)')
+    parser.add_argument('--no-tune', action='store_true',
+                        help='Use --alpha and --lambda instead of chronological CV')
+    parser.add_argument('--backtest', action='store_true',
+                        help='Evaluate past one-month forecasts with monthly refits')
+    parser.add_argument('--backtest-start', default='earliest',
+                        help='First OOS target month YYYY-MM, or earliest with 12 training months (default)')
+    parser.add_argument('--output-dir', type=Path,
+                        help='New directory for forecasts, tuning results, and optional backtest')
+    args = parser.parse_args()
 
-    # Prepare the original source datasets and construct bond-month predictors.
-    data = process_all_data(bond_columns=BOND_COLUMNS)
+    if not 0 < args.alpha < 1 or args.penalty_lambda <= 0:
+        parser.error('Require 0 < --alpha < 1 and --lambda > 0')
+
+    data = process_all_data(
+        args.bonds, args.fred, args.curve, bond_columns=BOND_COLUMNS
+    )
     macro, curve_params = macro_features(
         history_for_features(data, 'curve'),
         history_for_features(data, 'fred')
