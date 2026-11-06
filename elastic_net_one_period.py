@@ -320,38 +320,14 @@ def first_backtest_target(panel, features, final_asof):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='H = 1 pooled elastic net:'
-    )
-    parser.add_argument('--bonds', default=str(DEFAULT_BONDS))
-    parser.add_argument('--fred', default=str(DEFAULT_FRED))
-    parser.add_argument('--curve', default=str(DEFAULT_CURVE))
-    parser.add_argument('--asof', default='latest',
-                        help='Forecast origin YYYY-MM, or latest with realized next-month yields (unscreened)')
-    parser.add_argument('--include-forward', action='store_true',
-                        help='Also use forward_5y when supplied and complete')
-    parser.add_argument('--cusips', nargs='+',
-                        help='CUSIPs to display; default: three liquid bonds')
-    parser.add_argument('--alpha', type=float, default=0.5,
-                        help='Elastic-net mixing alpha, between 0 and 1')
-    parser.add_argument('--lambda', dest='penalty_lambda', type=float, default=0.001,
-                        help='Elastic-net regularization penalty lambda (> 0)')
-    parser.add_argument('--no-tune', action='store_true',
-                        help='Use --alpha and --lambda instead of chronological CV')
-    parser.add_argument('--backtest', action='store_true',
-                        help='Evaluate past one-month forecasts with monthly refits')
-    parser.add_argument('--backtest-start', default='earliest',
-                        help='First OOS target month YYYY-MM, or earliest with 12 training months (default)')
-    parser.add_argument('--output-dir', type=Path,
-                        help='New directory for forecasts, tuning results, and optional backtest')
-    args = parser.parse_args()
+    """Run one H=1 forecast and save the bundle consumed by Stage 1."""
+    # Change these two settings when needed; no command-line arguments required.
+    forecast_month = '2025-10'  # Forecast October -> November 2025.
+    run_backtest = False       # Optional expanding-window historical evaluation.
+    features = FEATURES.copy()
 
-    if not 0 < args.alpha < 1 or args.penalty_lambda <= 0:
-        parser.error('Require 0 < --alpha < 1 and --lambda > 0')
-
-    data = process_all_data(
-        args.bonds, args.fred, args.curve, bond_columns=BOND_COLUMNS
-    )
+    # Prepare the original source datasets and construct bond-month predictors.
+    data = process_all_data(bond_columns=BOND_COLUMNS)
     macro, curve_params = macro_features(
         history_for_features(data, 'curve'),
         history_for_features(data, 'fred')
@@ -377,8 +353,10 @@ def main():
     mixing, penalty, score, folds, cv_scores = tune_elastic_net(
         known, features, CV_MIXING_GRID, CV_PENALTY_GRID
     )
-    print(f'Chronological CV: {len(CV_MIXING_GRID)} alpha values x '
-          f'{len(CV_PENALTY_GRID)} lambda values')
+    print(f'Chronological CV: {len(CV_MIXING_GRID)} alpha values × '
+          f'{len(CV_PENALTY_GRID)} lambda values = '
+          f'{len(CV_MIXING_GRID) * len(CV_PENALTY_GRID)} settings')
+    print('Five best elastic-net settings:')
     print(cv_scores.head(5).to_string(index=False))
 
     # Refit on all available training observations and forecast next-month yields.
@@ -396,10 +374,14 @@ def main():
     # Diagnostic evaluation; realized future outcomes are never model inputs.
     evaluated = now.loc[now.dy.notna()]
     if not evaluated.empty:
+        flat = int(evaluated.dy.abs().le(1e-10).sum())
         residual_bp = (evaluated.dy - evaluated.predicted_dy_pp) * 100
-        print(f'ALL-BOND EVALUATION (unscreened): {len(evaluated):,} bonds')
-        print(f'  RMSE: {np.sqrt(np.mean(residual_bp ** 2)):.2f} bp; '
+        print(f'ALL-BOND EVALUATION (unscreened): '
+              f'{len(evaluated):,} realized yield changes; '
+              f'{flat:,} unchanged ({flat/len(evaluated):.1%}).')
+        print(f'  Full-month RMSE: {np.sqrt(np.mean(residual_bp ** 2)):.2f} bp; '
               f'MAE: {np.mean(np.abs(residual_bp)):.2f} bp.')
+        print('  NOTE: Evaluation data have not been screened for stale prices.')
 
     # Optional historical backtest; disabled for the normal four-script workflow.
     history_errors = pd.DataFrame()
@@ -409,9 +391,20 @@ def main():
             panel, features, asof, backtest_start,
             CV_MIXING_GRID, CV_PENALTY_GRID
         )
-        if not history_errors.empty:
+        if history_errors.empty:
+            print('No historical one-month backtest observations available.')
+        else:
             print('\nONE-MONTH EXPANDING-WINDOW BACKTEST')
             print(rolling_metrics(history_errors).to_string(index=False))
+            earliest = history_errors.sort_values(
+                ['target_month', 'cusip']
+            ).head(3).copy()
+            earliest['predicted_change_bp'] = earliest.predicted_dy_pp * 100
+            earliest['actual_change_bp'] = earliest.dy * 100
+            print('First three out-of-sample bond yield-change forecasts:')
+            print(earliest[['cusip', 'month', 'target_month',
+                            'predicted_change_bp', 'actual_change_bp',
+                            'forecast_error_bp']].to_string(index=False))
 
     # Save the same shared H=1 bundle expected by prepare_stage1_inputs.py.
     import gzip
@@ -442,6 +435,7 @@ def main():
     temporary_file.replace(DEFAULT_FORECAST_BUNDLE)
     print(f'\nStage 1 forecasts saved to {DEFAULT_FORECAST_BUNDLE.resolve()}')
     print('Next: run prepare_stage1_inputs.py (no forecast re-fitting).')
+
 
 if __name__ == '__main__':
     main()
