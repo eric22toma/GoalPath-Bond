@@ -65,7 +65,6 @@ def read_weight_file(path, asof=None):
 
 def curve_factor_model(curve_params, asof, lookback):
     """Three-factor monthly Treasury covariance and maturity-specific loadings.
-
     Reconstruct fitted 1–30y nominal Treasury yields from historical Svensson
     parameters. Regress monthly fitted yield changes on changes in level
     (10y), slope (10y-2y), and curvature (2*5y-2y-10y). Only use dates <= t.
@@ -165,7 +164,6 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
 
 def reduced_tracking_objective(stage):
     """Precompute the candidate covariance and FULL-benchmark quadratic terms.
-
     The reduced matrix is candidate_count squared, never eligible_count squared.
     Noncandidate benchmark exposures are retained in the linear and constant
     terms so tracking is evaluated against the complete eligible benchmark.
@@ -183,8 +181,7 @@ def reduced_tracking_objective(stage):
     linear = -2.0 * (B @ sigma_f @ factor_b + mu * mu_b + psi * b)
     constant = (
         factor_b @ sigma_f @ factor_b + mu_b ** 2 +
-        psi @ (b ** 2) + stage['outside_benchmark_psi_constant']
-    )
+        psi @ (b ** 2) + stage['outside_benchmark_psi_constant'])
     return Q, (H+H.T)/2, linear, float(constant)
 
 
@@ -368,7 +365,6 @@ def show_stage1_input_summary(stage, preview=5):
                        columns=FACTOR_NAMES).to_string(float_format=lambda x: f'{x:.7g}'))
     print('3. BENCHMARK WEIGHTS b_t: full eligible universe calculated as b_{i,t} = (A_{i,t} × P_{i,t}) / Σ_j (A_{j,t} × P_{j,t})')
     print("   where A = amount outstanding, P = end-of-month bond price")
-    print("   where A = amount outstanding, P = end-of-month bond price")
     print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; '
           f'nonzero constituents = {(b > 0).sum():,}')
     print('4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
@@ -395,6 +391,66 @@ def show_stage1_input_summary(stage, preview=5):
         print('WARNING: This benchmark is an OUTSTANDING x PRICE PROXY, '
               'not actual AGG ETF holdings.')
     print('=' * 76)
+
+
+def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
+    """Build H=1 inputs using the existing elastic-net and processing functions.
+
+    The standard elastic-net Run button prints forecasts but saves no pickle.
+    This function reuses its modeling functions without changing either script.
+    """
+    print('No saved elastic-net bundle supplied; constructing H=1 forecasts '
+          'with the existing forecasting functions.')
+    data = process_all_data(bond_columns=BOND_COLUMNS)
+    macro, curve_params = macro_features(
+        history_for_features(data, 'curve'),
+        history_for_features(data, 'fred'),
+    )
+    dates = data['bonds'][1].DATE.dt.to_period('M')
+    if dates.empty:
+        raise ValueError('No prepared bond observations')
+    calendar = pd.period_range(dates.min(), dates.max(), freq='M')
+    macro = macro.reindex(calendar)
+    curve_params = curve_params.reindex(calendar)
+    panel = load_panel(data['bonds'][1], macro, curve_params)
+    del data
+    complete = panel[FEATURES].notna().all(axis=1)
+    if not complete.any():
+        raise ValueError('No bonds have the elastic-net predictor set')
+    if asof == 'latest':
+        coverage = monthly_quote_coverage(panel)
+        realized = panel.loc[complete & panel.dy.notna(), 'month'].unique()
+        good_months = [m for m in sorted(realized)
+                       if trustworthy_target_month(coverage, m + 1)]
+        if not good_months:
+            raise ValueError('No month has complete predictors and credible '
+                             'next-month quotes; pass --asof YYYY-MM explicitly')
+        chosen = good_months[-1]
+    else:
+        chosen = pd.Period(asof, freq='M')
+    prior = training_rows(panel, chosen, FEATURES)
+    if prior.empty:
+        raise ValueError(f'No historical training observations for {chosen}')
+    if fixed is None:
+        alpha, penalty, rmse, folds, _ = tune_elastic_net(
+            prior, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID
+        )
+        print(f'Chronological CV: alpha={alpha:g}, lambda={penalty:g}, '
+              f'validation RMSE={rmse:.2f} bp (folds: {folds})')
+    else:
+        alpha, penalty = fixed
+        print(f'Using supplied elastic-net alpha={alpha:g}, lambda={penalty:g}')
+    now, _, count = fit_forecast(panel, chosen, FEATURES, alpha, penalty)
+    print(f'Elastic net: {count:,} training rows; {len(now):,} bond forecasts '
+          f'for {chosen} -> {chosen + 1}')
+    return {
+        'asof': str(chosen),
+        'target_month': str(chosen + 1),
+        'snapshot': now,
+        'history': panel.loc[panel.month.between(chosen - 35, chosen)].copy(),
+        'errors': pd.DataFrame(),
+        'curve_params': curve_params,
+    }
 
 
 def main():
