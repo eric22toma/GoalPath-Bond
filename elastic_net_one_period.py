@@ -1,10 +1,9 @@
 """Pooled elastic net forecasting next-month bond yield changes.
 Each bond-month has its own predictors; the model is trained across bonds.
-Forecasted changes are in percentage points, with basis-point output.
-"""
+Forecasted changes are in percentage points, with basis-point output. """
+
 import argparse
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import make_pipeline
@@ -19,8 +18,8 @@ OPTIONAL_FEATURES = ['forward_5y']
 BOND_COLUMNS = [
     'cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
-    'NCOUPS', 'nextcoup', 'DEFAULTED', 'CONV', 'BOND_TYPE', 'RATING_NUM',
-]
+    'NCOUPS', 'nextcoup', 'DEFAULTED', 'CONV', 'BOND_TYPE', 'RATING_NUM']
+
 MAX_CV_BONDS_PER_MONTH = 150
 MIN_INITIAL_TRAIN_MONTHS = 12
 MIN_EVALUATION_PRICE_PAIRS = 100
@@ -30,7 +29,7 @@ CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
-# Single reusable handoff for the no-argument VS Code forecasting -> staging workflow.
+# Save file location for prepare_stage1_inputs.
 DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'
                            / 'elastic_net_outputs.pkl')
 
@@ -155,9 +154,7 @@ def training_rows(panel, asof, features):
 
 def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
     """Deterministically cap bonds per month for tractable hyperparameter tuning.
-
-    The final fitted model still uses every complete historical bond-month.
-    """
+    The final fitted model still uses every complete historical bond-month."""
     if limit <= 0:
         return known
     counts = known.groupby('month')['cusip'].transform('size')
@@ -175,9 +172,7 @@ def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
 def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
                      lambdas=CV_PENALTY_GRID):
     """Tune elastic net through expanding, chronological annual validation.
-
-    Use up to three recent folds; each fold trains on earlier target months.
-    """
+    Use up to three recent folds; each fold trains on earlier target months."""
     if known.empty:
         raise ValueError('No historical yield-change observations for tuning')
     original_rows = len(known)

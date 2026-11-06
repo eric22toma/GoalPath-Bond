@@ -1,16 +1,12 @@
-"""Stage 1 inputs for GoalPath-Bond (Deliverable 3, Section 5.2).
-
-Construct expected returns, three-factor covariance, benchmark and
-starting weights, and duration in a separate staging bundle. With no
-arguments, read the forecast saved by elastic_net_one_period.py and write
+"""Stage 1 inputs for GoalPath-Bond. The following code constructs expected returns, three-factor covariance, 
+benchmark weights and starting weights, and duration in a separate staging bundle before loading into Robust MVO.
+With no arguments, read the forecast saved by elastic_net_one_period.py and write
 stage1_outputs/inputs/stage1_inputs.pkl, ready for the optimizer.
-
-VS Code: click Run Python File; no arguments required.
 
 Optional saved forecast bundle:
   python prepare_stage1_inputs.py forecasts/elastic_net_outputs.pkl \
       --benchmark-proxy --output-dir stage1_inputs_demo
-
+      
 For an AGG constituent-weight benchmark:
   python prepare_stage1_inputs.py forecasts/elastic_net_outputs.pkl \
       --benchmark-weights eligible_AGG_holdings.csv --output-dir stage1_inputs
