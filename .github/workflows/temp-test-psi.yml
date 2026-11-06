@@ -37,5 +37,7 @@ jobs:
                 'nonfinite',int((~np.isfinite(psi)).sum()),
                 'zero',int((psi==0).sum()))
           PY
-      - name: Check full staging
-        run: python prepare_stage1_inputs.py
+      - name: Check full staging and optimizer
+        run: |
+          python prepare_stage1_inputs.py
+          python robust_mvo_one_period.py
