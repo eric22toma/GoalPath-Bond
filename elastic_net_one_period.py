@@ -191,18 +191,6 @@ def fit_forecast(panel, asof, features, mixing, penalty):
         raise ValueError(f'No training targets available by {asof}')
     selection = panel.loc[panel.month == asof]
     now = selection.dropna(subset=features).copy()
-    if now.empty:
-        missing = {k: int(selection[k].isna().sum()) for k in features
-                   if k in selection and selection[k].isna().any()}
-        ready = sorted(str(x) for x in
-                       panel.loc[panel[features].notna().all(axis=1),
-                                 'month'].unique())
-        raise ValueError(
-            f'No bonds with complete predictors in {asof}. '
-            f'Bond rows in month: {len(selection):,}; missing fields: {missing}; '
-            f'latest usable months: {ready[-6:]}.'
-        )
-
     model = estimator(penalty, mixing).fit(known[features], known.dy)
     now['predicted_dy_pp'] = model.predict(now[features])
     original_intercept = float(
