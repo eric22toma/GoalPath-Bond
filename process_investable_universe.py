@@ -33,7 +33,6 @@ PERCENT_COLUMNS = ('T_Spread', 'YIELD', 'RET_EOM', 'RET_LDM', 'RET_L5M')
 
 def load_data(csv_path=DEFAULT_BONDS, usecols=None):
     """Load raw bond cells and a type-converted copy.
-
     Percent-marked yields and returns become decimals. Other numeric units
     are preserved, and conversion failures are counted in the report.
     """

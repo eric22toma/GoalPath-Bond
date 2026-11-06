@@ -1,5 +1,4 @@
 """Pooled elastic net forecasting next-month bond yield changes.
-
 Each bond-month has its own predictors; the model is trained across bonds.
 Forecasted changes are in percentage points, with basis-point output.
 """
