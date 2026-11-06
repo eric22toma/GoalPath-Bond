@@ -453,7 +453,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('forecast_file', nargs='?', type=Path,
                         default=DEFAULT_FORECAST_BUNDLE,
-                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl)')
+                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl.gz)')
     benchmark = parser.add_mutually_exclusive_group()
     benchmark.add_argument('--benchmark-weights', type=Path,
                            help='AGG holdings CSV with DATE, cusip, weight')
