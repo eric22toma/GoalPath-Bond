@@ -9,8 +9,7 @@ import pandas as pd
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet
-from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,
-                                       DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
+from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap_spread', 'cpi_inflation_lag1']
