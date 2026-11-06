@@ -209,13 +209,10 @@ def fit_forecast(panel, asof, features, mixing, penalty):
     return now, coef, len(known)
 
 
-def rolling_backtest(panel, features, final_asof, start_target,
-                     alphas, lambdas, fixed=None):
+def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas, fixed=None):
     """Evaluate one-month-ahead forecasts with expanding monthly refits.
-
     Retune once per year and use only training targets observed by each as-of
-    date. Stop before the final as-of date for optimizer-compatible errors.
-    """
+    date. Stop before the final as-of date for optimizer-compatible errors."""
     first_asof = start_target - 1
     last_asof = final_asof - 1
     results = []
@@ -232,13 +229,10 @@ def rolling_backtest(panel, features, final_asof, start_target,
             mixing, penalty = fixed
         else:
             if selected_params is None or asof.year != last_tuning_year:
-                mixing, penalty, _, _, _ = tune_elastic_net(
-                    known, features, alphas, lambdas
-                )
+                mixing, penalty, _, _, _ = tune_elastic_net(known, features, alphas, lambdas)
                 selected_params = (mixing, penalty)
                 last_tuning_year = asof.year
             mixing, penalty = selected_params
-
         now, _, _ = fit_forecast(panel, asof, features, mixing, penalty)
         valid = now.dropna(subset=['dy']).copy()
         if valid.empty:
@@ -247,13 +241,9 @@ def rolling_backtest(panel, features, final_asof, start_target,
         valid['alpha_mixing'] = mixing
         valid['lambda_penalty'] = penalty
         # These return errors are used by the single-period optimizer.
-        valid['predicted_return'] = (
-            valid.COUPON / valid.PRICE_EOM / 12 -
-            valid.DURATION * valid.predicted_dy_pp / 100
-        )
+        valid['predicted_return'] = (valid.COUPON / valid.PRICE_EOM / 12 -valid.DURATION * valid.predicted_dy_pp / 100 )
         valid['return_error'] = valid.next_return - valid.predicted_return
         results.append(valid)
-
     if not results:
         return pd.DataFrame()
     return pd.concat(results, ignore_index=True)
@@ -266,11 +256,8 @@ def rolling_metrics(backtest):
     result['year'] = result.target_month.dt.year
     return result.groupby(['year'], as_index=False).agg(
         observations=('forecast_error_bp', 'size'),
-        rmse_yield_bp=('forecast_error_bp',
-                       lambda x: float(np.sqrt(np.mean(x ** 2)))),
-        mae_yield_bp=('forecast_error_bp',
-                      lambda x: float(np.mean(np.abs(x)))),
-    )
+        rmse_yield_bp=('forecast_error_bp',lambda x: float(np.sqrt(np.mean(x ** 2)))),
+        mae_yield_bp=('forecast_error_bp',lambda x: float(np.mean(np.abs(x)))),)
 
 
 def show_selected_bonds(now, coef, asof, cusips=None):
