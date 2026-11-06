@@ -30,6 +30,10 @@ CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
+# Single reusable handoff for the no-argument VS Code forecasting -> staging workflow.
+DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'
+                           / 'elastic_net_outputs.pkl')
+
 
 def sven_yield(tau, params):
     """Svensson continuously compounded zero yield, percentage-point units."""
@@ -660,6 +664,40 @@ def main():
                             'predicted_change_bp', 'actual_change_bp',
                             'forecast_error_bp']].to_string(index=False))
 
+    # Stage 1 consumes the current H=1 forecast even when no backtest was run.
+    # Keep the bundle lean: staging only needs six historical bond columns
+    # for residual covariance, rather than the full feature panel.
+    import pickle
+    history_cols = ['cusip', 'month', 'RET_EOM', 'DURATION',
+                    'time_to_maturity', 'RATING_NUM']
+    history = panel.loc[
+        panel.month.between(asof - 35, asof), history_cols
+    ].copy()
+    errors = (history_errors.dropna(
+        subset=['return_error', 'predicted_return', 'next_return']
+    ) if not history_errors.empty else pd.DataFrame())
+    bundle = {
+        'asof': str(asof),
+        'target_month': str(asof + 1),
+        'snapshot': now,
+        'history': history,
+        'errors': errors,
+        'curve_params': curve_params,
+        'features': features,
+        'mixing_alpha': mixing,
+        'penalty_lambda': penalty,
+    }
+
+    DEFAULT_FORECAST_BUNDLE.parent.mkdir(parents=True, exist_ok=True)
+    temp_bundle = DEFAULT_FORECAST_BUNDLE.with_suffix('.pkl.tmp')
+    with temp_bundle.open('wb') as fh:
+        pickle.dump(bundle, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    temp_bundle.replace(DEFAULT_FORECAST_BUNDLE)
+    print(f'\\nStage 1 H=1 forecast saved to '
+          f'{DEFAULT_FORECAST_BUNDLE.resolve()}')
+    print('Run prepare_stage1_inputs.py next; it will load this bundle '
+          'without re-fitting elastic net.')
+
     if args.output_dir is not None:
         args.output_dir.mkdir(parents=True, exist_ok=False)
         now.to_csv(args.output_dir / 'forecast_h1.csv', index=False)
@@ -667,28 +705,13 @@ def main():
         if cv_scores is not None:
             cv_scores.to_csv(args.output_dir / 'cv_grid_h1.csv', index=False)
         if not history_errors.empty:
-            history_errors.to_csv(
-                args.output_dir / 'backtest_h1.csv', index=False
-            )
-            # Preserve the input contract of robust_mvo_one_period.py.
-            import pickle
-            errors = history_errors.dropna(
-                subset=['return_error', 'predicted_return', 'next_return']
-            )
-            history = panel.loc[panel.month.between(asof - 35, asof)].copy()
-            bundle = {
-                'asof': str(asof),
-                'target_month': str(asof + 1),
-                'snapshot': now,
-                'history': history,
-                'errors': errors,
-                'curve_params': curve_params,
-            }
-            with (args.output_dir / 'elastic_net_outputs.pkl').open('wb') as fh:
-                pickle.dump(bundle, fh)
-        print(f'\nForecast outputs saved to {args.output_dir.resolve()}')
-    else:
-        print('\nForecasts displayed; no output files saved.')
+            history_errors.to_csv(args.output_dir / 'backtest_h1.csv', index=False)
+        # Keep the existing --output-dir contract for explicit CLI runs.
+        target_bundle = args.output_dir / 'elastic_net_outputs.pkl'
+        if target_bundle.resolve() != DEFAULT_FORECAST_BUNDLE.resolve():
+            import shutil
+            shutil.copyfile(DEFAULT_FORECAST_BUNDLE, target_bundle)
+        print(f'Optional detailed outputs saved to {args.output_dir.resolve()}')
 
 
 if __name__ == '__main__':
