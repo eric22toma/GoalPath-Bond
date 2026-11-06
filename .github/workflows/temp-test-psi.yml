@@ -1,0 +1,41 @@
+name: Temporary check direct bond-only Psi
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temp-test-psi.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install requirements
+        run: python -m pip install numpy pandas scipy scikit-learn gurobipy
+      - name: Check raw Psi coverage using shared forecast
+        run: |
+          python - <<'PY'
+          import numpy as np
+          import pandas as pd
+          from prepare_stage1_inputs import curve_factor_model, bond_loadings, residual_variances, RISK_WINDOW_MONTHS
+          from elastic_net_one_period import DEFAULT_FORECAST_BUNDLE
+          b=pd.read_pickle(DEFAULT_FORECAST_BUNDLE)
+          asof=pd.Period(b['asof'])
+          now=b['snapshot']
+          eligible=now.loc[
+              now.time_to_maturity.ge(1) & now.DURATION.gt(0) &
+              now.YIELD.notna() & now.predicted_dy_pp.notna() & now.PRICE_EOM.gt(0)
+          ].copy().reset_index(drop=True)
+          coeff, sigma, moves=curve_factor_model(b['curve_params'],asof,RISK_WINDOW_MONTHS)
+          psi=residual_variances(b['history'],eligible,coeff,moves,RISK_WINDOW_MONTHS)
+          print('DIRECT PSI REPORT: eligible',len(eligible),
+                'finite',int(np.isfinite(psi).sum()),
+                'nonfinite',int((~np.isfinite(psi)).sum()),
+                'zero',int((psi==0).sum()))
+          PY
+      - name: Check full staging
+        run: python prepare_stage1_inputs.py
