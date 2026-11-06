@@ -13,7 +13,7 @@ from process_investable_universe import (process_all_data, history_for_features,
                                        DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
-            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
+            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap_spread', 'cpi_inflation_lag1']
 OPTIONAL_FEATURES = ['forward_5y']
 BOND_COLUMNS = ['cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
@@ -27,8 +27,7 @@ FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
 # Save file location for prepare_stage1_inputs.
-DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'
-                           / 'elastic_net_outputs.pkl.gz')
+DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'/ 'elastic_net_outputs.pkl.gz')
 
 
 def sven_yield(tau, params):
@@ -364,10 +363,10 @@ def main():
         panel, asof, features, mixing, penalty
     )
     print(f'\nELASTIC NET: {asof} -> {asof + 1}')
-    print(f'Training bond-month rows: {training_count:,}')
-    print(f'Selected alpha (mixing): {mixing:.2f}; lambda (penalty): {penalty:g}')
-    print(f'Validation RMSE: {score:.3f} bp; years: {folds}')
-    print('Elastic-net coefficients (original predictor units):')
+    print(f'\nTraining bond-month rows: {training_count:,}')
+    print(f'\nSelected alpha (mixing): {mixing:.2f}; lambda (penalty): {penalty:g}')
+    print(f'\nValidation RMSE: {score:.3f} bp; years: {folds}')
+    print('\nElastic-net coefficients (original predictor units):')
     print(coefficients[['feature', 'coefficient_original_units']].to_string(index=False))
     show_selected_bonds(now, coefficients, asof)
 

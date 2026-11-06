@@ -6,7 +6,7 @@ stage1_outputs/inputs/stage1_inputs.pkl, ready for the optimizer.
 Optional saved forecast bundle:
   python prepare_stage1_inputs.py forecasts/elastic_net_outputs.pkl \
       --benchmark-proxy --output-dir stage1_inputs_demo
-      
+
 For an AGG constituent-weight benchmark:
   python prepare_stage1_inputs.py forecasts/elastic_net_outputs.pkl \
       --benchmark-weights eligible_AGG_holdings.csv --output-dir stage1_inputs
@@ -19,12 +19,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import (
-    sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,
-)
+from elastic_net_one_period import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
+
 DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
 DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
-
 FACTOR_NAMES = ('level', 'slope', 'curvature')
 TENORS = np.arange(1.0, 31.0)
 RISK_WINDOW_MONTHS = 36
