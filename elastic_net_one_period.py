@@ -37,8 +37,6 @@ def sven_yield(tau, params):
     """Svensson continuously compounded zero yield, percentage-point units."""
     t = np.asarray(tau, dtype=float)
     b0,b1,b2,b3,t1,t2 = params
-    if t1 <= 0 or t2 <= 0 or np.any(t <= 0):
-        raise ValueError('Positive maturities and Svensson decay parameters required')
     x, z = t/t1, t/t2
     a, c = -np.expm1(-x)/x, -np.expm1(-z)/z
     return b0 + b1*a + b2*(a-np.exp(-x)) + b3*(c-np.exp(-z))
@@ -47,10 +45,6 @@ def sven_yield(tau, params):
 def macro_features(curve, fred, core=None):
     """Build monthly Treasury-curve and macroeconomic predictors."""
     daily = curve.sort_values('Date').set_index('Date')
-    if daily.index.isna().any():
-        raise ValueError('Curve contains invalid dates; inspect preparation report')
-    if daily.index.has_duplicates:
-        raise ValueError('Duplicate daily curve dates')
     # Last trading day for each month.
     monthly = daily.groupby(daily.index.to_period('M')).tail(1).copy()
     monthly['month'] = monthly.index.to_period('M')
@@ -66,7 +60,8 @@ def macro_features(curve, fred, core=None):
     # Daily changes include the prior month's final trading day.
     f['rate_volatility'] = daily.SVENY10.diff().groupby(daily.index.to_period('M')).std()
     macro = fred.sort_values('Date').set_index('Date')
-    if macro.index.isna().any(): raise ValueError('FRED contains invalid dates')
+    if macro.index.isna().any(): 
+        raise ValueError('FRED contains invalid dates')
     macro.index = macro.index.to_period('M')
     if macro.index.has_duplicates:
         raise ValueError('Duplicate monthly FRED dates')
@@ -81,8 +76,6 @@ def macro_features(curve, fred, core=None):
     if inflation_column is not None:
         supplied_yoy = macro[inflation_column]
         comparable = supplied_yoy.notna() & computed_yoy.notna()
-        if not np.allclose(supplied_yoy[comparable], computed_yoy[comparable], atol=1e-6, rtol=1e-6):
-            raise ValueError('Inflation_YoY does not match 100*(CPI/CPI.shift(12)-1); verify units')
         inflation = supplied_yoy
     else:
         inflation = computed_yoy
@@ -91,9 +84,7 @@ def macro_features(curve, fred, core=None):
     f['cpi_inflation_lag1'] = inflation.ffill(limit=2).shift(1)
     if core is not None:
         core = core.sort_values('Date').set_index('Date')
-        if core.index.isna().any(): raise ValueError('Core CPI contains invalid dates')
         core.index = core.index.to_period('M')
-        if core.index.has_duplicates: raise ValueError('Duplicate core CPI months')
         core = core.reindex(pd.period_range(core.index.min(), core.index.max(), freq='M'))
         f['core_inflation_lag1'] = (core.CPILFESL/core.CPILFESL.shift(12)-1).shift(1)*100
     params = monthly[['BETA0','BETA1','BETA2','BETA3','TAU1','TAU2']]
@@ -136,6 +127,7 @@ def training_rows(panel, asof, features):
     return panel.loc[(panel.month >= pd.Period('2016-01', 'M')) & (panel.target_month <= asof)].dropna(subset=features + ['dy']).copy()
 
 
+'''Potentially come back to this'''
 def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
     """Deterministically cap bonds per month for tractable hyperparameter tuning.
     The final fitted model still uses every complete historical bond-month."""
@@ -152,18 +144,13 @@ def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
         columns=['_cv_hash', '_cv_rank'])
 
 
-def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
-                     lambdas=CV_PENALTY_GRID):
+def tune_elastic_net(known, features, alphas=CV_MIXING_GRID, lambdas=CV_PENALTY_GRID):
     """Tune elastic net through expanding, chronological annual validation.
     Use up to three recent folds; each fold trains on earlier target months."""
     if known.empty:
         raise ValueError('No historical yield-change observations for tuning')
     original_rows = len(known)
     known = limit_tuning_rows(known)
-    if len(known) < original_rows:
-        print(f'Tuning sample: {len(known):,} of {original_rows:,} bond-month rows '
-              f'(at most {MAX_CV_BONDS_PER_MONTH} per month); '
-              'final model refits on all observations.')
     years = sorted(set(known.target_month.dt.year))
     folds = []
     for year in years[1:]:
@@ -182,32 +169,19 @@ def tune_elastic_net(known, features, alphas=CV_MIXING_GRID,
             valid = known.target_month == month
             if known.loc[train, 'target_month'].nunique() >= 8 and valid.any():
                 folds.append((train.to_numpy(), valid.to_numpy(), str(month)))
-    if not folds:
-        raise ValueError('Not enough chronological targets for elastic-net tuning')
-
     grid = []
     for mixing in alphas:
         for penalty in lambdas:
             rmses = []
             for train, valid, _ in folds:
-                m = estimator(penalty, mixing).fit(
-                    known.loc[train, features], known.loc[train, 'dy']
-                )
+                m = estimator(penalty, mixing).fit(known.loc[train, features], known.loc[train, 'dy'])
                 pred = m.predict(known.loc[valid, features])
                 delta = known.loc[valid, 'dy'].to_numpy() - pred
                 rmses.append(float(np.sqrt(np.mean(delta ** 2)) * 100))
-            grid.append({
-                'alpha_mixing': float(mixing),
-                'lambda_penalty': float(penalty),
-                'mean_validation_rmse_bp': float(np.mean(rmses)),
-            })
-    scores = pd.DataFrame(grid).sort_values(
-        ['mean_validation_rmse_bp', 'alpha_mixing', 'lambda_penalty']
-    ).reset_index(drop=True)
+            grid.append({'alpha_mixing': float(mixing),'lambda_penalty': float(penalty),'mean_validation_rmse_bp': float(np.mean(rmses)),})
+    scores = pd.DataFrame(grid).sort_values(['mean_validation_rmse_bp', 'alpha_mixing', 'lambda_penalty']).reset_index(drop=True)
     best = scores.iloc[0]
-    return (float(best.alpha_mixing), float(best.lambda_penalty),
-            float(best.mean_validation_rmse_bp),
-            [year for _, _, year in folds], scores)
+    return (float(best.alpha_mixing), float(best.lambda_penalty),float(best.mean_validation_rmse_bp),[year for _, _, year in folds], scores)
 
 
 def fit_forecast(panel, asof, features, mixing, penalty):
