@@ -169,9 +169,19 @@ def main():
         portfolio['optimized_weight'] = solution['weights']
         portfolio['buy'] = solution['buys']
         portfolio['sell'] = solution['sells']
+        portfolio['capital_allocated'] = portfolio.optimized_weight * stage['initial_capital']
+        portfolio['expected_return_pct'] = portfolio.mu * 100
+        portfolio['current_yield_pct'] = portfolio.YIELD * 100
+        portfolio['current_return_pct'] = portfolio.RET_EOM * 100
+        portfolio['forecast_yield_change_bp'] = portfolio.predicted_dy_pp * 100
         portfolio.to_csv(RESULTS_DIR / f'portfolio_{name}.csv', index=False)
         report[name] = metrics
-        selected = portfolio.loc[portfolio.optimized_weight > 1e-6, ['cusip', 'optimized_weight', 'mu', 'duration']]
+        selected = portfolio.loc[
+            portfolio.optimized_weight > 1e-6,
+            ['cusip', 'optimized_weight', 'mu', 'duration', 'capital_allocated',
+             'current_yield_pct', 'current_return_pct',
+             'expected_return_pct', 'forecast_yield_change_bp']
+        ]
         print(f'\n{name.upper()}: {len(selected)} bonds, '
               f'tracking error {metrics["expected_monthly_tracking_error"]:.4%}, '
               f'fees ${metrics["transaction_cost_dollars"]:,.2f}')
