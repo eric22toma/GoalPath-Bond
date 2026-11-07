@@ -15,7 +15,7 @@ RESULTS_DIR = ROOT / 'stage1_outputs' / 'results'
 
 # Optimization settings (to be changed here - fixed for initial one-period testing).
 METHOD = 'exact'                  # 'exact', 'heuristic', or 'both'
-K = 5                             # Maximum number of selected bonds
+K = 10                            # Maximum number of selected bonds
 MAX_WEIGHT = 1.0                  # Maximum weight in any single bond
 TRANSACTION_COST = 0.001          # 0.1% of traded notional
 DURATION_TOLERANCE = 0.5          # Years, relative to benchmark duration
