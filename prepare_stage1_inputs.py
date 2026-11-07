@@ -148,11 +148,12 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     if not np.isfinite(initial_capital) or initial_capital <= 0:
         raise ValueError('initial_capital must be positive and finite')
 
-    # Section 5.2: only bonds with at least one year to maturity are investable.
+    # Exclude bonds with missing/nonpositive amounts outstanding from trading.
+    now['AMOUNT_OUTSTANDING'] = pd.to_numeric(now.AMOUNT_OUTSTANDING, errors='coerce')
     eligible = now.loc[
         now.time_to_maturity.ge(1) & now.DURATION.gt(0) &
         now.YIELD.notna() & now.predicted_dy_pp.notna() &
-        now.PRICE_EOM.gt(0)
+        now.PRICE_EOM.gt(0) & now.AMOUNT_OUTSTANDING.gt(0)
     ].copy().reset_index(drop=True)
     if eligible.empty:
         raise ValueError('No eligible bonds with positive duration and maturity >= 1 year')
@@ -165,11 +166,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         eligible['benchmark_weight'] = eligible.cusip.map(weights.set_index('cusip').weight).fillna(0.)
         benchmark_type = 'filtered_AGG_original_weights'
     else:
-        outstanding = pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce')
-        # Missing/nonpositive outstanding amount cannot establish a proxy
-        # benchmark position; those securities receive zero benchmark weight.
-        proxy_notional = outstanding.where(outstanding.gt(0), 0.0).fillna(0.0)
-        eligible['benchmark_weight'] = proxy_notional * eligible.PRICE_EOM
+        eligible['benchmark_weight'] = eligible.AMOUNT_OUTSTANDING * eligible.PRICE_EOM
         benchmark_type = 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
     if not np.isfinite(eligible.benchmark_weight.to_numpy(float)).all():
         raise ValueError('Nonfinite benchmark weights after staging')
