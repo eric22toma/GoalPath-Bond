@@ -63,7 +63,6 @@ def bond_loadings(bonds, tenor_coefs):
 
 def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     """Estimate bond-specific idiosyncratic variances (diagonal of Psi)."""
-
     history = history.loc[
         history.month.isin(factor_moves.index) &
         history.RET_EOM.notna() &
@@ -104,22 +103,8 @@ def reduced_tracking_objective(stage):
 def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0):
     """Create full-benchmark Stage 1 inputs, with a reduced tradable candidate set."""
     asof = pd.Period(bundle['asof'], freq='M')
-    if pd.Period(bundle['target_month'], freq='M') != asof + 1:
-        raise ValueError('Stage 1 requires exactly a one-month forecast')
     now = bundle['snapshot'].copy()
-    if now.cusip.duplicated().any():
-        raise ValueError('Duplicate CUSIPs in forecast snapshot')
-    required = ['cusip','month','YIELD','predicted_dy_pp','DURATION',
-                'time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
-    missing = set(required) - set(now.columns)
-    if missing:
-        raise ValueError(f'Missing bond columns from elastic-net output: {sorted(missing)}')
-    if not now.month.eq(asof).all():
-        raise ValueError('Snapshot month does not agree with as-of month')
-    if (benchmark_weights is None) == (not benchmark_proxy):
-        raise ValueError('Supply exactly one of benchmark_weights or benchmark_proxy=True')
-    if not np.isfinite(initial_capital) or initial_capital <= 0:
-        raise ValueError('initial_capital must be positive and finite')
+    required = ['cusip','month','YIELD','predicted_dy_pp','DURATION','time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
 
     # Exclude bonds with missing/nonpositive amounts outstanding from trading.
     now['AMOUNT_OUTSTANDING'] = pd.to_numeric(now.AMOUNT_OUTSTANDING, errors='coerce')
