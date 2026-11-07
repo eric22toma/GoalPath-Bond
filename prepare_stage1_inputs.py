@@ -247,18 +247,16 @@ def main():
         pd.read_pickle(forecast_file),
         benchmark_proxy=True,
         candidate_count=20,
-        initial_capital=100_000.0,
-    )
+        initial_capital=100_000.0,)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    artifacts = [
-        output_dir / 'stage1_inputs.pkl',
+    artifacts = [output_dir / 'stage1_inputs.pkl',
         output_dir / 'eligible_inputs.csv',
         output_dir / 'candidate_inputs.csv',
         output_dir / 'candidate_covariance.csv',
         output_dir / 'factor_covariance.csv',
-        output_dir / 'stage1_report.json',
-    ]
+        output_dir / 'stage1_report.json',]
+    
     with artifacts[0].open('wb') as handle:
         pickle.dump(stage, handle)
     stage['eligible'].to_csv(artifacts[1], index=False)
@@ -285,22 +283,13 @@ def main():
 
     # Publish only these six generated files, leaving all other changes untouched.
     paths = [str(file.relative_to(PROJECT_ROOT)) for file in artifacts]
-    status = subprocess.run(
-        ['git', '-C', str(PROJECT_ROOT), 'status', '--porcelain', '--', *paths],
-        check=True, capture_output=True, text=True,
-    )
+    status = subprocess.run(['git', '-C', str(PROJECT_ROOT), 'status', '--porcelain', '--', *paths],check=True, capture_output=True, text=True,)
     if status.stdout.strip():
         subprocess.run(
             ['git', '-C', str(PROJECT_ROOT), 'commit', '--only',
              '-m', f'Update Stage 1 inputs for {stage["asof"]}', '--', *paths],
-            check=True,
-        )
+            check=True,)
         subprocess.run(['git', '-C', str(PROJECT_ROOT), 'push'], check=True)
-        print('Stage 1 outputs committed and pushed to GitHub.')
-    else:
-        print('Stage 1 outputs are unchanged; no new GitHub commit needed.')
-    print('Ready for robust_mvo_one_period.py.')
-
 
 if __name__ == '__main__':
     main()
