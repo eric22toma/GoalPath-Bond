@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent
 INPUT_FILE = ROOT / 'stage1_outputs' / 'inputs' / 'stage1_inputs.pkl'
 RESULTS_DIR = ROOT / 'stage1_outputs' / 'results'
 
-# Optimization settings (change here, not through command-line arguments).
+# Optimization settings (to be changed here - fixed for initial one-period testing).
 METHOD = 'exact'                  # 'exact', 'heuristic', or 'both'
 K = 5                             # Maximum number of selected bonds
 MAX_WEIGHT = 1.0                  # Maximum weight in any single bond
@@ -22,10 +22,6 @@ FACTORS = ('level', 'slope', 'curvature')
 
 
 def load_stage(path=INPUT_FILE):
-    """Load and check the prepared optimizer inputs; do not recalculate them."""
-    if not path.is_file():
-        raise FileNotFoundError(f'Missing {path}; run prepare_stage1_inputs.py first.')
-
     stage = pd.read_pickle(path)
     c = stage['candidates']
     n = len(c)
