@@ -5,8 +5,8 @@
   "initial_capital_dollars": 100000.0,
   "eligible_bonds": 7882,
   "tradable_candidates": 20,
-  "benchmark_duration": 7.319582347050045,
-  "benchmark_expected_return": -0.000679124615160117,
+  "benchmark_duration": 7.319582347050046,
+  "benchmark_expected_return": -0.0006791246151601173,
   "risk_factor_months": [
     "2022-10",
     "2022-11",
