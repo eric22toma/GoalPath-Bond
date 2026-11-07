@@ -66,8 +66,7 @@ def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, 
         m.addConstr(held.sum() <= k, name='cardinality')
 
     trading = buy.sum() + sell.sum() + stage['outside_pretrade_weight']
-    m.setObjective(w @ H @ w + g @ w + constant + transaction_cost * trading,
-                   GRB.MINIMIZE)
+    m.setObjective(w @ H @ w + g @ w + constant + transaction_cost * trading, GRB.MINIMIZE)
     m.optimize()
 
     if m.SolCount == 0:
@@ -81,9 +80,7 @@ def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, 
         'sells': sell.X,
         'solver_status': int(m.Status),
         'optimal': m.Status == GRB.OPTIMAL,
-        'mip_gap': float(m.MIPGap) if exact else None,
-    }
-
+        'mip_gap': float(m.MIPGap) if exact else None,}
 
 def report_solution(stage, solution, k, transaction_cost, method, duration_tolerance):
     """Measure the solution against the complete staged benchmark."""
