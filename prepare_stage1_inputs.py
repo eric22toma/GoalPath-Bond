@@ -5,10 +5,8 @@ import argparse
 import json
 import pickle
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
-
 from elastic_net_one_period import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
 
 DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
@@ -19,7 +17,6 @@ RISK_WINDOW_MONTHS = 36
 MIN_FACTOR_OBSERVATIONS = 12
 MIN_BOND_RESIDUALS = 12
 MIN_BUCKET_RESIDUALS = 30
-
 
 def read_weight_file(path, asof=None):
     """Read explicit CUSIP weights; monthly benchmark files require DATE."""
@@ -37,7 +34,8 @@ def read_weight_file(path, asof=None):
 
 
 def curve_factor_model(curve_params, asof, lookback):
-    """Estimate Treasury factor covariance and maturity-specific loadings."""
+    """Return maturity-specific Treasury yield-factor loadings (coef), 
+    factor covariance matrix (sigma_f), and monthly factor changes (df)."""
     params = ['BETA0', 'BETA1', 'BETA2', 'BETA3', 'TAU1', 'TAU2']
     curve = curve_params.loc[:asof, params].dropna().sort_index().tail(lookback + 1)
     y = pd.DataFrame(
@@ -56,30 +54,70 @@ def curve_factor_model(curve_params, asof, lookback):
     return coef, sigma_f, df
 
 def bond_loadings(bonds, tenor_coefs):
-    """Return B_i: change in monthly bond return per 1 pp factor move."""
+    """Return B_i: change in monthly bond return per 1 percentage point factor move."""
     maturity = bonds.time_to_maturity.to_numpy(dtype=float)
     duration = bonds.DURATION.to_numpy(dtype=float)
-    factor_sensitivity = np.column_stack(
-        [np.interp(maturity, TENORS, tenor_coefs[:, j]) for j in range(3)]
-    )
+    factor_sensitivity = np.column_stack([np.interp(maturity, TENORS, tenor_coefs[:, j]) for j in range(3)])
     return -duration[:, None] * factor_sensitivity / 100.0
 
 
 def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
-    """Estimate each bond's residual variance for the diagonal of Psi."""
-    history = history.loc[
-        history.month.isin(factor_moves.index) &
-        history.RET_EOM.notna() &
-        history.DURATION.gt(0) &
-        history.time_to_maturity.gt(0)
-    ].copy()
+    """Estimate diagonal Psi, falling back to rating/maturity and maturity buckets."""
+    history = history.loc[history.month >= factor_moves.index.min()].copy()
+    history = history.loc[history.month.isin(factor_moves.index)].copy()
+    factors = history.month.map(
+        {month: tuple(vals) for month, vals in factor_moves.iterrows()}
+    )
+    good = history.RET_EOM.notna() & history.DURATION.gt(0) & history.time_to_maturity.gt(0)
+    history = history.loc[good].copy()
+    if history.empty:
+        raise ValueError('No historical returns available for factor residual variances')
+    factor_rows = np.asarray([factor_moves.loc[month, list(FACTOR_NAMES)].to_numpy(dtype=float)
+                              for month in history.month])
+    load = bond_loadings(history, tenor_coefs)
+    history['residual'] = history.RET_EOM.to_numpy(dtype=float) - np.sum(load * factor_rows, axis=1)
+    history['maturity_bucket'] = pd.cut(
+        history.time_to_maturity, bins=[0, 3, 7, 15, np.inf],
+        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True
+    ).astype(str)
+    eligible['maturity_bucket'] = pd.cut(
+        eligible.time_to_maturity, bins=[0, 3, 7, 15, np.inf],
+        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True
+    ).astype(str)
 
-    factors = factor_moves.loc[history.month, list(FACTOR_NAMES)].to_numpy()
-    fitted = np.sum(bond_loadings(history, tenor_coefs) * factors, axis=1)
-    history['residual'] = history.RET_EOM.to_numpy() - fitted
+    has_rating = 'RATING_NUM' in history.columns and 'RATING_NUM' in eligible.columns
+    if has_rating:
+        history['rating_bucket'] = pd.to_numeric(history.RATING_NUM, errors='coerce').fillna(-1).astype(int).astype(str)
+        eligible['rating_bucket'] = pd.to_numeric(eligible.RATING_NUM, errors='coerce').fillna(-1).astype(int).astype(str)
+    else:
+        history['rating_bucket'] = 'unknown'
+        eligible['rating_bucket'] = 'unknown'
 
-    variances = history.groupby('cusip').residual.var()
-    return eligible.cusip.map(variances).to_numpy(dtype=float)
+    by_bond = history.groupby('cusip').residual.agg(['count', 'var'])
+    group_keys = ['rating_bucket', 'maturity_bucket']
+    by_group = history.groupby(group_keys, observed=True).residual.agg(['count', 'var'])
+    by_maturity = history.groupby('maturity_bucket').residual.agg(['count', 'var'])
+    overall = float(history.residual.var())
+    if not np.isfinite(overall) or overall <= 0:
+        raise ValueError('Unable to estimate positive residual variance from history')
+
+    own = eligible.cusip.map(by_bond['var'])
+    own_count = eligible.cusip.map(by_bond['count']).fillna(0)
+    grouped_index = pd.MultiIndex.from_frame(eligible[group_keys])
+    group_var = pd.Series(by_group['var'].reindex(grouped_index).to_numpy(), index=eligible.index)
+    group_count = pd.Series(by_group['count'].reindex(grouped_index).to_numpy(), index=eligible.index)
+    maturity_var = eligible.maturity_bucket.map(by_maturity['var'])
+    maturity_count = eligible.maturity_bucket.map(by_maturity['count'])
+
+    psi = np.where(own_count >= MIN_BOND_RESIDUALS, own, np.nan)
+    psi = np.where(np.isnan(psi) & (group_count >= MIN_BUCKET_RESIDUALS),
+                   group_var, psi)
+    psi = np.where(np.isnan(psi) & (maturity_count >= MIN_BUCKET_RESIDUALS),
+                   maturity_var, psi)
+    psi = np.where(np.isnan(psi), overall, psi)
+    if not np.isfinite(psi).all():
+        raise ValueError('Nonfinite estimated residual variances')
+    return np.maximum(psi.astype(float), 1e-10)
 
 
 def reduced_tracking_objective(stage):
