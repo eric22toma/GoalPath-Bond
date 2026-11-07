@@ -1,10 +1,9 @@
 """Stage 1 inputs for GoalPath-Bond. The following code constructs expected returns, three-factor covariance, 
 benchmark weights and starting weights, and duration in a separately before loading into Robust MVO."""
 
-import argparse
 import json
 import pickle
-from pathlib import Path
+import subprocess
 import numpy as np
 import pandas as pd
 from elastic_net_one_period import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
@@ -237,95 +236,70 @@ def show_stage1_input_summary(stage, preview=5):
     print('Stage 1 transaction fees are not deducted from the invested $100,000.')
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('forecast_file', nargs='?', type=Path,
-                        default=DEFAULT_FORECAST_BUNDLE,
-                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl.gz)')
-    benchmark = parser.add_mutually_exclusive_group()
-    benchmark.add_argument('--benchmark-weights', type=Path,
-                           help='AGG holdings CSV with DATE, cusip, weight')
-    benchmark.add_argument('--benchmark-proxy', action='store_true',
-                           help='Demonstration benchmark: outstanding amount times price')
-    parser.add_argument('--prior-portfolio', type=Path,
-                        help='Previous post-trade holdings (cusip,weight)')
-    parser.add_argument('--candidates', type=int, default=20,
-                        help='Number of candidate bonds (VS Code default: 20)')
-    parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
-    parser.add_argument('--capital', type=float, default=100_000.0,
-                        help='Initial investment in dollars (default $100,000)')
-    parser.add_argument('--output-dir', type=Path, default=DEFAULT_STAGE_DIR,
-                        help='Output folder, default: stage1_outputs/inputs')
-    args = parser.parse_args()
-    if args.candidates < 2 or args.lookback < MIN_FACTOR_OBSERVATIONS + 1:
-        parser.error('Require candidates >= 2 and lookback >= 13')
-    if not np.isfinite(args.capital) or args.capital <= 0:
-        parser.error('Require positive --capital')
-    if not args.forecast_file.is_file():
-        parser.error(
-            f'Forecast bundle not found: {args.forecast_file}. '
-            'Run git pull to obtain the shared GitHub forecast (or run '
-            'elastic_net_one_period.py to generate a new one); '
-            'then run prepare_stage1_inputs.py.'
-        )
+    """Build Stage 1 inputs from saved forecasts and publish them for robust MVO."""
+    forecast_file = DEFAULT_FORECAST_BUNDLE
+    output_dir = DEFAULT_STAGE_DIR
+    if not forecast_file.is_file():
+        raise FileNotFoundError(f'Run elastic_net_one_period.py first: {forecast_file}')
 
-    print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
-          f'{forecast_file.resolve()}')
-    source = pd.read_pickle(forecast_file)
-
-    # Use the outstanding-amount × price proxy unless actual weights are provided.
-    proxy = benchmark_weights is None
-    if proxy:
-        print('BENCHMARK: DEMONSTRATION PROXY (outstanding amount × price); '
-              'NOT original AGG holdings.')
+    print(f'Loading forecasts from {forecast_file}')
     stage = build_inputs(
-        source,
-        benchmark_weights=benchmark_weights,
-        benchmark_proxy=proxy,
-        prior_portfolio=prior_portfolio,
-        candidate_count=candidate_count,
-        lookback=RISK_WINDOW_MONTHS,
-        initial_capital=initial_capital
+        pd.read_pickle(forecast_file),
+        benchmark_proxy=True,
+        candidate_count=20,
+        initial_capital=100_000.0,
     )
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    with (output_dir / 'stage1_inputs.pkl').open('wb') as handle:
+    artifacts = [
+        output_dir / 'stage1_inputs.pkl',
+        output_dir / 'eligible_inputs.csv',
+        output_dir / 'candidate_inputs.csv',
+        output_dir / 'candidate_covariance.csv',
+        output_dir / 'factor_covariance.csv',
+        output_dir / 'stage1_report.json',
+    ]
+    with artifacts[0].open('wb') as handle:
         pickle.dump(stage, handle)
-    stage['eligible'].to_csv(output_dir / 'eligible_inputs.csv', index=False)
-    stage['candidates'].to_csv(output_dir / 'candidate_inputs.csv', index=False)
+    stage['eligible'].to_csv(artifacts[1], index=False)
+    stage['candidates'].to_csv(artifacts[2], index=False)
     labels = stage['candidates'].cusip.tolist()
-    pd.DataFrame(stage['candidate_covariance'], index=labels, columns=labels).to_csv(
-        output_dir / 'candidate_covariance.csv'
-    )
-    pd.DataFrame(stage['sigma_f'], index=FACTOR_NAMES, columns=FACTOR_NAMES).to_csv(
-        output_dir / 'factor_covariance.csv'
-    )
+    pd.DataFrame(stage['candidate_covariance'], index=labels, columns=labels).to_csv(artifacts[3])
+    pd.DataFrame(stage['sigma_f'], index=FACTOR_NAMES, columns=FACTOR_NAMES).to_csv(artifacts[4])
+
     report = {
-        'asof': stage['asof'], 'target_month': stage['target_month'],
+        'asof': stage['asof'],
+        'target_month': stage['target_month'],
         'benchmark': stage['benchmark_type'],
-        'pretrade_holdings': stage['holdings_type'],
         'initial_capital_dollars': stage['initial_capital'],
-        'initial_uninvested_funding_dollars':
-            stage['initial_capital'] * stage['pretrade_cash_weight'],
-        'pretrade_bond_value_dollars':
-            stage['initial_capital'] * stage['eligible'].current_weight.sum(),
         'eligible_bonds': len(stage['eligible']),
-        'benchmark_constituents_with_positive_weight': stage['benchmark_positive_weights'],
         'tradable_candidates': len(stage['candidates']),
         'benchmark_duration': stage['benchmark_duration'],
         'benchmark_expected_return': stage['benchmark_mu'],
-        'outside_pretrade_weight_forced_sale': stage['outside_pretrade_weight'],
         'risk_factor_months': stage['factor_months'],
     }
-    (output_dir / 'stage1_report.json').write_text(
-        json.dumps(report, indent=2) + '\n'
-    )
-    print('\nSTAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
-    print(json.dumps(report, indent=2))
-    print(f'\nSUCCESS: Stage 1 inputs saved to '
-          f'{(output_dir / "stage1_inputs.pkl").resolve()}')
-    print('Run robust_mvo_one_period.py next using the VS Code Run arrow.')
-    if proxy:
-        print('WARNING: proxy benchmark is not the actual eligible AGG benchmark.')
+    artifacts[5].write_text(json.dumps(report, indent=2) + '\\n')
+
     show_stage1_input_summary(stage)
+    print(f'\\nStage 1 inputs saved to {output_dir}')
+    
+    # Publish only these six generated files, leaving all other changes untouched.
+    paths = [str(file.relative_to(PROJECT_ROOT)) for file in artifacts]
+    status = subprocess.run(
+        ['git', '-C', str(PROJECT_ROOT), 'status', '--porcelain', '--', *paths],
+        check=True, capture_output=True, text=True,
+    )
+    if status.stdout.strip():
+        subprocess.run(
+            ['git', '-C', str(PROJECT_ROOT), 'commit', '--only',
+             '-m', f'Update Stage 1 inputs for {stage["asof"]}', '--', *paths],
+            check=True,
+        )
+        subprocess.run(['git', '-C', str(PROJECT_ROOT), 'push'], check=True)
+        print('Stage 1 outputs committed and pushed to GitHub.')
+    else:
+        print('Stage 1 outputs are unchanged; no new GitHub commit needed.')
+    print('Ready for robust_mvo_one_period.py.')
 
 
 if __name__ == '__main__':
