@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import gurobipy as gp
+from gurobipy import GRB
 
 ROOT = Path(__file__).resolve().parent
 INPUT_FILE = ROOT / 'stage1_outputs' / 'inputs' / 'stage1_inputs.pkl'
@@ -33,12 +35,6 @@ def load_stage(path=INPUT_FILE):
 def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance,
                     time_limit, allowed=None, exact=False):
     """Optimize staged quadratic tracking error with optional cardinality."""
-    try:
-        import gurobipy as gp
-        from gurobipy import GRB
-    except ImportError as exc:
-        raise RuntimeError('Install gurobipy and configure a Gurobi license.') from exc
-
     c = stage['candidates']
     n = len(c)
     H = np.asarray(stage['quadratic_matrix'], dtype=float)
