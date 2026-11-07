@@ -133,7 +133,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
 
     if prior_portfolio is None:
         '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
-        capital; cash budgetingand self-financing constraints are deferred to Stage 2.'''
+        capital... cash budgeting and self-financing constraints are deferred to Stage 2.'''
         eligible['current_weight'] = 0.0
         initial_cash_weight = 1.0
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
@@ -194,7 +194,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
 
 
 def show_stage1_input_summary(stage, preview=5):
-    """Print Section 5.2's five inputs, without a massive N-by-N covariance."""
+    """Print the required five inputs, without a massive N-by-N covariance."""
     e = stage['eligible']
     c = stage['candidates']
     capital = float(stage['initial_capital'])
@@ -203,51 +203,38 @@ def show_stage1_input_summary(stage, preview=5):
     factor_cov = np.asarray(stage['sigma_f'], dtype=float)
     candidate_q = np.asarray(stage['candidate_covariance'], dtype=float)
 
-    print('\n' + '=' * 76)
-    print('The FIVE REQUIRED INPUTS for stage 1')
+    print('\nThe FIVE REQUIRED INPUTS for stage 1')
     print('=' * 76)
     print(f'Decision month: {stage["asof"]}   Forecast target: {stage["target_month"]}')
-    print(f'Capital: ${capital:,.2f}   Eligible bonds: {len(e):,}   '
-          f'Tradable candidates: {len(c):,}')
-    print('1. EXPECTED RETURNS (Yield-based carry variant) mu-hat_t: '
-          'mu_i = YIELD_i/12 - D_i * forecast_delta_y_i (decimal units)')
-    print(f'   Shape: ({len(e):,},)   Range: {e.mu.min():+.6f} to {e.mu.max():+.6f} '
-          f'per month; weighted benchmark mu = {stage["benchmark_mu"]:+.6f}')
-    print('2. RETURN COVARIANCE Q_t = B_t Sigma_f,t B_t.T + Psi_t')
-    print(f'   Full {len(e):,} x {len(e):,} Q is represented by '
-          '3 factor loadings per bond plus diagonal residual variances.')
+    print(f'Capital: ${capital:,.2f}   Eligible bonds: {len(e):,} 'f'Tradable candidates (K): {len(c):,}')
+
+    print('\n1. EXPECTED RETURNS (Yield-based carry variant) mu-hat_t: mu_i = YIELD_i/12 - D_i * forecast_delta_y_i')
+    print(f'   Vector: ({len(e):,},)   Range: {e.mu.min():+.6f} to {e.mu.max():+.6f} 'f'per month; weighted benchmark mu = {stage["benchmark_mu"]:+.6f}')
+
+    print('\n2. RETURN COVARIANCE Q_t = B_t Sigma_f,t B_t.T + Psi_t')
+    print(f'   Full {len(e):,} x {len(e):,} Q is represented by 3 factor loadings per bond plus diagonal residual variances.')
     print(f'   Materialized candidate covariance Q: {candidate_q.shape}')
     print('   Monthly Treasury factor covariance Sigma_f (3 x 3):')
-    print(pd.DataFrame(factor_cov, index=FACTOR_NAMES,
-                       columns=FACTOR_NAMES).to_string(float_format=lambda x: f'{x:.7g}'))
-    print('3. BENCHMARK WEIGHTS b_t: full eligible universe calculated as b_{i,t} = (A_{i,t} × P_{i,t}) / Σ_j (A_{j,t} × P_{j,t})')
+    print(pd.DataFrame(factor_cov, index=FACTOR_NAMES, columns=FACTOR_NAMES).to_string(float_format=lambda x: f'{x:.7g}'))
+    
+    print('\n3. BENCHMARK WEIGHTS b_t: full eligible universe calculated as b_{i,t} = (A_{i,t} × P_{i,t}) / Σ_j (A_{j,t} × P_{j,t})')
     print("   where A = amount outstanding, P = end-of-month bond price")
-    print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; '
-          f'nonzero constituents = {(b > 0).sum():,}')
-    print('4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
-    print(f'   {stage["holdings_type"]}; bond weights sum = {current.sum():.6f}; '
-          f'cash/funding = {stage["pretrade_cash_weight"]:.6f}')
-    print(f'   Pre-trade bond value: ${capital * current.sum():,.2f}; '
-          f'available uninvested funding: '
-          f'${capital * stage["pretrade_cash_weight"]:,.2f}')
-    print('5. DURATION D_t: current WRDS bond duration observations')
-    print(f'   Individual durations: {e.duration.min():.2f} to '
-          f'{e.duration.max():.2f} years; '
-          f'benchmark duration = {stage["benchmark_duration"]:.4f} years')
+    print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; nonzero constituents = {(b > 0).sum():,}')
+    
+    print('\n4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
+    print(f'   {stage["holdings_type"]}; bond weights sum = {current.sum():.6f}; 'f'cash/funding = {stage["pretrade_cash_weight"]:.6f}')
+    print(f'   Pre-trade bond value: ${capital * current.sum():,.2f}; available uninvested funding: ${capital * stage["pretrade_cash_weight"]:,.2f}')
+
+    print('\n5. DURATION D_t: current WRDS bond duration observations')
+    print(f'   Individual durations: {e.duration.min():.2f} to {e.duration.max():.2f} years; benchmark duration = {stage["benchmark_duration"]:.4f} years')
+   
     show = e[['cusip','mu','benchmark_weight','current_weight','duration']].head(preview).copy()
     show['benchmark_dollars'] = show.benchmark_weight * capital
     show['pretrade_dollars'] = show.current_weight * capital
-    print(f'\nSample of first {len(show)} eligible bonds '
-          '(all rows saved in eligible_inputs.csv):')
+    print(f'\nSample of first {len(show)} eligible bonds (all rows saved in eligible_inputs.csv):')
     print(show.to_string(index=False, float_format=lambda v: f'{v:,.6f}'))
-    print('\nPortfolio convention: optimizer invests 100% of the initial '
-          'capital in <= K bonds.')
-    print('Stage 1 transaction fees are charged in the objective and reported '
-          'separately; they are not deducted from the invested $100,000.')
-    if stage['benchmark_type'] != 'filtered_AGG_original_weights':
-        print('WARNING: This benchmark is an OUTSTANDING x PRICE PROXY, '
-              'not actual AGG ETF holdings.')
-    print('=' * 76)
+    print('\nPortfolio convention: optimizer invests 100% of the initial capital in <= K bonds.')
+    print('Stage 1 transaction fees are charged in the objective and reported separately; they are not deducted from the invested $100,000.')
 
 
 def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
