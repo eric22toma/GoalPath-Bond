@@ -142,11 +142,6 @@ def report_solution(stage, solution, k, transaction_cost, method, duration_toler
 
 def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT, transaction_cost=TRANSACTION_COST, duration_tolerance=DURATION_TOLERANCE, time_limit=TIME_LIMIT):
     """Solve exactly, by relax-and-fix heuristic, or both for comparison."""
-    if method not in ('exact', 'heuristic', 'both') or k < 1 or k > len(stage['candidates']):
-        raise ValueError('Invalid solver method or holdings limit.')
-    if k * max_weight < 1 or transaction_cost < 0 or duration_tolerance < 0:
-        raise ValueError('Infeasible weight limit or invalid cost/duration settings.')
-
     def solve(allowed=None, exact=False):
         return solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, time_limit, allowed, exact)
 
@@ -155,10 +150,7 @@ def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT, transaction_cos
         relaxed = solve()
         top = set(np.argsort(-relaxed['weights'], kind='stable')[:k])
         restricted = solve(allowed=top)
-        results['heuristic'] = (
-            restricted, report_solution(stage, restricted, k, transaction_cost,
-                                        'relax_and_fix', duration_tolerance)
-        )
+        results['heuristic'] = (restricted, report_solution(stage, restricted, k, transaction_cost,'relax_and_fix', duration_tolerance))
     if method in ('exact', 'both'):
         answer = solve(exact=True)
         results['exact'] = (answer, report_solution(stage, answer, k, transaction_cost, 'exact_miqp', duration_tolerance))
@@ -179,8 +171,7 @@ def main():
         portfolio['sell'] = solution['sells']
         portfolio.to_csv(RESULTS_DIR / f'portfolio_{name}.csv', index=False)
         report[name] = metrics
-        selected = portfolio.loc[portfolio.optimized_weight > 1e-6,
-                                 ['cusip', 'optimized_weight', 'mu', 'duration']]
+        selected = portfolio.loc[portfolio.optimized_weight > 1e-6, ['cusip', 'optimized_weight', 'mu', 'duration']]
         print(f'\n{name.upper()}: {len(selected)} bonds, '
               f'tracking error {metrics["expected_monthly_tracking_error"]:.4%}, '
               f'fees ${metrics["transaction_cost_dollars"]:,.2f}')
@@ -189,11 +180,9 @@ def main():
     if 'heuristic' in report and 'exact' in report:
         report['comparison'] = {
             'heuristic_minus_exact_objective':
-                report['heuristic']['objective_value'] - report['exact']['objective_value']
-        }
-    (RESULTS_DIR / 'stage1_optimization_report.json').write_text(
-        json.dumps(report, indent=2) + '\n'
-    )
+                report['heuristic']['objective_value'] - report['exact']['objective_value']}
+        
+    (RESULTS_DIR / 'stage1_optimization_report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'\nResults saved to {RESULTS_DIR}')
 
 if __name__ == '__main__':
