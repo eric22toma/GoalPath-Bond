@@ -1,11 +1,9 @@
-"""One-period benchmark tracking using saved GoalPath-Bond Stage 1 inputs.
-
+"""One-period benchmark tracking using the saved GoalPath-Bond Stage 1 inputs.
 All forecasts, benchmark weights, factor exposures, and quadratic objective
-terms are prepared by prepare_stage1_inputs.py and stored in stage1_inputs.pkl.
-"""
+terms are prepared by prepare_stage1_inputs.py and stored in stage1_inputs.pkl."""
+
 import json
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
