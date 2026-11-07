@@ -106,17 +106,16 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     now = bundle['snapshot'].copy()
     required = ['cusip','month','YIELD','predicted_dy_pp','DURATION','time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
 
-    # Exclude bonds with missing/nonpositive amounts outstanding from trading.
-    now['AMOUNT_OUTSTANDING'] = pd.to_numeric(now.AMOUNT_OUTSTANDING, errors='coerce')
+    # Section 5.2: only bonds with at least one year to maturity are investable.
     eligible = now.loc[
         now.time_to_maturity.ge(1) & now.DURATION.gt(0) &
         now.YIELD.notna() & now.predicted_dy_pp.notna() &
-        now.PRICE_EOM.gt(0) & now.AMOUNT_OUTSTANDING.gt(0)
+        now.PRICE_EOM.gt(0)
     ].copy().reset_index(drop=True)
     if eligible.empty:
         raise ValueError('No eligible bonds with positive duration and maturity >= 1 year')
     eligible['duration'] = eligible.DURATION.astype(float)
-    # YIELD is a decimal annual yield, predicted_dy_pp is a percentage-point change.
+    # YIELD is a decimal annual yield
     eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
 
     if benchmark_weights is not None:
@@ -126,31 +125,21 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     else:
         eligible['benchmark_weight'] = eligible.AMOUNT_OUTSTANDING * eligible.PRICE_EOM
         benchmark_type = 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
-    if not np.isfinite(eligible.benchmark_weight.to_numpy(float)).all():
-        raise ValueError('Nonfinite benchmark weights after staging')
-    if eligible.benchmark_weight.sum() <= 0:
-        raise ValueError('No positive benchmark weights match the eligible forecast bonds')
     eligible['benchmark_weight'] /= eligible.benchmark_weight.sum()
     # Explicitly report that missing membership or skipped securities reduce coverage.
     benchmark_matched = int(eligible.benchmark_weight.gt(0).sum())
 
-    tenor_coef, sigma_f, factor_moves = curve_factor_model(
-        bundle['curve_params'], asof, lookback
-    )
+    tenor_coef, sigma_f, factor_moves = curve_factor_model(bundle['curve_params'], asof, lookback)
     loadings = bond_loadings(eligible, tenor_coef)
     for j, name in enumerate(FACTOR_NAMES):
         eligible[f'B_{name}'] = loadings[:, j]
-    eligible['psi'] = residual_variances(
-        bundle['history'], eligible, tenor_coef, factor_moves, lookback
-    )
+    eligible['psi'] = residual_variances(bundle['history'], eligible, tenor_coef, factor_moves, lookback)
 
     if prior_portfolio is None:
-        # First investment: the investor starts with $100,000 in uninvested
-        # funding, NOT with thousands of AGG constituent positions.
-        # Stage 1 uses normalized bond weights. The first trade purchases
-        # 100% of capital in at most K bonds; transaction costs are objective
-        # penalties and are reported as fees paid separately from capital.
-        # A cash budget and self-financing constraint are Stage 2 additions.
+        '''First investment: assume the investor starts with $100,000, NOT with thousands of AGG constituent positions.
+        Stage 1 uses normalized bond weights; the first trade purchases 100% of capital in at most K bonds; transaction costs are objective
+        penalties and are reported as fees paid separately from capital.
+        A cash budget and self-financing constraint are Stage 2 additions.'''
         eligible['current_weight'] = 0.0
         initial_cash_weight = 1.0
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
@@ -291,10 +280,8 @@ def show_stage1_input_summary(stage, preview=5):
 
 def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
     """Build H=1 inputs using the existing elastic-net and processing functions.
-
     The standard elastic-net Run button prints forecasts but saves no pickle.
-    This function reuses its modeling functions without changing either script.
-    """
+    This function reuses its modeling functions without changing either script."""
     print('No saved elastic-net bundle supplied; constructing H=1 forecasts '
           'with the existing forecasting functions.')
     data = process_all_data(bond_columns=BOND_COLUMNS)
