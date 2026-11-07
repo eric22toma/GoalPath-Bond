@@ -140,9 +140,7 @@ def report_solution(stage, solution, k, transaction_cost, method, duration_toler
     }
 
 
-def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT,
-               transaction_cost=TRANSACTION_COST,
-               duration_tolerance=DURATION_TOLERANCE, time_limit=TIME_LIMIT):
+def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT, transaction_cost=TRANSACTION_COST, duration_tolerance=DURATION_TOLERANCE, time_limit=TIME_LIMIT):
     """Solve exactly, by relax-and-fix heuristic, or both for comparison."""
     if method not in ('exact', 'heuristic', 'both') or k < 1 or k > len(stage['candidates']):
         raise ValueError('Invalid solver method or holdings limit.')
@@ -150,8 +148,7 @@ def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT,
         raise ValueError('Infeasible weight limit or invalid cost/duration settings.')
 
     def solve(allowed=None, exact=False):
-        return solve_quadratic(stage, k, max_weight, transaction_cost,
-                               duration_tolerance, time_limit, allowed, exact)
+        return solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, time_limit, allowed, exact)
 
     results = {}
     if method in ('heuristic', 'both'):
@@ -164,10 +161,7 @@ def run_solver(stage, method=METHOD, k=K, max_weight=MAX_WEIGHT,
         )
     if method in ('exact', 'both'):
         answer = solve(exact=True)
-        results['exact'] = (
-            answer, report_solution(stage, answer, k, transaction_cost,
-                                    'exact_miqp', duration_tolerance)
-        )
+        results['exact'] = (answer, report_solution(stage, answer, k, transaction_cost, 'exact_miqp', duration_tolerance))
     return results
 
 
@@ -201,7 +195,6 @@ def main():
         json.dumps(report, indent=2) + '\n'
     )
     print(f'\nResults saved to {RESULTS_DIR}')
-
 
 if __name__ == '__main__':
     main()
