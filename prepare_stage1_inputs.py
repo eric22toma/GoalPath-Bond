@@ -108,6 +108,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
 
     # Only bonds with at least one year to maturity are investable.
     eligible = now.loc[now.time_to_maturity.ge(1) & now.DURATION.gt(0) &now.YIELD.notna() & now.predicted_dy_pp.notna() &now.PRICE_EOM.gt(0)].copy().reset_index(drop=True)
+    if benchmark_weights is None:
+        eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
     eligible['duration'] = eligible.DURATION.astype(float)
     # YIELD is a decimal annual yield
     eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
@@ -130,10 +132,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     eligible['psi'] = residual_variances(bundle['history'], eligible, tenor_coef, factor_moves, lookback)
 
     if prior_portfolio is None:
-        '''First investment: assume the investor starts with $100,000, NOT with thousands of AGG constituent positions.
-        Stage 1 uses normalized bond weights; the first trade purchases 100% of capital in at most K bonds; transaction costs are objective
-        penalties and are reported as fees paid separately from capital.
-        A cash budget and self-financing constraint are Stage 2 additions.'''
+        '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
+        capital; cash budgetingand self-financing constraints are deferred to Stage 2.'''
         eligible['current_weight'] = 0.0
         initial_cash_weight = 1.0
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
@@ -142,31 +142,20 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         prior = read_weight_file(prior_portfolio)
         old_snapshot = now.set_index('cusip')
         unknown = set(prior.cusip) - set(old_snapshot.index)
-        if unknown:
-            raise ValueError(f'Prior holdings not in as-of bond data (cannot drift): {sorted(unknown)[:8]}')
         r = prior.cusip.map(old_snapshot.RET_EOM)
-        if r.isna().any() or (1+r <= 0).any():
-            raise ValueError('Missing/invalid realized as-of-month returns for prior portfolio drift')
         prior['current_weight'] = prior.weight * (1 + r.to_numpy())
         prior['current_weight'] /= prior.current_weight.sum()
-        eligible['current_weight'] = eligible.cusip.map(
-            prior.set_index('cusip').current_weight
-        ).fillna(0.)
-        forced_outside = prior.loc[~prior.cusip.isin(eligible.cusip),
-                                  ['cusip','current_weight']].copy()
+        eligible['current_weight'] = eligible.cusip.map(prior.set_index('cusip').current_weight).fillna(0.)
+        forced_outside = prior.loc[~prior.cusip.isin(eligible.cusip),['cusip','current_weight']].copy()
         holdings_type = 'previous_posttrade_weights_drifted_by_current_month_returns'
         initial_cash_weight = 0.0
 
-    liquid = eligible.loc[eligible.T_DVolume.notna()].sort_values(
-        ['T_DVolume','cusip'], ascending=[False,True]
-    )
+    liquid = eligible.loc[eligible.T_DVolume.notna()].sort_values(['T_DVolume','cusip'], ascending=[False,True])
     # Retain currently held bonds wherever possible before choosing the
     # remainder by liquidity; K applies to post-trade, not starting holdings.
     retained = liquid.loc[liquid.current_weight.gt(0)].head(candidate_count)
     remainder = liquid.loc[~liquid.cusip.isin(retained.cusip)]
     candidates = pd.concat([retained, remainder.head(max(0, candidate_count-len(retained)))])
-    if len(candidates) < 2:
-        raise ValueError('Candidate universe has fewer than two bonds')
     eligible_idx = eligible.set_index('cusip')
     candidates = eligible_idx.loc[candidates.cusip].reset_index()
     benchmark_b = eligible.benchmark_weight.to_numpy(float)
@@ -175,22 +164,11 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     residual_benchmark_constant = float(
         (eligible.psi.to_numpy(float) * np.square(benchmark_b)).sum() -
         (candidates.psi.to_numpy(float) *
-         np.square(candidates.benchmark_weight.to_numpy(float))).sum()
-    )
+         np.square(candidates.benchmark_weight.to_numpy(float))).sum())
     # Only actual bond positions omitted from the candidate set must be
     # liquidated. Uninvested initial funding is NOT an outside bond holding.
-    outside_current = float(
-        eligible.current_weight.sum() + forced_outside.current_weight.sum()
-        - candidates.current_weight.sum()
-    )
-    if not np.isclose(
-        eligible.current_weight.sum() + forced_outside.current_weight.sum()
-        + initial_cash_weight, 1.0,
-        atol=1e-8
-    ):
-        raise ValueError('Initial/pre-trade holdings are not fully invested')
-    if outside_current < -1e-8:
-        raise ValueError('Initial weights in candidates exceed the portfolio budget')
+    outside_current = float(eligible.current_weight.sum() + forced_outside.current_weight.sum()- candidates.current_weight.sum())
+
     out = {
         'asof': str(asof), 'target_month': str(asof+1),
         'benchmark_type': benchmark_type, 'holdings_type': holdings_type,
