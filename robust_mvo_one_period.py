@@ -32,8 +32,7 @@ def load_stage(path=INPUT_FILE):
     return stage
 
 
-def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance,
-                    time_limit, allowed=None, exact=False):
+def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, time_limit, allowed=None, exact=False):
     """Optimize staged quadratic tracking error with optional cardinality."""
     c = stage['candidates']
     n = len(c)
