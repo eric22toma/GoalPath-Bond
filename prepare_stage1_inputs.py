@@ -278,11 +278,11 @@ def main():
         'benchmark_expected_return': stage['benchmark_mu'],
         'risk_factor_months': stage['factor_months'],
     }
-    artifacts[5].write_text(json.dumps(report, indent=2) + '\\n')
+    artifacts[5].write_text(json.dumps(report, indent=2) + '\n')
 
     show_stage1_input_summary(stage)
-    print(f'\\nStage 1 inputs saved to {output_dir}')
-    
+    print(f'\nStage 1 inputs saved to {output_dir}')
+
     # Publish only these six generated files, leaving all other changes untouched.
     paths = [str(file.relative_to(PROJECT_ROOT)) for file in artifacts]
     status = subprocess.run(
