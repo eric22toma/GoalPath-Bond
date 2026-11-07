@@ -234,80 +234,38 @@ def show_stage1_input_summary(stage, preview=5):
     print(f'\nSample of first {len(show)} eligible bonds (all rows saved in eligible_inputs.csv):')
     print(show.to_string(index=False, float_format=lambda v: f'{v:,.6f}'))
     print('\nPortfolio convention: optimizer invests 100% of the initial capital in <= K bonds.')
-    print('Stage 1 transaction fees are charged in the objective and reported separately; they are not deducted from the invested $100,000.')
-
-
-def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
-    """Build H=1 inputs using the existing elastic-net and processing functions.
-    The standard elastic-net Run button prints forecasts but saves no pickle.
-    This function reuses its modeling functions without changing either script."""
-    print('No saved elastic-net bundle supplied; constructing H=1 forecasts '
-          'with the existing forecasting functions.')
-    data = process_all_data(bond_columns=BOND_COLUMNS)
-    macro, curve_params = macro_features(
-        history_for_features(data, 'curve'),
-        history_for_features(data, 'fred'),
-    )
-    dates = data['bonds'][1].DATE.dt.to_period('M')
-    if dates.empty:
-        raise ValueError('No prepared bond observations')
-    calendar = pd.period_range(dates.min(), dates.max(), freq='M')
-    macro = macro.reindex(calendar)
-    curve_params = curve_params.reindex(calendar)
-    panel = load_panel(data['bonds'][1], macro, curve_params)
-    del data
-    complete = panel[FEATURES].notna().all(axis=1)
-    if not complete.any():
-        raise ValueError('No bonds have the elastic-net predictor set')
-    if asof == 'latest':
-        coverage = monthly_quote_coverage(panel)
-        realized = panel.loc[complete & panel.dy.notna(), 'month'].unique()
-        good_months = [m for m in sorted(realized)
-                       if trustworthy_target_month(coverage, m + 1)]
-        if not good_months:
-            raise ValueError('No month has complete predictors and credible '
-                             'next-month quotes; pass --asof YYYY-MM explicitly')
-        chosen = good_months[-1]
-    else:
-        chosen = pd.Period(asof, freq='M')
-    prior = training_rows(panel, chosen, FEATURES)
-    if prior.empty:
-        raise ValueError(f'No historical training observations for {chosen}')
-    if fixed is None:
-        alpha, penalty, rmse, folds, _ = tune_elastic_net(
-            prior, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID
-        )
-        print(f'Chronological CV: alpha={alpha:g}, lambda={penalty:g}, '
-              f'validation RMSE={rmse:.2f} bp (folds: {folds})')
-    else:
-        alpha, penalty = fixed
-        print(f'Using supplied elastic-net alpha={alpha:g}, lambda={penalty:g}')
-    now, _, count = fit_forecast(panel, chosen, FEATURES, alpha, penalty)
-    print(f'Elastic net: {count:,} training rows; {len(now):,} bond forecasts '
-          f'for {chosen} -> {chosen + 1}')
-    return {
-        'asof': str(chosen),
-        'target_month': str(chosen + 1),
-        'snapshot': now,
-        'history': panel.loc[panel.month.between(chosen - 35, chosen)].copy(),
-        'errors': pd.DataFrame(),
-        'curve_params': curve_params,
-    }
-
+    print('Stage 1 transaction fees are not deducted from the invested $100,000.')
 
 def main():
-    # VS Code Run-button configuration (no command-line arguments).
-    forecast_file = DEFAULT_FORECAST_BUNDLE
-    output_dir = DEFAULT_STAGE_DIR
-    benchmark_weights = None   # Set to a CSV path to use actual benchmark weights.
-    prior_portfolio = None     # Set to a CSV path for subsequent rebalancing.
-    candidate_count = 20
-    initial_capital = 100_000.0
-
-    if not forecast_file.is_file():
-        raise FileNotFoundError(
-            f'Forecast not found: {forecast_file}. Pull the shared GitHub forecast '
-            'or run elastic_net_one_period.py first.'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('forecast_file', nargs='?', type=Path,
+                        default=DEFAULT_FORECAST_BUNDLE,
+                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl.gz)')
+    benchmark = parser.add_mutually_exclusive_group()
+    benchmark.add_argument('--benchmark-weights', type=Path,
+                           help='AGG holdings CSV with DATE, cusip, weight')
+    benchmark.add_argument('--benchmark-proxy', action='store_true',
+                           help='Demonstration benchmark: outstanding amount times price')
+    parser.add_argument('--prior-portfolio', type=Path,
+                        help='Previous post-trade holdings (cusip,weight)')
+    parser.add_argument('--candidates', type=int, default=20,
+                        help='Number of candidate bonds (VS Code default: 20)')
+    parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
+    parser.add_argument('--capital', type=float, default=100_000.0,
+                        help='Initial investment in dollars (default $100,000)')
+    parser.add_argument('--output-dir', type=Path, default=DEFAULT_STAGE_DIR,
+                        help='Output folder, default: stage1_outputs/inputs')
+    args = parser.parse_args()
+    if args.candidates < 2 or args.lookback < MIN_FACTOR_OBSERVATIONS + 1:
+        parser.error('Require candidates >= 2 and lookback >= 13')
+    if not np.isfinite(args.capital) or args.capital <= 0:
+        parser.error('Require positive --capital')
+    if not args.forecast_file.is_file():
+        parser.error(
+            f'Forecast bundle not found: {args.forecast_file}. '
+            'Run git pull to obtain the shared GitHub forecast (or run '
+            'elastic_net_one_period.py to generate a new one); '
+            'then run prepare_stage1_inputs.py.'
         )
 
     print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
