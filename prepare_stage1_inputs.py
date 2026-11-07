@@ -296,64 +296,49 @@ def forecast_bundle_from_elastic_net(asof='latest', fixed=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('forecast_file', nargs='?', type=Path,
-                        default=DEFAULT_FORECAST_BUNDLE,
-                        help='Saved H=1 elastic-net forecasts (default: stage1_outputs/forecasts/elastic_net_outputs.pkl.gz)')
-    benchmark = parser.add_mutually_exclusive_group()
-    benchmark.add_argument('--benchmark-weights', type=Path,
-                           help='AGG holdings CSV with DATE, cusip, weight')
-    benchmark.add_argument('--benchmark-proxy', action='store_true',
-                           help='Demonstration benchmark: outstanding amount times price')
-    parser.add_argument('--prior-portfolio', type=Path,
-                        help='Previous post-trade holdings (cusip,weight)')
-    parser.add_argument('--candidates', type=int, default=20,
-                        help='Number of candidate bonds (VS Code default: 20)')
-    parser.add_argument('--lookback', type=int, default=RISK_WINDOW_MONTHS)
-    parser.add_argument('--capital', type=float, default=100_000.0,
-                        help='Initial investment in dollars (default $100,000)')
-    parser.add_argument('--output-dir', type=Path, default=DEFAULT_STAGE_DIR,
-                        help='Output folder, default: stage1_outputs/inputs')
-    args = parser.parse_args()
-    if args.candidates < 2 or args.lookback < MIN_FACTOR_OBSERVATIONS + 1:
-        parser.error('Require candidates >= 2 and lookback >= 13')
-    if not np.isfinite(args.capital) or args.capital <= 0:
-        parser.error('Require positive --capital')
-    if not args.forecast_file.is_file():
-        parser.error(
-            f'Forecast bundle not found: {args.forecast_file}. '
-            'Run git pull to obtain the shared GitHub forecast (or run '
-            'elastic_net_one_period.py to generate a new one); '
-            'then run prepare_stage1_inputs.py.'
-        )
-    print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
-          f'{args.forecast_file.resolve()}')
-    source = pd.read_pickle(args.forecast_file)
+    # VS Code Run-button configuration (no command-line arguments).
+    forecast_file = DEFAULT_FORECAST_BUNDLE
+    output_dir = DEFAULT_STAGE_DIR
+    benchmark_weights = None   # Set to a CSV path to use actual benchmark weights.
+    prior_portfolio = None     # Set to a CSV path for subsequent rebalancing.
+    candidate_count = 20
+    initial_capital = 100_000.0
 
-    # No original constituent weights in the checked-in WRDS bond file.
-    # A no-argument VS Code run explicitly uses the demonstration proxy.
-    proxy = args.benchmark_proxy or args.benchmark_weights is None
+    if not forecast_file.is_file():
+        raise FileNotFoundError(
+            f'Forecast not found: {forecast_file}. Pull the shared GitHub forecast '
+            'or run elastic_net_one_period.py first.'
+        )
+
+    print(f'Loading existing H=1 forecasts (no elastic-net re-fit): '
+          f'{forecast_file.resolve()}')
+    source = pd.read_pickle(forecast_file)
+
+    # Use the outstanding-amount × price proxy unless actual weights are provided.
+    proxy = benchmark_weights is None
     if proxy:
         print('BENCHMARK: DEMONSTRATION PROXY (outstanding amount × price); '
               'NOT original AGG holdings.')
     stage = build_inputs(
-        source, benchmark_weights=args.benchmark_weights,
+        source,
+        benchmark_weights=benchmark_weights,
         benchmark_proxy=proxy,
-        prior_portfolio=args.prior_portfolio,
-        candidate_count=args.candidates, lookback=args.lookback,
-        initial_capital=args.capital
+        prior_portfolio=prior_portfolio,
+        candidate_count=candidate_count,
+        lookback=RISK_WINDOW_MONTHS,
+        initial_capital=initial_capital
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    with (args.output_dir / 'stage1_inputs.pkl').open('wb') as handle:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / 'stage1_inputs.pkl').open('wb') as handle:
         pickle.dump(stage, handle)
-    stage['eligible'].to_csv(args.output_dir / 'eligible_inputs.csv', index=False)
-    stage['candidates'].to_csv(args.output_dir / 'candidate_inputs.csv', index=False)
+    stage['eligible'].to_csv(output_dir / 'eligible_inputs.csv', index=False)
+    stage['candidates'].to_csv(output_dir / 'candidate_inputs.csv', index=False)
     labels = stage['candidates'].cusip.tolist()
     pd.DataFrame(stage['candidate_covariance'], index=labels, columns=labels).to_csv(
-        args.output_dir / 'candidate_covariance.csv'
+        output_dir / 'candidate_covariance.csv'
     )
     pd.DataFrame(stage['sigma_f'], index=FACTOR_NAMES, columns=FACTOR_NAMES).to_csv(
-        args.output_dir / 'factor_covariance.csv'
+        output_dir / 'factor_covariance.csv'
     )
     report = {
         'asof': stage['asof'], 'target_month': stage['target_month'],
@@ -372,13 +357,13 @@ def main():
         'outside_pretrade_weight_forced_sale': stage['outside_pretrade_weight'],
         'risk_factor_months': stage['factor_months'],
     }
-    (args.output_dir / 'stage1_report.json').write_text(
+    (output_dir / 'stage1_report.json').write_text(
         json.dumps(report, indent=2) + '\n'
     )
     print('\nSTAGE 1 INITIALIZATION (Deliverable 3, Section 5.2)')
     print(json.dumps(report, indent=2))
     print(f'\nSUCCESS: Stage 1 inputs saved to '
-          f'{(args.output_dir / "stage1_inputs.pkl").resolve()}')
+          f'{(output_dir / "stage1_inputs.pkl").resolve()}')
     print('Run robust_mvo_one_period.py next using the VS Code Run arrow.')
     if proxy:
         print('WARNING: proxy benchmark is not the actual eligible AGG benchmark.')
