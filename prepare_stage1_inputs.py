@@ -106,14 +106,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     now = bundle['snapshot'].copy()
     required = ['cusip','month','YIELD','predicted_dy_pp','DURATION','time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
 
-    # Section 5.2: only bonds with at least one year to maturity are investable.
-    eligible = now.loc[
-        now.time_to_maturity.ge(1) & now.DURATION.gt(0) &
-        now.YIELD.notna() & now.predicted_dy_pp.notna() &
-        now.PRICE_EOM.gt(0)
-    ].copy().reset_index(drop=True)
-    if eligible.empty:
-        raise ValueError('No eligible bonds with positive duration and maturity >= 1 year')
+    # Only bonds with at least one year to maturity are investable.
+    eligible = now.loc[now.time_to_maturity.ge(1) & now.DURATION.gt(0) &now.YIELD.notna() & now.predicted_dy_pp.notna() &now.PRICE_EOM.gt(0)].copy().reset_index(drop=True)
     eligible['duration'] = eligible.DURATION.astype(float)
     # YIELD is a decimal annual yield
     eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
