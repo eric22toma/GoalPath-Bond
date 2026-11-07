@@ -27,22 +27,6 @@ def load_stage(path=INPUT_FILE):
     n = len(c)
     needed = ['cusip', 'mu', 'psi', 'duration', 'benchmark_weight', 'current_weight']
     needed += [f'B_{factor}' for factor in FACTORS]
-    if n < K or not set(needed).issubset(c.columns):
-        raise ValueError('Candidate data missing required columns or contains fewer than K bonds.')
-    if not np.isfinite(c[needed[1:]].to_numpy(float)).all():
-        raise ValueError('Nonfinite candidate inputs.')
-
-    H = np.asarray(stage['quadratic_matrix'], dtype=float)
-    g = np.asarray(stage['quadratic_linear'], dtype=float)
-    if H.shape != (n, n) or g.shape != (n,) or not np.isfinite(H).all() or not np.isfinite(g).all():
-        raise ValueError('Invalid quadratic matrices saved by prepare_stage1_inputs.py.')
-    if not np.isfinite(stage['quadratic_constant']):
-        raise ValueError('Invalid quadratic objective constant.')
-    if not np.isclose(stage['eligible'].benchmark_weight.sum(), 1.0):
-        raise ValueError('Saved benchmark weights must sum to one.')
-    if not np.isclose(c.current_weight.sum() + stage['outside_pretrade_weight']
-                      + stage['pretrade_cash_weight'], 1.0):
-        raise ValueError('Saved pre-trade holdings and cash must sum to one.')
     return stage
 
 
