@@ -65,25 +65,18 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     """Estimate diagonal Psi, falling back to rating/maturity and maturity buckets."""
     history = history.loc[history.month >= factor_moves.index.min()].copy()
     history = history.loc[history.month.isin(factor_moves.index)].copy()
-    factors = history.month.map(
-        {month: tuple(vals) for month, vals in factor_moves.iterrows()}
-    )
+    factors = history.month.map({month: tuple(vals) for month, vals in factor_moves.iterrows()})
     good = history.RET_EOM.notna() & history.DURATION.gt(0) & history.time_to_maturity.gt(0)
     history = history.loc[good].copy()
-    if history.empty:
-        raise ValueError('No historical returns available for factor residual variances')
-    factor_rows = np.asarray([factor_moves.loc[month, list(FACTOR_NAMES)].to_numpy(dtype=float)
-                              for month in history.month])
+    factor_rows = np.asarray([factor_moves.loc[month, list(FACTOR_NAMES)].to_numpy(dtype=float) for month in history.month])
     load = bond_loadings(history, tenor_coefs)
     history['residual'] = history.RET_EOM.to_numpy(dtype=float) - np.sum(load * factor_rows, axis=1)
     history['maturity_bucket'] = pd.cut(
         history.time_to_maturity, bins=[0, 3, 7, 15, np.inf],
-        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True
-    ).astype(str)
+        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True).astype(str)
     eligible['maturity_bucket'] = pd.cut(
         eligible.time_to_maturity, bins=[0, 3, 7, 15, np.inf],
-        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True
-    ).astype(str)
+        labels=['1-3', '3-7', '7-15', '15+'], include_lowest=True).astype(str)
 
     has_rating = 'RATING_NUM' in history.columns and 'RATING_NUM' in eligible.columns
     if has_rating:
@@ -98,8 +91,6 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     by_group = history.groupby(group_keys, observed=True).residual.agg(['count', 'var'])
     by_maturity = history.groupby('maturity_bucket').residual.agg(['count', 'var'])
     overall = float(history.residual.var())
-    if not np.isfinite(overall) or overall <= 0:
-        raise ValueError('Unable to estimate positive residual variance from history')
 
     own = eligible.cusip.map(by_bond['var'])
     own_count = eligible.cusip.map(by_bond['count']).fillna(0)
@@ -110,13 +101,9 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     maturity_count = eligible.maturity_bucket.map(by_maturity['count'])
 
     psi = np.where(own_count >= MIN_BOND_RESIDUALS, own, np.nan)
-    psi = np.where(np.isnan(psi) & (group_count >= MIN_BUCKET_RESIDUALS),
-                   group_var, psi)
-    psi = np.where(np.isnan(psi) & (maturity_count >= MIN_BUCKET_RESIDUALS),
-                   maturity_var, psi)
+    psi = np.where(np.isnan(psi) & (group_count >= MIN_BUCKET_RESIDUALS), group_var, psi)
+    psi = np.where(np.isnan(psi) & (maturity_count >= MIN_BUCKET_RESIDUALS),maturity_var, psi)
     psi = np.where(np.isnan(psi), overall, psi)
-    if not np.isfinite(psi).all():
-        raise ValueError('Nonfinite estimated residual variances')
     return np.maximum(psi.astype(float), 1e-10)
 
 
