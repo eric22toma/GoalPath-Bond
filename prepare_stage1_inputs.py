@@ -124,15 +124,11 @@ def reduced_tracking_objective(stage):
     Q = B @ sigma_f @ B.T + np.diag(psi)
     H = Q + np.outer(mu, mu)
     linear = -2.0 * (B @ sigma_f @ factor_b + mu * mu_b + psi * b)
-    constant = (
-        factor_b @ sigma_f @ factor_b + mu_b ** 2 +
-        psi @ (b ** 2) + stage['outside_benchmark_psi_constant'])
+    constant = (factor_b @ sigma_f @ factor_b + mu_b ** 2 + psi @ (b ** 2) + stage['outside_benchmark_psi_constant'])
     return Q, (H+H.T)/2, linear, float(constant)
 
 
-def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False,
-                 prior_portfolio=None, candidate_count=60,
-                 lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0):
+def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0):
     """Create full-benchmark Stage 1 inputs, with a reduced tradable candidate set."""
     asof = pd.Period(bundle['asof'], freq='M')
     if pd.Period(bundle['target_month'], freq='M') != asof + 1:
