@@ -217,9 +217,9 @@ def main():
         report[name] = metrics
         selected = portfolio.loc[portfolio.optimized_weight > 1e-6,
                                  ['cusip', 'optimized_weight', 'mu', 'duration']]
-        print(f'\\n{name.upper()}: {len(selected)} bonds, '
+        print(f'\n{name.upper()}: {len(selected)} bonds, '
               f'tracking error {metrics["expected_monthly_tracking_error"]:.4%}, '
-              f'fees \${metrics["transaction_cost_dollars"]:,.2f}')
+              f'fees ${metrics["transaction_cost_dollars"]:,.2f}')
         print(selected.to_string(index=False))
 
     if 'heuristic' in report and 'exact' in report:
@@ -228,9 +228,9 @@ def main():
                 report['heuristic']['objective_value'] - report['exact']['objective_value']
         }
     (RESULTS_DIR / 'stage1_optimization_report.json').write_text(
-        json.dumps(report, indent=2) + '\\n'
+        json.dumps(report, indent=2) + '\n'
     )
-    print(f'\\nResults saved to {RESULTS_DIR}')
+    print(f'\nResults saved to {RESULTS_DIR}')
 
 
 if __name__ == '__main__':
