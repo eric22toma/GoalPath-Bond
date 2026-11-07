@@ -79,11 +79,9 @@ def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
 
 
 def reduced_tracking_objective(stage):
-    """Precompute the candidate covariance and FULL-benchmark quadratic terms.
-    The reduced matrix is candidate_count squared, never eligible_count squared.
-    Noncandidate benchmark exposures are retained in the linear and constant
-    terms so tracking is evaluated against the complete eligible benchmark.
-    """
+    """Compute candidate covariance and quadratic tracking terms,
+    while preserving full-benchmark exposures."""
+
     c = stage['candidates']
     sigma_f = np.asarray(stage['sigma_f'], dtype=float)
     B = c[[f'B_{name}' for name in FACTOR_NAMES]].to_numpy(float)
@@ -239,10 +237,8 @@ def main():
     """Build Stage 1 inputs from saved forecasts and publish them for robust MVO."""
     forecast_file = DEFAULT_FORECAST_BUNDLE
     output_dir = DEFAULT_STAGE_DIR
-    if not forecast_file.is_file():
-        raise FileNotFoundError(f'Run elastic_net_one_period.py first: {forecast_file}')
 
-    print(f'Loading forecasts from {forecast_file}')
+    print(f'\nLoading forecasts from {forecast_file}')
     stage = build_inputs(
         pd.read_pickle(forecast_file),
         benchmark_proxy=True,
