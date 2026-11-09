@@ -1,0 +1,58 @@
+name: Temporary Stage 1 comparison test
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temp-validate-stage1-comparisons.yml']
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy pandas scipy scikit-learn gurobipy
+      - run: python -m py_compile backtest_stage1.py
+      - name: Check output files can be version controlled
+        run: |
+          mkdir -p stage1_outputs/backtest
+          touch stage1_outputs/backtest/{monthly_results.csv,summary.csv,holdings.csv,forecast_accuracy.csv}
+          git check-ignore stage1_outputs/backtest/*.csv && exit 1 || true
+      - name: Validate comparison grid and Git publish calls without making test commits
+        run: |
+          python - <<'PY'
+          import subprocess
+          import pandas as pd
+          import backtest_stage1 as b
+          b.START_MONTH = '2025-10'
+          b.END_MONTH = '2025-10'
+          b.CANDIDATE_COUNT = 20
+          b.K_VALUES = (5, 10)
+          b.EXACT_CANDIDATE_COUNT = 20
+          b.EXACT_K = 10
+          b.RUN_COMPARISONS = True
+          b.RUN_FORECAST_BASELINES = True
+          calls = []
+          original_run = b.subprocess.run
+          def fake_git(cmd, **kw):
+              if isinstance(cmd, list) and cmd[0] == 'git':
+                  calls.append(cmd)
+                  if 'diff' in cmd:
+                      return subprocess.CompletedProcess(cmd, 0, stdout='stage1_outputs/backtest/summary.csv\n', stderr='')
+                  return subprocess.CompletedProcess(cmd, 0, stdout='', stderr='')
+              return original_run(cmd, **kw)
+          b.subprocess.run = fake_git
+          b.main()
+          summary = pd.read_csv(b.OUTPUT_DIR / 'summary.csv')
+          accuracy = pd.read_csv(b.OUTPUT_DIR / 'forecast_accuracy.csv')
+          print('STRATEGIES:', summary.strategy.to_list())
+          print('FORECAST COLUMNS:', accuracy.columns.to_list())
+          assert len(summary) == 6
+          assert {'elastic_net', 'no_forecast'} == set(summary.forecast)
+          assert {'heuristic', 'exact'} == set(summary.solver)
+          assert {'lasso_rmse_bp','ridge_rmse_bp','random_walk_rmse_bp'}.issubset(accuracy.columns)
+          assert any('add' in call for call in calls)
+          assert any('commit' in call for call in calls)
+          assert any('push' in call for call in calls)
+          print('PASS: comparison suite and publishing path verified.')
+          PY
