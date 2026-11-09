@@ -243,3 +243,4 @@ __marimo__/
 !/stage1_outputs/backtest/summary.csv
 !/stage1_outputs/backtest/holdings.csv
 !/stage1_outputs/backtest/forecast_accuracy.csv
+!/stage1_outputs/backtest/failed_strategies.csv
