@@ -33,7 +33,7 @@ def comparisons():
     if RUN_COMPARISONS:
         other = 'exact' if METHOD == 'heuristic' else 'heuristic'
         configs += [('no_forecast', K, METHOD), ('elastic_net', K, other)]
-        configs += [('elastic_net', k, 'heuristic') for k in (25, 50, 100)]
+        configs += [('elastic_net', k, 'heuristic') for k in (25, 50, 100) if k <= CANDIDATE_COUNT]
     return list(dict.fromkeys(configs))
 
 
