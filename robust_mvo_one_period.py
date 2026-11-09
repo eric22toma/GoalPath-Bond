@@ -172,6 +172,7 @@ def main():
         portfolio['capital_allocated'] = portfolio.optimized_weight * stage['initial_capital']
         portfolio['expected_return_pct'] = portfolio.mu * 100
         portfolio['current_yield_pct'] = portfolio.YIELD * 100
+        portfolio['current_return_pct'] = portfolio.RET_EOM * 100
         portfolio['forecast_yield_change_bp'] = portfolio.predicted_dy_pp * 100
         portfolio.to_csv(RESULTS_DIR / f'portfolio_{name}.csv', index=False)
         report[name] = metrics
