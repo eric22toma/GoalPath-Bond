@@ -12,7 +12,7 @@ from sklearn.linear_model import ElasticNet
 from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
-            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap_spread', 'cpi_inflation_lag1']
+            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
 OPTIONAL_FEATURES = ['forward_5y']
 BOND_COLUMNS = ['cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
