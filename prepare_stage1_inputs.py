@@ -6,7 +6,7 @@ import pickle
 import subprocess
 import numpy as np
 import pandas as pd
-from elastic_net_forecasting import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
+from elastic_net_one_period import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
 
 DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
 DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
