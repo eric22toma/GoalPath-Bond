@@ -179,9 +179,7 @@ def main():
         selected = portfolio.loc[
             portfolio.optimized_weight > 1e-6,
             ['cusip', 'optimized_weight', 'mu', 'duration', 'capital_allocated',
-             'current_yield_pct', 'current_return_pct',
-             'expected_return_pct', 'forecast_yield_change_bp']
-        ]
+             'current_yield_pct', 'expected_return_pct', 'forecast_yield_change_bp']]
         print(f'\n{name.upper()}: {len(selected)} bonds, '
               f'tracking error {metrics["expected_monthly_tracking_error"]:.4%}, '
               f'fees ${metrics["transaction_cost_dollars"]:,.2f}')
