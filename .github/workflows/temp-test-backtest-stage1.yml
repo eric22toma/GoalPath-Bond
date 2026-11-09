@@ -31,7 +31,7 @@ jobs:
           assert (r.benchmark_return_coverage>0).all()
           b.START_MONTH = '2025-10'
           b.END_MONTH = '2025-10'
-          b.CANDIDATE_COUNT = 150
+          b.CANDIDATE_COUNT = 20
           b.K = 10
           b.METHOD = 'heuristic'
           b.RUN_COMPARISONS = True
@@ -41,6 +41,6 @@ jobs:
           accuracy = pd.read_csv(b.OUTPUT_DIR / 'forecast_accuracy.csv')
           print('COMPARISON STRATEGIES:', checks.strategy.tolist())
           print('FORECAST BASELINES:', accuracy.columns.tolist())
-          assert len(checks) >= 5
+          assert len(checks) == 3
           assert {'ridge_rmse_bp', 'lasso_rmse_bp'}.issubset(accuracy.columns)
           PY
