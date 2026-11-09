@@ -254,15 +254,20 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
     target_months = len(pd.period_range(START_MONTH, END_MONTH, freq='M'))
-    completed = monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
-    summary = summarize(completed)
+    completed = (monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
+                 if not monthly.empty else monthly)
+    summary = (summarize(completed) if not completed.empty else
+               pd.DataFrame(columns=['forecast', 'solver', 'K', 'candidate_count',
+                                     'annualized_tracking_error', 'annualized_mean_active_return',
+                                     'cumulative_net_return', 'average_monthly_one_way_turnover',
+                                     'total_transaction_fees_dollars']))
     files = [OUTPUT_DIR / name for name in (
         'monthly_results.csv', 'summary.csv', 'holdings.csv',
         'forecast_accuracy.csv', 'failed_strategies.csv'
     )]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
-    pd.concat(positions, ignore_index=True).to_csv(files[2], index=False)
+    (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(files[2], index=False)
     pd.DataFrame(forecasting).to_csv(files[3], index=False)
     pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason']).to_csv(files[4], index=False)
 
