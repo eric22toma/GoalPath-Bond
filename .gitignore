@@ -222,7 +222,7 @@ __marimo__/
 /01_Source_Data/Investable_universe_AGG.csv
 
 # Shared forecast and all six Stage 1 input artifacts are tracked in GitHub.
-# Optimization results are still generated locally until explicitly shared.
+# Backtest comparison CSVs are also tracked and published for the team.
 /stage1_outputs/*
 !/stage1_outputs/forecasts/
 !/stage1_outputs/inputs/
@@ -235,3 +235,11 @@ __marimo__/
 !/stage1_outputs/inputs/candidate_covariance.csv
 !/stage1_outputs/inputs/factor_covariance.csv
 !/stage1_outputs/inputs/stage1_report.json
+
+# Shared Stage 1 backtest comparisons
+!/stage1_outputs/backtest/
+/stage1_outputs/backtest/*
+!/stage1_outputs/backtest/monthly_results.csv
+!/stage1_outputs/backtest/summary.csv
+!/stage1_outputs/backtest/holdings.csv
+!/stage1_outputs/backtest/forecast_accuracy.csv
