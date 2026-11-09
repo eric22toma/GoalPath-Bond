@@ -1,0 +1,3 @@
+strategy,decision_month,reason
+elastic_net_exact_K10_N20,2024-01,Portfolio violates holdings or investment constraint.
+no_forecast_heuristic_K100_N150,2024-11,Missing realized returns for held bonds at 2024-12: ['876030AF4']
