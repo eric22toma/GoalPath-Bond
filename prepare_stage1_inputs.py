@@ -97,7 +97,7 @@ def reduced_tracking_objective(stage):
     return Q, (H+H.T)/2, linear, float(constant)
 
 
-def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0):
+def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0, use_forecasts=True):
     """Create full-benchmark Stage 1 inputs, with a reduced tradable candidate set."""
     asof = pd.Period(bundle['asof'], freq='M')
     now = bundle['snapshot'].copy()
@@ -109,7 +109,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
     eligible['duration'] = eligible.DURATION.astype(float)
     # YIELD is a decimal annual yield
-    eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
+    eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100) if use_forecasts else 0.0
 
     if benchmark_weights is not None:
         weights = read_weight_file(benchmark_weights, asof=asof)
@@ -136,10 +136,17 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
         holdings_type = 'initial_cash_investment_zero_bond_holdings'
     else:
-        prior = read_weight_file(prior_portfolio)
-        old_snapshot = now.set_index('cusip')
-        unknown = set(prior.cusip) - set(old_snapshot.index)
-        r = prior.cusip.map(old_snapshot.RET_EOM)
+        prior = (prior_portfolio[['cusip', 'weight']].copy()
+                 if isinstance(prior_portfolio, pd.DataFrame)
+                 else read_weight_file(prior_portfolio))
+        prior = prior.loc[prior.weight > 1e-6].copy()
+        month_returns = bundle['history'].loc[
+            bundle['history'].month.eq(asof), ['cusip', 'RET_EOM']
+        ].set_index('cusip').RET_EOM
+        r = prior.cusip.map(month_returns)
+        if r.isna().any():
+            missing = prior.loc[r.isna(), 'cusip'].tolist()
+            raise ValueError(f'Missing {asof} realized returns for held bonds: {missing}')
         prior['current_weight'] = prior.weight * (1 + r.to_numpy())
         prior['current_weight'] /= prior.current_weight.sum()
         eligible['current_weight'] = eligible.cusip.map(prior.set_index('cusip').current_weight).fillna(0.)
