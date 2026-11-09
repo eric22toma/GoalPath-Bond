@@ -1,5 +1,4 @@
 """Monthly out-of-sample Stage 1 bond benchmark tracking backtest.
-
 Reuses the existing forecasting, Stage 1 input preparation, and Gurobi solver.
 Transaction fees are reported separately from fully invested bond capital.
 """
@@ -9,10 +8,7 @@ import numpy as np
 import pandas as pd
 
 from process_investable_universe import process_all_data, history_for_features, PROJECT_ROOT
-from elastic_net_one_period import (
-    BOND_COLUMNS, FEATURES, CV_PENALTY_GRID, macro_features, load_panel,
-    forecast_month, training_rows, limit_tuning_rows
-)
+from elastic_net_one_period import (BOND_COLUMNS, FEATURES, CV_PENALTY_GRID, macro_features, load_panel, forecast_month, training_rows, limit_tuning_rows)
 from prepare_stage1_inputs import build_inputs
 from robust_mvo_one_period import run_solver, TRANSACTION_COST, DURATION_TOLERANCE, TIME_LIMIT
 
