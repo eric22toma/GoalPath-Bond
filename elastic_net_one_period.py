@@ -204,6 +204,18 @@ def fit_forecast(panel, asof, features, mixing, penalty):
     return now, coef, len(known)
 
 
+def forecast_month(panel, asof, features=FEATURES, params=None):
+    """Generate H=1 yield forecasts for a chosen historical month."""
+    asof = pd.Period(asof, freq='M')
+    if params is None:
+        known = training_rows(panel, asof, features)
+        mixing, penalty, _, _, _ = tune_elastic_net(known, features)
+    else:
+        mixing, penalty = params
+    now, coefficients, training_count = fit_forecast(panel, asof, features, mixing, penalty)
+    return now, coefficients, training_count, (mixing, penalty)
+
+
 def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas, fixed=None):
     """Evaluate one-month-ahead forecasts with expanding monthly refits.
     Retune once per year and use only training targets observed by each as-of
