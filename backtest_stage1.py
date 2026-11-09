@@ -150,7 +150,7 @@ def main():
         f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
         for model, k, method, n in configs
     }
-    monthly, positions, forecasting = [], [], []
+    monthly, positions, forecasting, failures = [], [], [], []
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
@@ -193,13 +193,22 @@ def main():
         for model, k, method, n in configs:
             name = f'{model}_{method}_K{k}_N{n}'
             state = states[name]
-            stage = build_inputs(
-                bundle, prior_portfolio=state['prior'],
-                candidate_count=n, initial_capital=state['capital'],
-                use_forecasts=(model == 'elastic_net')
-            )
-            answer, metrics = run_solver(stage, method=method, k=k)[method]
-            held, portfolio_return, benchmark_return, coverage = evaluate_month(stage, answer)
+            if state.get('failed'):
+                continue
+            try:
+                stage = build_inputs(
+                    bundle, prior_portfolio=state['prior'],
+                    candidate_count=n, initial_capital=state['capital'],
+                    use_forecasts=(model == 'elastic_net')
+                )
+                answer, metrics = run_solver(stage, method=method, k=k)[method]
+                held, portfolio_return, benchmark_return, coverage = evaluate_month(stage, answer)
+            except (RuntimeError, ValueError) as exc:
+                failures.append({'strategy': name, 'decision_month': str(asof),
+                                 'reason': str(exc)})
+                state['failed'] = True
+                print(f'{asof} | {name}: not evaluable ({exc})')
+                continue
 
             # Fees are paid separately: bond capital stays fully invested.
             fee = float(metrics['transaction_cost_dollars'])
@@ -244,16 +253,20 @@ def main():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
-    summary = summarize(monthly)
+    target_months = len(pd.period_range(START_MONTH, END_MONTH, freq='M'))
+    completed = monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
+    summary = summarize(completed)
     files = [OUTPUT_DIR / name for name in (
-        'monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv'
+        'monthly_results.csv', 'summary.csv', 'holdings.csv',
+        'forecast_accuracy.csv', 'failed_strategies.csv'
     )]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
     pd.concat(positions, ignore_index=True).to_csv(files[2], index=False)
     pd.DataFrame(forecasting).to_csv(files[3], index=False)
+    pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason']).to_csv(files[4], index=False)
 
-    print('\nFINAL STRATEGY COMPARISON (sorted by realized annualized tracking error)')
+    print('\nFINAL STRATEGY COMPARISON (complete backtests only; sorted by tracking error)')
     summary = summary.sort_values('annualized_tracking_error')
     display = summary[['forecast', 'solver', 'K', 'candidate_count',
                        'annualized_tracking_error', 'annualized_mean_active_return',
@@ -263,6 +276,9 @@ def main():
                 'cumulative_net_return', 'average_monthly_one_way_turnover'):
         display[col] = display[col].map(lambda x: f'{x:.2%}')
     print(display.to_string(index=False))
+    if failures:
+        print(f'\n{len(failures)} strategies could not complete the full backtest; '
+              'details saved in failed_strategies.csv.')
 
     if forecasting:
         scores = pd.DataFrame(forecasting)
@@ -270,7 +286,7 @@ def main():
         print('\nFORECAST ACCURACY COMPARISON (average monthly RMSE, basis points)')
         print(scores[score_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
 
-    print(f'\nFour comparison files saved to {OUTPUT_DIR}')
+    print(f'\nFive comparison files saved to {OUTPUT_DIR}')
     paths = [str(file.relative_to(PROJECT_ROOT)) for file in files]
     subprocess.run(['git', '-C', str(PROJECT_ROOT), 'add', '--', *paths], check=True)
     changed = subprocess.run(
