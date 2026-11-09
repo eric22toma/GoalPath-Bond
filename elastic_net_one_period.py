@@ -44,7 +44,7 @@ def macro_features(curve, fred, core=None):
     # Last trading day for each month.
     monthly = daily.groupby(daily.index.to_period('M')).tail(1).copy()
     if monthly.isna().all(axis=1).any():
-        monthly = daily.groupby(daily.index.to_period('M')).tail(2).groupby(daily.index.to_period('M')).head(1).copy()
+        monthly = daily.dropna(how='all').groupby(daily.dropna(how='all').index.to_period('M')).tail(1).copy()
     monthly['month'] = monthly.index.to_period('M')
     monthly = monthly.set_index('month')
     monthly = monthly.reindex(pd.period_range(monthly.index.min(), monthly.index.max(), freq='M'))
