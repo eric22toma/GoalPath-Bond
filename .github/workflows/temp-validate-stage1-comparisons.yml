@@ -16,7 +16,7 @@ jobs:
       - name: Check output files can be version controlled
         run: |
           mkdir -p stage1_outputs/backtest
-          touch stage1_outputs/backtest/{monthly_results.csv,summary.csv,holdings.csv,forecast_accuracy.csv}
+          touch stage1_outputs/backtest/{monthly_results.csv,summary.csv,holdings.csv,forecast_accuracy.csv,failed_strategies.csv}
           git check-ignore stage1_outputs/backtest/*.csv && exit 1 || true
       - name: Validate comparison grid and Git publish calls without making test commits
         run: |
@@ -47,7 +47,10 @@ jobs:
           accuracy = pd.read_csv(b.OUTPUT_DIR / 'forecast_accuracy.csv')
           print('STRATEGIES:', summary.strategy.to_list())
           print('FORECAST COLUMNS:', accuracy.columns.to_list())
-          assert len(summary) == 6
+          failures = pd.read_csv(b.OUTPUT_DIR / 'failed_strategies.csv')
+          print('INFEASIBLE STRATEGIES:', failures.strategy.to_list())
+          assert len(summary) + len(failures) == 6
+          assert len(failures) >= 1
           assert {'elastic_net', 'no_forecast'} == set(summary.forecast)
           assert {'heuristic', 'exact'} == set(summary.solver)
           assert {'lasso_rmse_bp','ridge_rmse_bp','random_walk_rmse_bp'}.issubset(accuracy.columns)
