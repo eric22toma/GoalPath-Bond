@@ -4,6 +4,7 @@ Reuses the existing forecasting, Stage 1 input preparation, and Gurobi solver.
 Transaction fees are reported separately from fully invested bond capital.
 """
 
+import subprocess
 import numpy as np
 import pandas as pd
 
@@ -20,20 +21,29 @@ START_MONTH = '2023-12'
 END_MONTH = '2025-10'  # The latest confirmed target is November 2025.
 INITIAL_CAPITAL = 100_000.0
 CANDIDATE_COUNT = 150
+K_VALUES = (10, 25, 50, 100)
+EXACT_CANDIDATE_COUNT = 20  # Compare exact and heuristic on the same smaller universe
+EXACT_K = 10
 K = 10
-METHOD = 'heuristic'             # 'heuristic' or 'exact'
-RUN_COMPARISONS = False          # Add no-forecast, exact/heuristic, and K comparisons
-RUN_FORECAST_BASELINES = False   # Also compare yield forecasts with ridge and lasso
+METHOD = 'heuristic'
+RUN_COMPARISONS = True          # Forecast/no-forecast x K, plus exact/heuristic
+RUN_FORECAST_BASELINES = True  # Elastic net versus ridge, lasso, and random walk
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
 
 
 def comparisons():
-    """Return independently rebalanced tracking strategies."""
-    configs = [('elastic_net', K, METHOD)]
-    if RUN_COMPARISONS:
-        other = 'exact' if METHOD == 'heuristic' else 'heuristic'
-        configs += [('no_forecast', K, METHOD), ('elastic_net', K, other)]
-        configs += [('elastic_net', k, 'heuristic') for k in (25, 50, 100) if k <= CANDIDATE_COUNT]
+    """Construct the forecast, cardinality, and solver comparison grid."""
+    if not RUN_COMPARISONS:
+        return [('elastic_net', K, METHOD, CANDIDATE_COUNT)]
+
+    configs = [(model, k, 'heuristic', CANDIDATE_COUNT)
+               for model in ('elastic_net', 'no_forecast')
+               for k in K_VALUES if k <= CANDIDATE_COUNT]
+    # Validate the cardinality heuristic against exact MIQP on identical inputs.
+    if EXACT_K <= EXACT_CANDIDATE_COUNT:
+        configs += [(model, EXACT_K, method, EXACT_CANDIDATE_COUNT)
+                    for model in ('elastic_net', 'no_forecast')
+                    for method in ('heuristic', 'exact')]
     return list(dict.fromkeys(configs))
 
 
@@ -99,6 +109,10 @@ def summarize(monthly):
         annual_te = float(np.std(active, ddof=1) * np.sqrt(12)) if len(active) > 1 else np.nan
         results.append({
             'strategy': name,
+            'forecast': rows.forecast.iloc[0],
+            'solver': rows.solver.iloc[0],
+            'K': int(rows.K.iloc[0]),
+            'candidate_count': int(rows.candidate_count.iloc[0]),
             'months': len(rows),
             'annualized_tracking_error': annual_te,
             'annualized_mean_active_return': float(active.mean() * 12),
@@ -113,7 +127,7 @@ def summarize(monthly):
 
 
 def main():
-    """Run monthly rebalancing and save all comparisons locally."""
+    """Compare monthly Stage 1 tracking strategies and publish the results."""
     data = process_all_data(bond_columns=BOND_COLUMNS)
     macro, curve_params = macro_features(
         history_for_features(data, 'curve'), history_for_features(data, 'fred')
@@ -122,9 +136,19 @@ def main():
     del data
 
     configs = comparisons()
+    print('\nSTAGE 1 | OUT-OF-SAMPLE BENCHMARK TRACKING COMPARISON')
+    print(f'Decision months: {START_MONTH} through {END_MONTH}; '
+          f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
+          f'{pd.Period(END_MONTH, freq="M") + 1}')
+    print('Benchmark: monthly outstanding amount x price, normalized across eligible bonds')
+    print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
+    print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
+    print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
+    print(f'\nYield forecast comparison: '
+          f'{"elastic net, ridge, lasso, random walk" if RUN_FORECAST_BASELINES else "elastic net and random walk"}')
     states = {
-        f'{model}_{method}_K{k}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
-        for model, k, method in configs
+        f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
+        for model, k, method, n in configs
     }
     monthly, positions, forecasting = [], [], []
     elastic_params, baseline_penalties, tuned_year = None, None, None
@@ -166,12 +190,12 @@ def main():
             'curve_params': curve_params,
         }
 
-        for model, k, method in configs:
-            name = f'{model}_{method}_K{k}'
+        for model, k, method, n in configs:
+            name = f'{model}_{method}_K{k}_N{n}'
             state = states[name]
             stage = build_inputs(
                 bundle, prior_portfolio=state['prior'],
-                candidate_count=CANDIDATE_COUNT, initial_capital=state['capital'],
+                candidate_count=n, initial_capital=state['capital'],
                 use_forecasts=(model == 'elastic_net')
             )
             answer, metrics = run_solver(stage, method=method, k=k)[method]
@@ -187,6 +211,9 @@ def main():
                                  + stage['outside_pretrade_weight'])
             monthly.append({
                 'strategy': name,
+                'forecast': model,
+                'solver': method,
+                'K': k,
                 'decision_month': str(asof),
                 'target_month': str(asof + 1),
                 'holdings_count': len(held),
@@ -203,6 +230,7 @@ def main():
                 'gross_capital': state['capital'],
                 'net_capital': state['capital'] - state['fees'],
                 'optimal': metrics['optimal'],
+                'objective_value': metrics['objective_value'],
             })
             held['strategy'] = name
             held['decision_month'] = str(asof)
@@ -211,20 +239,51 @@ def main():
             positions.append(held[['strategy', 'decision_month', 'target_month',
                                    'cusip', 'weight', 'capital_allocated',
                                    'mu', 'duration', 'next_return']])
-            print(f'{asof} | {name}: {portfolio_return:+.3%} vs '
-                  f'benchmark {benchmark_return:+.3%}; '
-                  f'coverage {coverage:.1%}; {len(held)} holdings')
+        print(f'{asof} -> {asof + 1} | {len(configs)} strategies evaluated; '
+              f'benchmark coverage {coverage:.1%}')
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
     summary = summarize(monthly)
-    monthly.to_csv(OUTPUT_DIR / 'monthly_results.csv', index=False)
-    summary.to_csv(OUTPUT_DIR / 'summary.csv', index=False)
-    pd.concat(positions, ignore_index=True).to_csv(OUTPUT_DIR / 'holdings.csv', index=False)
-    pd.DataFrame(forecasting).to_csv(OUTPUT_DIR / 'forecast_accuracy.csv', index=False)
-    print('\nSTAGE 1 BACKTEST SUMMARY')
-    print(summary.to_string(index=False))
-    print(f'\nSaved to {OUTPUT_DIR}')
+    files = [OUTPUT_DIR / name for name in (
+        'monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv'
+    )]
+    monthly.to_csv(files[0], index=False)
+    summary.to_csv(files[1], index=False)
+    pd.concat(positions, ignore_index=True).to_csv(files[2], index=False)
+    pd.DataFrame(forecasting).to_csv(files[3], index=False)
+
+    print('\nFINAL STRATEGY COMPARISON (sorted by realized annualized tracking error)')
+    summary = summary.sort_values('annualized_tracking_error')
+    display = summary[['forecast', 'solver', 'K', 'candidate_count',
+                       'annualized_tracking_error', 'annualized_mean_active_return',
+                       'cumulative_net_return', 'average_monthly_one_way_turnover',
+                       'total_transaction_fees_dollars']].copy()
+    for col in ('annualized_tracking_error', 'annualized_mean_active_return',
+                'cumulative_net_return', 'average_monthly_one_way_turnover'):
+        display[col] = display[col].map(lambda x: f'{x:.2%}')
+    print(display.to_string(index=False))
+
+    if forecasting:
+        scores = pd.DataFrame(forecasting)
+        score_columns = [col for col in scores if col.endswith('_rmse_bp')]
+        print('\nFORECAST ACCURACY COMPARISON (average monthly RMSE, basis points)')
+        print(scores[score_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
+
+    print(f'\nFour comparison files saved to {OUTPUT_DIR}')
+    paths = [str(file.relative_to(PROJECT_ROOT)) for file in files]
+    subprocess.run(['git', '-C', str(PROJECT_ROOT), 'add', '--', *paths], check=True)
+    changed = subprocess.run(
+        ['git', '-C', str(PROJECT_ROOT), 'diff', '--cached', '--name-only', '--', *paths],
+        check=True, capture_output=True, text=True
+    ).stdout.strip()
+    if changed:
+        subprocess.run([
+            'git', '-C', str(PROJECT_ROOT), 'commit', '--only',
+            '-m', f'Update Stage 1 backtest comparisons through {END_MONTH}', '--', *paths
+        ], check=True)
+    subprocess.run(['git', '-C', str(PROJECT_ROOT), 'push'], check=True)
+    print('Comparison results published to GitHub for the team.')
 
 
 if __name__ == '__main__':
