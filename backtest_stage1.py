@@ -3,7 +3,6 @@ Reuses the existing forecasting, Stage 1 input preparation, and Gurobi solver.
 Transaction fees are reported separately from fully invested bond capital.
 """
 
-import subprocess
 import numpy as np
 import pandas as pd
 from process_investable_universe import process_all_data, history_for_features, PROJECT_ROOT
@@ -17,23 +16,32 @@ END_MONTH = '2025-10'  # The latest confirmed target is November 2025.
 INITIAL_CAPITAL = 100_000.0
 CANDIDATE_COUNT = 150
 K_VALUES = (10, 25, 50, 100)
-EXACT_CANDIDATE_COUNT = 20  # Compare exact and heuristic on the same smaller universe
-EXACT_K = 10
-K = 10
-METHOD = 'heuristic'
-RUN_COMPARISONS = True         # Forecast/no-forecast x K, plus exact/heuristic
-RUN_FORECAST_BASELINES = True  # Elastic net versus ridge, lasso, and random walk
+SOLVER_COMPARISON_CANDIDATES = 20  # Small common universe makes the exact solve tractable
+# Solver comparison uses K_VALUES[0] (10 holdings) for both methods.
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
 
 def comparisons():
-    """Construct the forecast, cardinality, and solver comparison grid."""
-    if not RUN_COMPARISONS:
-        return [('elastic_net', K, METHOD, CANDIDATE_COUNT)]
-    configs = [(model, k, 'heuristic', CANDIDATE_COUNT) for model in ('elastic_net', 'no_forecast') for k in K_VALUES if k <= CANDIDATE_COUNT]
-    # Validate the cardinality heuristic against exact MIQP on identical inputs.
-    if EXACT_K <= EXACT_CANDIDATE_COUNT:
-        configs += [(model, EXACT_K, method, EXACT_CANDIDATE_COUNT) for model in ('elastic_net', 'no_forecast') for method in ('heuristic', 'exact')]
-    return list(dict.fromkeys(configs))
+    """Four report comparisons: forecast contribution, forecast accuracy,
+    exact vs. heuristic, and tracking/costs across K.
+
+    Forecast accuracy is calculated separately; only elastic net and the
+    zero-return-forecast control require portfolio optimizations.
+    """
+    # Main 150-candidate backtest: elastic net vs. zero forecasts, across K.
+    configs = [
+        (model, k, 'heuristic', CANDIDATE_COUNT)
+        for model in ('elastic_net', 'no_forecast')
+        for k in K_VALUES
+    ]
+    # Controlled solver test: identical 20 candidates, K, and forecast assumptions.
+    solver_k = K_VALUES[0]
+    if solver_k <= SOLVER_COMPARISON_CANDIDATES:
+        configs.extend(
+            (model, solver_k, solver, SOLVER_COMPARISON_CANDIDATES)
+            for model in ('elastic_net', 'no_forecast')
+            for solver in ('heuristic', 'exact')
+        )
+    return configs
 
 
 def forecast_baselines(panel, asof, now, penalties=None):
@@ -133,8 +141,7 @@ def main():
     print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
     print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
-    print(f'\nYield forecast comparison: '
-          f'{"elastic net, ridge, lasso, random walk" if RUN_FORECAST_BASELINES else "elastic net and random walk"}')
+    print('\nYield forecast accuracy: elastic net, ridge, lasso, random walk')
     states = {
         f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
         for model, k, method, n in configs
@@ -157,16 +164,18 @@ def main():
                 'target_month': str(asof + 1),
                 'forecast_bonds': len(valid),
                 'elastic_net_rmse_bp': float(np.sqrt(np.mean(error ** 2))),
-                'elastic_net_mae_bp': float(np.mean(np.abs(error))),
                 'random_walk_rmse_bp': float(np.sqrt(np.mean((valid.dy * 100) ** 2))),
             }
-            if RUN_FORECAST_BASELINES:
-                preds, baseline_penalties = forecast_baselines(
-                    panel, asof, now, baseline_penalties
-                )
-                for name, estimate in preds.items():
-                    difference = (now.dy.to_numpy(float) - estimate) * 100
-                    row[f'{name}_rmse_bp'] = float(np.sqrt(np.nanmean(difference ** 2)))
+            row['elastic_net_mae_bp'] = float(np.mean(np.abs(error)))
+            row['random_walk_mae_bp'] = float(np.mean(np.abs(valid.dy.to_numpy(float) * 100)))
+            preds, baseline_penalties = forecast_baselines(
+                panel, asof, now, baseline_penalties
+            )
+            for name, estimate in preds.items():
+                difference = (now.dy.to_numpy(float) - estimate) * 100
+                difference = difference[np.isfinite(difference)]
+                row[f'{name}_rmse_bp'] = float(np.sqrt(np.mean(difference ** 2))) if len(difference) else np.nan
+                row[f'{name}_mae_bp'] = float(np.mean(np.abs(difference))) if len(difference) else np.nan
             forecasting.append(row)
 
         history = panel.loc[panel.month.between(asof - 35, asof),
@@ -179,6 +188,8 @@ def main():
             'curve_params': curve_params,
         }
 
+        successes = 0
+        coverages = []
         for model, k, method, n in configs:
             name = f'{model}_{method}_K{k}_N{n}'
             state = states[name]
@@ -199,6 +210,8 @@ def main():
                 print(f'{asof} | {name}: not evaluable ({exc})')
                 continue
 
+            successes += 1
+            coverages.append(coverage)
             # Fees are paid separately: bond capital stays fully invested.
             fee = float(metrics['transaction_cost_dollars'])
             state['fees'] += fee
@@ -237,8 +250,9 @@ def main():
             positions.append(held[['strategy', 'decision_month', 'target_month',
                                    'cusip', 'weight', 'capital_allocated',
                                    'mu', 'duration', 'next_return']])
-        print(f'{asof} -> {asof + 1} | {len(configs)} strategies evaluated; '
-              f'benchmark coverage {coverage:.1%}')
+        coverage_text = f'{min(coverages):.1%}–{max(coverages):.1%}' if coverages else 'n/a'
+        print(f'{asof} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
+              f'benchmark coverage {coverage_text}')
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
@@ -279,21 +293,11 @@ def main():
         score_columns = [col for col in scores if col.endswith('_rmse_bp')]
         print('\nFORECAST ACCURACY COMPARISON (average monthly RMSE, basis points)')
         print(scores[score_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
+        mae_columns = [col for col in scores if col.endswith('_mae_bp')]
+        print('\nFORECAST ACCURACY COMPARISON (average monthly MAE, basis points)')
+        print(scores[mae_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
 
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
-    paths = [str(file.relative_to(PROJECT_ROOT)) for file in files]
-    subprocess.run(['git', '-C', str(PROJECT_ROOT), 'add', '--', *paths], check=True)
-    changed = subprocess.run(
-        ['git', '-C', str(PROJECT_ROOT), 'diff', '--cached', '--name-only', '--', *paths],
-        check=True, capture_output=True, text=True
-    ).stdout.strip()
-    if changed:
-        subprocess.run([
-            'git', '-C', str(PROJECT_ROOT), 'commit', '--only',
-            '-m', f'Update Stage 1 backtest comparisons through {END_MONTH}', '--', *paths
-        ], check=True)
-    subprocess.run(['git', '-C', str(PROJECT_ROOT), 'push'], check=True)
-    print('Comparison results published to GitHub for the team.')
 
 
 if __name__ == '__main__':
