@@ -16,7 +16,6 @@ INITIAL_CAPITAL = 100_000.0
 CANDIDATE_COUNT = 150
 K_VALUES = (10, 25, 50, 100)
 SOLVER_COMPARISON_CANDIDATES = 20  # Small common universe makes the exact solve tractable
-# Solver comparison uses K_VALUES[0] (10 holdings) for both methods.
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
 
 def comparisons():
@@ -285,4 +284,3 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    print(comparisons())
