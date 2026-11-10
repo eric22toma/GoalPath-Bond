@@ -349,12 +349,5 @@ def main():
     show_stage1_input_summary(stage)
     print(f'\nStage 1 inputs saved to {output_dir}')
 
-    # Publish only these six generated files, leaving all other changes untouched.
-    paths = [str(file.relative_to(PROJECT_ROOT)) for file in artifacts]
-    status = subprocess.run(['git', '-C', str(PROJECT_ROOT), 'status', '--porcelain', '--', *paths],check=True, capture_output=True, text=True,)
-    if status.stdout.strip():
-        subprocess.run(['git', '-C', str(PROJECT_ROOT), 'commit', '--only','-m', f'Update Stage 1 inputs for {stage["asof"]}', '--', *paths], check=True,)
-        subprocess.run(['git', '-C', str(PROJECT_ROOT), 'push'], check=True)
-
 if __name__ == '__main__':
     main()
