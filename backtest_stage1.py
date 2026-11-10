@@ -208,9 +208,7 @@ def main():
             held['decision_month'] = str(asof)
             held['target_month'] = str(asof + 1)
             held['capital_allocated'] = held.weight * float(stage['initial_capital'])
-            positions.append(held[['strategy', 'decision_month', 'target_month',
-                                   'cusip', 'weight', 'capital_allocated',
-                                   'mu', 'duration', 'next_return']])
+            positions.append(held[['strategy', 'decision_month', 'target_month', 'cusip', 'weight', 'capital_allocated', 'mu', 'duration', 'next_return']])
         coverage_text = f'{min(coverages):.1%}–{max(coverages):.1%}' if coverages else 'n/a'
         print(f'{asof} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
               f'benchmark coverage {coverage_text}')
