@@ -453,6 +453,7 @@ def main():
         'asof': str(asof),
         'target_month': str(asof + 1),
         'snapshot': now,
+        'benchmark_snapshot': panel.loc[panel.month.eq(asof)].copy(),
         'history': history,
         'errors': errors,
         'curve_params': curve_params,
