@@ -171,9 +171,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     tenor_coef, sigma_f, factor_moves = curve_factor_model(
         bundle['curve_params'], asof, lookback)
     # Use the filled duration for benchmark risk loadings; preserve raw DURATION.
-    benchmark_loadings = bond_loadings(
-        benchmark.assign(DURATION=benchmark['duration']), tenor_coef
-    )
+    benchmark_loadings = bond_loadings(benchmark.assign(DURATION=benchmark['duration']), tenor_coef)
     for j, name in enumerate(FACTOR_NAMES):
         benchmark[f'B_{name}'] = benchmark_loadings[:, j]
     benchmark['psi'] = residual_variances(
