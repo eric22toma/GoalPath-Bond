@@ -106,14 +106,13 @@ def main():
 
     configs = comparisons()
     print('\nSTAGE 1 | OUT-OF-SAMPLE BENCHMARK TRACKING COMPARISON')
-    print(f'Decision months: {START_MONTH} through {END_MONTH}; '
-          f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
-          f'{pd.Period(END_MONTH, freq="M") + 1}')
-    print('Benchmark: monthly outstanding amount x price, normalized across benchmark constituents')
-    print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
-    print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
+    print(f'\nDecision months: {START_MONTH} through {END_MONTH}; '
+          f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through {pd.Period(END_MONTH, freq="M") + 1}')
+   # print('Benchmark: monthly outstanding amount x price, normalized across benchmark constituents')
+   # print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
+    print(f'\nProposed backtest comparisons grid ({len(configs)} independent portfolios):')
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
-    print('\nYield forecast accuracy: elastic net, ridge, lasso, random walk')
+   # print('\nYield forecast accuracy: elastic net, ridge, lasso, random walk')
     states = {
         f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
         for model, k, method, n in configs
@@ -132,17 +131,13 @@ def main():
         valid = now.loc[now.dy.notna()].copy()
         if not valid.empty:
             error = (valid.dy - valid.predicted_dy_pp) * 100
-            row = {
-                'target_month': str(asof + 1),
+            row = {'target_month': str(asof + 1),
                 'forecast_bonds': len(valid),
                 'elastic_net_rmse_bp': float(np.sqrt(np.mean(error ** 2))),
-                'random_walk_rmse_bp': float(np.sqrt(np.mean((valid.dy * 100) ** 2))),
-            }
+                'random_walk_rmse_bp': float(np.sqrt(np.mean((valid.dy * 100) ** 2))),}
             row['elastic_net_mae_bp'] = float(np.mean(np.abs(error)))
             row['random_walk_mae_bp'] = float(np.mean(np.abs(valid.dy.to_numpy(float) * 100)))
-            preds, baseline_penalties = forecast_baselines(
-                panel, asof, now, baseline_penalties
-            )
+            preds, baseline_penalties = forecast_baselines(panel, asof, now, baseline_penalties)
             for name, estimate in preds.items():
                 difference = (now.dy.to_numpy(float) - estimate) * 100
                 difference = difference[np.isfinite(difference)]
@@ -169,16 +164,11 @@ def main():
             if state.get('failed'):
                 continue
             try:
-                stage = build_inputs(
-                    bundle, prior_portfolio=state['prior'],
-                    candidate_count=n, initial_capital=state['capital'],
-                    use_forecasts=(model == 'elastic_net')
-                )
+                stage = build_inputs(bundle, prior_portfolio=state['prior'],candidate_count=n, initial_capital=state['capital'],use_forecasts=(model == 'elastic_net'))
                 answer, metrics = run_solver(stage, method=method, k=k)[method]
                 held, portfolio_return, benchmark_return, coverage = evaluate_month(stage, answer)
             except (RuntimeError, ValueError) as exc:
-                failures.append({'strategy': name, 'decision_month': str(asof),
-                                 'reason': str(exc)})
+                failures.append({'strategy': name, 'decision_month': str(asof),'reason': str(exc)})
                 state['failed'] = True
                 print(f'{asof} | {name}: not evaluable ({exc})')
                 continue
@@ -191,8 +181,7 @@ def main():
             state['capital'] *= 1 + portfolio_return
             state['prior'] = held[['cusip', 'weight']].copy()
 
-            gross_traded = float(answer['buys'].sum() + answer['sells'].sum()
-                                 + stage['outside_pretrade_weight'])
+            gross_traded = float(answer['buys'].sum() + answer['sells'].sum()+ stage['outside_pretrade_weight'])
             monthly.append({
                 'strategy': name,
                 'forecast': model,
@@ -214,8 +203,7 @@ def main():
                 'gross_capital': state['capital'],
                 'net_capital': state['capital'] - state['fees'],
                 'optimal': metrics['optimal'],
-                'objective_value': metrics['objective_value'],
-            })
+                'objective_value': metrics['objective_value'],})
             held['strategy'] = name
             held['decision_month'] = str(asof)
             held['target_month'] = str(asof + 1)
@@ -271,7 +259,6 @@ def main():
         print(scores[mae_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
 
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
-
 
 if __name__ == '__main__':
     main()
