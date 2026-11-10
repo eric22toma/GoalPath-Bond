@@ -118,12 +118,11 @@ def main():
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
+        # Hyperparameter retruning at beginning of year
         if asof.year != tuned_year:
             elastic_params, baseline_penalties, tuned_year = None, None, asof.year
 
         now, _, _, elastic_params = forecast_month(panel, asof, params=elastic_params)
-        if now.empty:
-            raise ValueError(f'No forecastable bonds for {asof}')
 
         valid = now.loc[now.dy.notna()].copy()
         if not valid.empty:
@@ -142,9 +141,7 @@ def main():
                 row[f'{name}_mae_bp'] = float(np.mean(np.abs(difference))) if len(difference) else np.nan
             forecasting.append(row)
 
-        history = panel.loc[panel.month.between(asof - 35, asof),
-                            ['cusip', 'month', 'RET_EOM', 'DURATION',
-                             'time_to_maturity', 'RATING_NUM']].copy()
+        history = panel.loc[panel.month.between(asof - 35, asof), ['cusip', 'month', 'RET_EOM', 'DURATION', 'time_to_maturity', 'RATING_NUM']].copy()
         bundle = {
             'asof': str(asof),
             'snapshot': now,
