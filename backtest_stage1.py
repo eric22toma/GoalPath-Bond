@@ -108,7 +108,6 @@ def main():
     print('\nSTAGE 1 | OUT-OF-SAMPLE BENCHMARK TRACKING COMPARISON')
     print(f'\nDecision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through {pd.Period(END_MONTH, freq="M") + 1}')
-   # print('Benchmark: monthly outstanding amount x price, normalized across benchmark constituents')
     print('\nEVALUATION FORMULAS (realized monthly returns):')
     print('  Active return: A_t = R_P,t - R_B,t')
     print('  Annualized tracking error: TE = sqrt(12) * std(A_t, ddof=1)')
