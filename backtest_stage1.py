@@ -113,10 +113,7 @@ def main():
     print(f'\nProposed backtest comparisons grid ({len(configs)} independent portfolios):')
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
    # print('\nYield forecast accuracy: elastic net, ridge, lasso, random walk')
-    states = {
-        f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0}
-        for model, k, method, n in configs
-    }
+    states = {f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0} for model, k, method, n in configs}
     monthly, positions, forecasting, failures = [], [], [], []
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
