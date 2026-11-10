@@ -25,7 +25,7 @@ CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
-# dy is stored in percentage points, so 500 bp corresponds to 5.0 pp. added as a result of extreme yield change outliers impacting forecasting
+# dy is stored in percentage points, so 500 bp corresponds to 5.0 pp.; added as a result of extreme yield change outliers impacting forecasting
 MAX_TRAIN_YIELD_CHANGE_BP = 500.0
 
 # Save file location for prepare_stage1_inputs.
@@ -368,8 +368,7 @@ def main():
     if known.empty:
         raise ValueError(f'No historical training observations available by {asof}')
     original_training_count = len(training_rows(panel, asof, features, max_yield_change_bp=None))
-    filter_label = (f'{MAX_TRAIN_YIELD_CHANGE_BP:g} bp' if MAX_TRAIN_YIELD_CHANGE_BP is not None
-                    else 'disabled')
+    filter_label = (f'{MAX_TRAIN_YIELD_CHANGE_BP:g} bp' if MAX_TRAIN_YIELD_CHANGE_BP is not None else 'disabled')
     print(f'Training yield-change filter: {filter_label}; '
           f'excluded {original_training_count - len(known):,} of '
           f'{original_training_count:,} historical bond-month observations.')
