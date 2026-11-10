@@ -6,7 +6,6 @@ Transaction fees are reported separately from fully invested bond capital.
 import subprocess
 import numpy as np
 import pandas as pd
-
 from process_investable_universe import process_all_data, history_for_features, PROJECT_ROOT
 from elastic_net_one_period import (BOND_COLUMNS, FEATURES, CV_PENALTY_GRID, macro_features, load_panel, forecast_month, training_rows, limit_tuning_rows)
 from prepare_stage1_inputs import build_inputs
@@ -25,7 +24,6 @@ METHOD = 'heuristic'
 RUN_COMPARISONS = True          # Forecast/no-forecast x K, plus exact/heuristic
 RUN_FORECAST_BASELINES = True  # Elastic net versus ridge, lasso, and random walk
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
-
 
 def comparisons():
     """Construct the forecast, cardinality, and solver comparison grid."""
