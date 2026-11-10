@@ -72,10 +72,7 @@ def evaluate_month(stage, solution):
     coverage = float(benchmark.loc[observed, 'benchmark_weight'].sum())
     if coverage <= 0:
         raise ValueError(f"No benchmark returns observed for {stage['target_month']}")
-    benchmark_return = float(
-        benchmark.loc[observed, 'benchmark_weight'] @ benchmark.loc[observed, 'next_return']
-        / coverage
-    )
+    benchmark_return = float(benchmark.loc[observed, 'benchmark_weight'] @ benchmark.loc[observed, 'next_return'] / coverage)
     return held, portfolio_return, benchmark_return, coverage
 
 
@@ -107,9 +104,7 @@ def summarize(monthly):
 def main():
     """Compare monthly Stage 1 tracking strategies and publish the results."""
     data = process_all_data(bond_columns=BOND_COLUMNS)
-    macro, curve_params = macro_features(
-        history_for_features(data, 'curve'), history_for_features(data, 'fred')
-    )
+    macro, curve_params = macro_features(history_for_features(data, 'curve'), history_for_features(data, 'fred'))
     panel = load_panel(data['bonds'][1], macro, curve_params)
     del data
 
@@ -283,4 +278,57 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+     # Load and prepare datasets
+    data = process_all_data(bond_columns=BOND_COLUMNS)
+    macro, curve_params = macro_features(
+        history_for_features(data, 'curve'),
+        history_for_features(data, 'fred')
+    )
+    panel = load_panel(data['bonds'][1], macro, curve_params)
+
+    # Forecast October -> November 2025
+    asof = pd.Period('2025-10', freq='M')
+
+    now, _, _, _ = forecast_month(panel, asof)
+    predictions, penalties = forecast_baselines(panel, asof, now)
+
+    # Compare forecasts (basis points)
+    results = pd.DataFrame({
+        'cusip': now.cusip.to_numpy(),
+        'volume': now.T_DVolume.to_numpy(),
+        'elastic_net_bp': now.predicted_dy_pp.to_numpy() * 100,
+        'ridge_bp': predictions['ridge'] * 100,
+        'lasso_bp': predictions['lasso'] * 100,
+        'random_walk_bp': 0.0,
+        'realized_bp': now.dy.to_numpy() * 100
+    }).dropna(subset=['realized_bp'])
+
+    print('\nSELECTED REGULARIZATION PENALTIES:')
+    print(penalties)
+
+    print('\nFORECAST COMPARISON: 10 MOST LIQUID BONDS')
+    print(
+        results.sort_values('volume', ascending=False)
+        .drop(columns='volume')
+        .head(10)
+        .round(2)
+        .to_string(index=False)
+    )
+
+    # Compare forecast accuracy
+    print('\nFORECAST ACCURACY (ALL BONDS)')
+    for model in ['elastic_net', 'ridge', 'lasso', 'random_walk']:
+        error = results['realized_bp'] - results[f'{model}_bp']
+        rmse = np.sqrt(np.mean(error ** 2))
+        mae = np.mean(np.abs(error))
+        print(f'{model:12s} | RMSE: {rmse:8.2f} bp | MAE: {mae:8.2f} bp')
+
+    # Diagnostic: evaluate ordinary yield changes separately
+    ordinary = results.loc[results.realized_bp.abs() <= 500]
+
+    print('\nFORECAST ACCURACY (REALIZED CHANGE <= 500 BP)')
+    for model in ['elastic_net', 'ridge', 'lasso', 'random_walk']:
+        error = ordinary['realized_bp'] - ordinary[f'{model}_bp']
+        rmse = np.sqrt(np.mean(error ** 2))
+        mae = np.mean(np.abs(error))
+        print(f'{model:12s} | RMSE: {rmse:8.2f} bp | MAE: {mae:8.2f} bp')
