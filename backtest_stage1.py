@@ -156,14 +156,14 @@ def evaluate_month(stage, solution):
         raise ValueError(f"Missing realized returns for held bonds at {stage['target_month']}: {missing}")
     portfolio_return = float(held.weight @ held.next_return)
 
-    # Report observed benchmark-weight coverage; missing returns are not set to zero.
-    eligible = stage['eligible']
-    observed = eligible.next_return.notna()
-    coverage = float(eligible.loc[observed, 'benchmark_weight'].sum())
+    # Evaluate against the unscreened benchmark, not portfolio-eligible bonds.
+    benchmark = stage['benchmark']
+    observed = benchmark.next_return.notna()
+    coverage = float(benchmark.loc[observed, 'benchmark_weight'].sum())
     if coverage <= 0:
         raise ValueError(f"No benchmark returns observed for {stage['target_month']}")
     benchmark_return = float(
-        eligible.loc[observed, 'benchmark_weight'] @ eligible.loc[observed, 'next_return']
+        benchmark.loc[observed, 'benchmark_weight'] @ benchmark.loc[observed, 'next_return']
         / coverage
     )
     return held, portfolio_return, benchmark_return, coverage
@@ -212,7 +212,7 @@ def main():
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
-    print('Benchmark: monthly outstanding amount x price, normalized across eligible bonds')
+    print('Benchmark: monthly outstanding amount x price, normalized across benchmark constituents')
     print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
     print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
@@ -259,6 +259,7 @@ def main():
         bundle = {
             'asof': str(asof),
             'snapshot': now,
+            'benchmark_snapshot': panel.loc[panel.month.eq(asof)].copy(),
             'history': history,
             'curve_params': curve_params,
         }
