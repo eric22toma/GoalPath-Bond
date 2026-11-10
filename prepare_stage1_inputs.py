@@ -13,9 +13,10 @@ DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
 FACTOR_NAMES = ('level', 'slope', 'curvature')
 TENORS = np.arange(1.0, 31.0)
 RISK_WINDOW_MONTHS = 36
+
 # Current YTM ceiling for portfolio candidates only (decimal annual yield).
 # This differs from the 500 bp historical yield-CHANGE filter in elastic net.
-MAX_INVESTABLE_YIELD = 0.05
+MAX_INVESTABLE_YIELD = 0.15
 MIN_FACTOR_OBSERVATIONS = 12
 MIN_BOND_RESIDUALS = 12
 MIN_BUCKET_RESIDUALS = 30
