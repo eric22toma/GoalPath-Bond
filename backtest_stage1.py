@@ -21,7 +21,7 @@ EXACT_CANDIDATE_COUNT = 20  # Compare exact and heuristic on the same smaller un
 EXACT_K = 10
 K = 10
 METHOD = 'heuristic'
-RUN_COMPARISONS = True          # Forecast/no-forecast x K, plus exact/heuristic
+RUN_COMPARISONS = True         # Forecast/no-forecast x K, plus exact/heuristic
 RUN_FORECAST_BASELINES = True  # Elastic net versus ridge, lasso, and random walk
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
 
@@ -29,15 +29,10 @@ def comparisons():
     """Construct the forecast, cardinality, and solver comparison grid."""
     if not RUN_COMPARISONS:
         return [('elastic_net', K, METHOD, CANDIDATE_COUNT)]
-
-    configs = [(model, k, 'heuristic', CANDIDATE_COUNT)
-               for model in ('elastic_net', 'no_forecast')
-               for k in K_VALUES if k <= CANDIDATE_COUNT]
+    configs = [(model, k, 'heuristic', CANDIDATE_COUNT) for model in ('elastic_net', 'no_forecast') for k in K_VALUES if k <= CANDIDATE_COUNT]
     # Validate the cardinality heuristic against exact MIQP on identical inputs.
     if EXACT_K <= EXACT_CANDIDATE_COUNT:
-        configs += [(model, EXACT_K, method, EXACT_CANDIDATE_COUNT)
-                    for model in ('elastic_net', 'no_forecast')
-                    for method in ('heuristic', 'exact')]
+        configs += [(model, EXACT_K, method, EXACT_CANDIDATE_COUNT) for model in ('elastic_net', 'no_forecast') for method in ('heuristic', 'exact')]
     return list(dict.fromkeys(configs))
 
 
