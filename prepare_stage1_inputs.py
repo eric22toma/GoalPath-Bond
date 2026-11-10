@@ -170,7 +170,10 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
 
     tenor_coef, sigma_f, factor_moves = curve_factor_model(
         bundle['curve_params'], asof, lookback)
-    benchmark_loadings = bond_loadings(benchmark, tenor_coef)
+    # Use the filled duration for benchmark risk loadings; preserve raw DURATION.
+    benchmark_loadings = bond_loadings(
+        benchmark.assign(DURATION=benchmark['duration']), tenor_coef
+    )
     for j, name in enumerate(FACTOR_NAMES):
         benchmark[f'B_{name}'] = benchmark_loadings[:, j]
     benchmark['psi'] = residual_variances(
@@ -249,6 +252,12 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         'forced_outside_holdings': forced_outside
     }
     Q, H, g, offset = reduced_tracking_objective(out)
+    # Fail here with a useful message rather than passing NaNs to Gurobi.
+    for name, value in (('quadratic_matrix', H), ('quadratic_linear', g),
+                        ('quadratic_constant', offset),
+                        ('benchmark_factor', bload)):
+        if not np.isfinite(value).all():
+            raise ValueError(f'Non-finite {name} in Stage 1 inputs for {asof}')
     out['candidate_covariance'] = Q
     out['quadratic_matrix'] = H
     out['quadratic_linear'] = g
