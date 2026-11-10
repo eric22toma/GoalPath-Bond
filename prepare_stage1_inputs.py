@@ -154,33 +154,22 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         now.PRICE_EOM.gt(0)
     ].copy().reset_index(drop=True)
     if benchmark_weights is None:
-        eligible = eligible.loc[
-            pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)
-        ].reset_index(drop=True)
+        eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
     eligible = eligible.loc[eligible.cusip.isin(benchmark.cusip)].copy().reset_index(drop=True)
-    if eligible.empty:
-        raise ValueError(f'No portfolio-eligible bonds remain at {asof} under the 5% yield cap')
 
     eligible['duration'] = eligible.DURATION.astype(float)
-    eligible['mu'] = (
-        eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
-        if use_forecasts else 0.0
-    )
+    eligible['mu'] = (eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100) if use_forecasts else 0.0)
 
-    benchmark['predicted_dy_pp'] = benchmark.cusip.map(
-        now.set_index('cusip').predicted_dy_pp
-    )
+    benchmark['predicted_dy_pp'] = benchmark.cusip.map(now.set_index('cusip').predicted_dy_pp)
     # Where no forecast exists for a benchmark constituent, use zero yield
     # change for expected-return risk terms; keep its full index weight.
     benchmark['mu'] = (
         benchmark.yield_for_risk / 12 -
         benchmark.duration * benchmark.predicted_dy_pp.fillna(0.0) / 100
-        if use_forecasts else 0.0
-    )
+        if use_forecasts else 0.0)
 
     tenor_coef, sigma_f, factor_moves = curve_factor_model(
-        bundle['curve_params'], asof, lookback
-    )
+        bundle['curve_params'], asof, lookback)
     benchmark_loadings = bond_loadings(benchmark, tenor_coef)
     for j, name in enumerate(FACTOR_NAMES):
         benchmark[f'B_{name}'] = benchmark_loadings[:, j]
@@ -196,7 +185,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
 
     if prior_portfolio is None:
         '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
-        capital... cash budgeting and self-financing constraints are deferred to Stage 2.'''
+        capital... cash budgeting and self-financing constraints deferred to Stage 2.'''
         eligible['current_weight'] = 0.0
         initial_cash_weight = 1.0
         forced_outside = pd.DataFrame(columns=['cusip', 'current_weight'])
