@@ -109,7 +109,15 @@ def main():
     print(f'\nDecision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through {pd.Period(END_MONTH, freq="M") + 1}')
    # print('Benchmark: monthly outstanding amount x price, normalized across benchmark constituents')
-   # print('Evaluation: realized tracking error, active return, turnover, fees, and holdings')
+    print('\nEVALUATION FORMULAS (realized monthly returns):')
+    print('  Active return: A_t = R_P,t - R_B,t')
+    print('  Annualized tracking error: TE = sqrt(12) * std(A_t, ddof=1)')
+    print('  Annualized mean active return: AR = 12 * mean(A_t)')
+    print('  Monthly one-way turnover: TO_t = (sum(buys_t) + sum(sells_t) + outside_t) / 2')
+    print('  Transaction fees ($): F_t = capital_t * fee_rate * (sum(buys_t) + sum(sells_t) + outside_t)')
+    print('  Holdings: N_t = sum_i 1(weight_i,t > 1e-6)')
+    print('  Cumulative net return: R_net = (gross_capital_T - cumulative_fees_T) / initial_capital - 1')
+    print('  R_P,t / R_B,t: portfolio / benchmark return; outside_t: forced sales outside candidates')
     print(f'\nProposed backtest comparisons grid ({len(configs)} independent portfolios):')
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
     states = {f'{model}_{method}_K{k}_N{n}': {'prior': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0} for model, k, method, n in configs}
