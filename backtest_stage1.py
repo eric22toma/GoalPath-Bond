@@ -217,10 +217,7 @@ def main():
                                      'annualized_tracking_error', 'annualized_mean_active_return',
                                      'cumulative_net_return', 'average_monthly_one_way_turnover',
                                      'total_transaction_fees_dollars']))
-    files = [OUTPUT_DIR / name for name in (
-        'monthly_results.csv', 'summary.csv', 'holdings.csv',
-        'forecast_accuracy.csv', 'failed_strategies.csv'
-    )]
+    files = [OUTPUT_DIR / name for name in ('monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv', 'failed_strategies.csv')]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(files[2], index=False)
