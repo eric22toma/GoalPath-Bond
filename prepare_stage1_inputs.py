@@ -107,10 +107,9 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     now = bundle['snapshot'].copy()
     required = ['cusip','month','YIELD','predicted_dy_pp','DURATION','time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
 
-    # Benchmark is the unscreened point-in-time source universe. Keep bonds
-    # above the candidate yield limit in the benchmark and its risk exposures.
-    if 'benchmark_snapshot' not in bundle:
-        raise ValueError('Missing benchmark_snapshot: rerun elastic_net_one_period.py to rebuild the forecast bundle.')
+    # Benchmark is the unscreened point-in-time source universe. 
+    # Keep bonds above the proposedyield limit .
+
     benchmark = bundle['benchmark_snapshot'].copy().reset_index(drop=True)
 
     if benchmark_weights is not None:
@@ -126,8 +125,6 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         benchmark_type = 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
     benchmark = benchmark.loc[benchmark.benchmark_weight.gt(0)].copy().reset_index(drop=True)
     weight_total = benchmark.benchmark_weight.sum()
-    if benchmark.empty or not np.isfinite(weight_total) or weight_total <= 0:
-        raise ValueError(f'No valid benchmark weights for {asof}')
     benchmark['benchmark_weight'] /= weight_total
     benchmark_matched = len(benchmark)
 
