@@ -24,6 +24,9 @@ CV_MIXING_GRID = (0.20, 0.40, 0.60, 0.80, 0.95)
 CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
+# Experimental training-only screen; set to None to reproduce the original model.
+# dy is stored in percentage points, so 500 bp corresponds to 5.0 pp.
+MAX_TRAIN_YIELD_CHANGE_BP = 500.0
 
 # Save file location for prepare_stage1_inputs.
 DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'/ 'elastic_net_outputs.pkl.gz')
@@ -120,9 +123,13 @@ def load_panel(prepared_bonds, macro, params):
 def estimator(alpha, l1_ratio):
     return make_pipeline(StandardScaler(),ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-7))
 
-def training_rows(panel, asof, features):
-    """Keep targets already realized by asof, with complete predictor rows."""
-    return panel.loc[(panel.month >= pd.Period('2016-01', 'M')) & (panel.target_month <= asof)].dropna(subset=features + ['dy']).copy()
+def training_rows(panel, asof, features, max_yield_change_bp=MAX_TRAIN_YIELD_CHANGE_BP):
+    """Use only realized historical targets; optionally exclude extreme changes from training."""
+    known = panel.loc[(panel.month >= pd.Period('2016-01', 'M')) &
+                      (panel.target_month <= asof)].dropna(subset=features + ['dy'])
+    if max_yield_change_bp is not None:
+        known = known.loc[known.dy.abs() * 100 <= max_yield_change_bp]
+    return known.copy()
 
 
 def limit_tuning_rows(known, limit=MAX_CV_BONDS_PER_MONTH):
@@ -361,6 +368,12 @@ def main():
     known = training_rows(panel, asof, features)
     if known.empty:
         raise ValueError(f'No historical training observations available by {asof}')
+    original_training_count = len(training_rows(panel, asof, features, max_yield_change_bp=None))
+    filter_label = (f'{MAX_TRAIN_YIELD_CHANGE_BP:g} bp' if MAX_TRAIN_YIELD_CHANGE_BP is not None
+                    else 'disabled')
+    print(f'Training yield-change filter: {filter_label}; '
+          f'excluded {original_training_count - len(known):,} of '
+          f'{original_training_count:,} historical bond-month observations.')
     mixing, penalty, score, folds, cv_scores = tune_elastic_net(
         known, features, CV_MIXING_GRID, CV_PENALTY_GRID
     )
@@ -393,6 +406,15 @@ def main():
         print(f'  Full-month RMSE: {np.sqrt(np.mean(residual_bp ** 2)):.2f} bp; '
               f'MAE: {np.mean(np.abs(residual_bp)):.2f} bp.')
         print('  NOTE: Evaluation data have not been screened for stale prices.')
+        if MAX_TRAIN_YIELD_CHANGE_BP is not None:
+            # Additional diagnostic only: primary evaluation above remains unfiltered.
+            ordinary = evaluated.loc[evaluated.dy.abs() * 100 <= MAX_TRAIN_YIELD_CHANGE_BP]
+            if not ordinary.empty:
+                ordinary_errors = (ordinary.dy - ordinary.predicted_dy_pp) * 100
+                print(f'  Diagnostic (realized changes <= {MAX_TRAIN_YIELD_CHANGE_BP:g} bp): '
+                      f'{len(ordinary):,} bonds, '
+                      f'RMSE {np.sqrt(np.mean(ordinary_errors ** 2)):.2f} bp, '
+                      f'MAE {np.mean(np.abs(ordinary_errors)):.2f} bp.')
 
     # Optional historical backtest; disabled for the normal four-script workflow.
     history_errors = pd.DataFrame()
