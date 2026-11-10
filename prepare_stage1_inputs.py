@@ -13,6 +13,9 @@ DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
 FACTOR_NAMES = ('level', 'slope', 'curvature')
 TENORS = np.arange(1.0, 31.0)
 RISK_WINDOW_MONTHS = 36
+# Current YTM ceiling for portfolio candidates only (decimal annual yield).
+# This differs from the 500 bp historical yield-CHANGE filter in elastic net.
+MAX_INVESTABLE_YIELD = 0.05
 MIN_FACTOR_OBSERVATIONS = 12
 MIN_BOND_RESIDUALS = 12
 MIN_BUCKET_RESIDUALS = 30
@@ -103,30 +106,95 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     now = bundle['snapshot'].copy()
     required = ['cusip','month','YIELD','predicted_dy_pp','DURATION','time_to_maturity','PRICE_EOM','AMOUNT_OUTSTANDING','T_DVolume']
 
-    # Only bonds with at least one year to maturity are investable.
-    eligible = now.loc[now.time_to_maturity.ge(1) & now.DURATION.gt(0) &now.YIELD.notna() & now.predicted_dy_pp.notna() &now.PRICE_EOM.gt(0)].copy().reset_index(drop=True)
-    if benchmark_weights is None:
-        eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
-    eligible['duration'] = eligible.DURATION.astype(float)
-    # YIELD is a decimal annual yield
-    eligible['mu'] = eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100) if use_forecasts else 0.0
+    # Benchmark is the unscreened point-in-time source universe. Keep bonds
+    # above the candidate yield limit in the benchmark and its risk exposures.
+    if 'benchmark_snapshot' not in bundle:
+        raise ValueError('Missing benchmark_snapshot: rerun elastic_net_one_period.py to rebuild the forecast bundle.')
+    benchmark = bundle['benchmark_snapshot'].copy().reset_index(drop=True)
 
     if benchmark_weights is not None:
         weights = read_weight_file(benchmark_weights, asof=asof)
-        eligible['benchmark_weight'] = eligible.cusip.map(weights.set_index('cusip').weight).fillna(0.)
+        benchmark['benchmark_weight'] = benchmark.cusip.map(
+            weights.set_index('cusip').weight).fillna(0.0)
         benchmark_type = 'filtered_AGG_original_weights'
     else:
-        eligible['benchmark_weight'] = eligible.AMOUNT_OUTSTANDING * eligible.PRICE_EOM
+        amount = pd.to_numeric(benchmark.AMOUNT_OUTSTANDING, errors='coerce')
+        price = pd.to_numeric(benchmark.PRICE_EOM, errors='coerce')
+        benchmark['benchmark_weight'] = (amount * price).where(
+            amount.gt(0) & price.gt(0), 0.0)
         benchmark_type = 'OUTSTANDING_X_PRICE_PROXY_NOT_AGG'
-    eligible['benchmark_weight'] /= eligible.benchmark_weight.sum()
-    # Explicitly report that missing membership or skipped securities reduce coverage.
-    benchmark_matched = int(eligible.benchmark_weight.gt(0).sum())
+    benchmark = benchmark.loc[benchmark.benchmark_weight.gt(0)].copy().reset_index(drop=True)
+    weight_total = benchmark.benchmark_weight.sum()
+    if benchmark.empty or not np.isfinite(weight_total) or weight_total <= 0:
+        raise ValueError(f'No valid benchmark weights for {asof}')
+    benchmark['benchmark_weight'] /= weight_total
+    benchmark_matched = len(benchmark)
 
-    tenor_coef, sigma_f, factor_moves = curve_factor_model(bundle['curve_params'], asof, lookback)
-    loadings = bond_loadings(eligible, tenor_coef)
+    # For missing benchmark-only risk inputs, use a disclosed cross-sectional
+    # proxy. These proxies do not change index weights or realized returns.
+    risk_cols = {
+        'duration': benchmark.DURATION.where(benchmark.DURATION.gt(0)),
+        'time_to_maturity': benchmark.time_to_maturity.where(benchmark.time_to_maturity.gt(0)),
+        'yield_for_risk': benchmark.YIELD,
+    }
+    proxy_mask = pd.Series(False, index=benchmark.index)
+    for key, values in risk_cols.items():
+        proxy_mask |= values.isna()
+        median = values.median()
+        if not np.isfinite(median):
+            raise ValueError(f'No valid benchmark {key} values for {asof}')
+        benchmark[key] = values.fillna(median)
+    benchmark_risk_proxy_count = int(proxy_mask.sum())
+
+    # The current 5% yield cap applies only to portfolio candidates.
+    eligible = now.loc[
+        now.time_to_maturity.ge(1) &
+        now.DURATION.gt(0) &
+        now.YIELD.notna() &
+        now.YIELD.le(MAX_INVESTABLE_YIELD) &
+        now.predicted_dy_pp.notna() &
+        now.PRICE_EOM.gt(0)
+    ].copy().reset_index(drop=True)
+    if benchmark_weights is None:
+        eligible = eligible.loc[
+            pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)
+        ].reset_index(drop=True)
+    eligible = eligible.loc[eligible.cusip.isin(benchmark.cusip)].copy().reset_index(drop=True)
+    if eligible.empty:
+        raise ValueError(f'No portfolio-eligible bonds remain at {asof} under the 5% yield cap')
+
+    eligible['duration'] = eligible.DURATION.astype(float)
+    eligible['mu'] = (
+        eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100)
+        if use_forecasts else 0.0
+    )
+
+    benchmark['predicted_dy_pp'] = benchmark.cusip.map(
+        now.set_index('cusip').predicted_dy_pp
+    )
+    # Where no forecast exists for a benchmark constituent, use zero yield
+    # change for expected-return risk terms; keep its full index weight.
+    benchmark['mu'] = (
+        benchmark.yield_for_risk / 12 -
+        benchmark.duration * benchmark.predicted_dy_pp.fillna(0.0) / 100
+        if use_forecasts else 0.0
+    )
+
+    tenor_coef, sigma_f, factor_moves = curve_factor_model(
+        bundle['curve_params'], asof, lookback
+    )
+    benchmark_loadings = bond_loadings(benchmark, tenor_coef)
     for j, name in enumerate(FACTOR_NAMES):
-        eligible[f'B_{name}'] = loadings[:, j]
-    eligible['psi'] = residual_variances(bundle['history'], eligible, tenor_coef, factor_moves, lookback)
+        benchmark[f'B_{name}'] = benchmark_loadings[:, j]
+    benchmark['psi'] = residual_variances(
+        bundle['history'], benchmark, tenor_coef, factor_moves, lookback
+    )
+    # Reuse benchmark risk estimates for tradable securities, on identical CUSIPs.
+    by_cusip = benchmark.set_index('cusip')
+    for name in FACTOR_NAMES:
+        eligible[f'B_{name}'] = eligible.cusip.map(by_cusip[f'B_{name}'])
+    eligible['psi'] = eligible.cusip.map(by_cusip.psi)
+    eligible['benchmark_weight'] = eligible.cusip.map(by_cusip.benchmark_weight)
 
     if prior_portfolio is None:
         '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
@@ -162,11 +230,11 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     candidates = pd.concat([retained, remainder.head(max(0, candidate_count-len(retained)))])
     eligible_idx = eligible.set_index('cusip')
     candidates = eligible_idx.loc[candidates.cusip].reset_index()
-    benchmark_b = eligible.benchmark_weight.to_numpy(float)
-    bload = loadings.T @ benchmark_b
-    bmu = float(eligible.mu.to_numpy(float) @ benchmark_b)
+    benchmark_b = benchmark.benchmark_weight.to_numpy(float)
+    bload = benchmark_loadings.T @ benchmark_b
+    bmu = float(benchmark.mu.to_numpy(float) @ benchmark_b)
     residual_benchmark_constant = float(
-        (eligible.psi.to_numpy(float) * np.square(benchmark_b)).sum() -
+        (benchmark.psi.to_numpy(float) * np.square(benchmark_b)).sum() -
         (candidates.psi.to_numpy(float) *
          np.square(candidates.benchmark_weight.to_numpy(float))).sum())
     # Only actual bond positions omitted from the candidate set must be
@@ -178,10 +246,14 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
         'benchmark_type': benchmark_type, 'holdings_type': holdings_type,
         'initial_capital': float(initial_capital),
         'pretrade_cash_weight': float(initial_cash_weight),
-        'eligible': eligible, 'candidates': candidates,
+        'benchmark': benchmark, 'eligible': eligible, 'candidates': candidates,
         'sigma_f': sigma_f, 'tenor_factor_betas': tenor_coef,
         'benchmark_factor': bload, 'benchmark_mu': bmu,
-        'benchmark_duration': float(eligible.duration @ eligible.benchmark_weight),
+        'benchmark_duration': float(benchmark.duration @ benchmark.benchmark_weight),
+        'benchmark_risk_proxy_count': benchmark_risk_proxy_count,
+        'excluded_benchmark_weight_from_trading': float(
+            benchmark.loc[~benchmark.cusip.isin(eligible.cusip), 'benchmark_weight'].sum()
+        ),
         'outside_benchmark_psi_constant': max(0., residual_benchmark_constant),
         'outside_pretrade_weight': max(0., outside_current),
         'factor_months': [str(x) for x in factor_moves.index],
@@ -202,7 +274,8 @@ def show_stage1_input_summary(stage, preview=5):
     e = stage['eligible']
     c = stage['candidates']
     capital = float(stage['initial_capital'])
-    b = e.benchmark_weight.to_numpy(float)
+    benchmark = stage['benchmark']
+    b = benchmark.benchmark_weight.to_numpy(float)
     current = e.current_weight.to_numpy(float)
     factor_cov = np.asarray(stage['sigma_f'], dtype=float)
     candidate_q = np.asarray(stage['candidate_covariance'], dtype=float)
@@ -224,6 +297,8 @@ def show_stage1_input_summary(stage, preview=5):
     print('\n3. BENCHMARK WEIGHTS b_t: full eligible universe calculated as b_{i,t} = (A_{i,t} × P_{i,t}) / Σ_j (A_{j,t} × P_{j,t})')
     print("   where A = amount outstanding, P = end-of-month bond price")
     print(f'   {stage["benchmark_type"]}; sum = {b.sum():.6f}; nonzero constituents = {(b > 0).sum():,}')
+    print(f'   Excluded from trading: {stage["excluded_benchmark_weight_from_trading"]:.2%} of benchmark weight; '
+          f'benchmark-only risk proxies: {stage["benchmark_risk_proxy_count"]:,} bonds')
     
     print('\n4. PRE-TRADE HOLDINGS w_tilde_t: actual holdings BEFORE rebalancing')
     print(f'   {stage["holdings_type"]}; bond weights sum = {current.sum():.6f}; 'f'cash/funding = {stage["pretrade_cash_weight"]:.6f}')
@@ -274,6 +349,9 @@ def main():
         'benchmark': stage['benchmark_type'],
         'initial_capital_dollars': stage['initial_capital'],
         'eligible_bonds': len(stage['eligible']),
+        'benchmark_bonds': len(stage['benchmark']),
+        'excluded_benchmark_weight_from_trading': stage['excluded_benchmark_weight_from_trading'],
+        'benchmark_risk_proxy_count': stage['benchmark_risk_proxy_count'],
         'tradable_candidates': len(stage['candidates']),
         'benchmark_duration': stage['benchmark_duration'],
         'benchmark_expected_return': stage['benchmark_mu'],
