@@ -21,12 +21,8 @@ SOLVER_COMPARISON_CANDIDATES = 20  # Small common universe makes the exact solve
 OUTPUT_DIR = PROJECT_ROOT / 'stage1_outputs' / 'backtest'
 
 def comparisons():
-    """Four report comparisons: forecast contribution, forecast accuracy,
-    exact vs. heuristic, and tracking/costs across K.
-
-    Forecast accuracy is calculated separately; only elastic net and the
-    zero-return-forecast control require portfolio optimizations.
-    """
+    """Four report comparisons: forecast contribution, forecast accuracy, exact vs. heuristic, and tracking/costs across K. 
+    Forecast accuracy is calculated separately; only elastic net and the zero-return-forecast control require portfolio optimizations."""
     # Main 150-candidate backtest: elastic net vs. zero forecasts, across K.
     configs = [
         (model, k, 'heuristic', CANDIDATE_COUNT)
