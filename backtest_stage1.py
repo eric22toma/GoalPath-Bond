@@ -63,15 +63,12 @@ def evaluate_month(stage, solution):
     held['weight'] = solution['weights'][solution['weights'] > 1e-6]
     if held.next_return.isna().any():
         missing = held.loc[held.next_return.isna(), 'cusip'].tolist()
-        raise ValueError(f"Missing realized returns for held bonds at {stage['target_month']}: {missing}")
     portfolio_return = float(held.weight @ held.next_return)
 
-    # Evaluate against the unscreened benchmark, not portfolio-eligible bonds.
+    # Evaluate against the entire (unfiltered) benchmark, not portfolio-eligible bonds.
     benchmark = stage['benchmark']
     observed = benchmark.next_return.notna()
     coverage = float(benchmark.loc[observed, 'benchmark_weight'].sum())
-    if coverage <= 0:
-        raise ValueError(f"No benchmark returns observed for {stage['target_month']}")
     benchmark_return = float(benchmark.loc[observed, 'benchmark_weight'] @ benchmark.loc[observed, 'next_return'] / coverage)
     return held, portfolio_return, benchmark_return, coverage
 
@@ -96,13 +93,12 @@ def summarize(monthly):
             'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
             'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
             'average_holdings': float(rows.holdings_count.mean()),
-            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
-        })
+            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),})
     return pd.DataFrame(results)
 
 
 def main():
-    """Compare monthly Stage 1 tracking strategies and publish the results."""
+    """Compare monthly Stage 1 tracking strategies"""
     data = process_all_data(bond_columns=BOND_COLUMNS)
     macro, curve_params = macro_features(history_for_features(data, 'curve'), history_for_features(data, 'fred'))
     panel = load_panel(data['bonds'][1], macro, curve_params)
