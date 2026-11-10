@@ -1,7 +1,6 @@
 """Monthly out-of-sample Stage 1 bond benchmark tracking backtest.
 Reuses the existing forecasting, Stage 1 input preparation, and Gurobi solver.
-Transaction fees are reported separately from fully invested bond capital.
-"""
+Transaction fees are reported separately from fully invested bond capital."""
 
 import numpy as np
 import pandas as pd
@@ -24,19 +23,7 @@ def comparisons():
     """Four report comparisons: forecast contribution, forecast accuracy, exact vs. heuristic, and tracking/costs across K. 
     Forecast accuracy is calculated separately; only elastic net and the zero-return-forecast control require portfolio optimizations."""
     # Main 150-candidate backtest: elastic net vs. zero forecasts, across K.
-    configs = [
-        (model, k, 'heuristic', CANDIDATE_COUNT)
-        for model in ('elastic_net', 'no_forecast')
-        for k in K_VALUES
-    ]
-    # Controlled solver test: identical 20 candidates, K, and forecast assumptions.
-    solver_k = K_VALUES[0]
-    if solver_k <= SOLVER_COMPARISON_CANDIDATES:
-        configs.extend(
-            (model, solver_k, solver, SOLVER_COMPARISON_CANDIDATES)
-            for model in ('elastic_net', 'no_forecast')
-            for solver in ('heuristic', 'exact')
-        )
+    configs = [(model, k, solver, CANDIDATE_COUNT) for model in ('elastic_net', 'no_forecast')for k in K_VALUES for solver in ('heuristic', 'exact')]
     return configs
 
 
@@ -297,4 +284,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    #main()
+    print(comparisons())
