@@ -24,8 +24,8 @@ CV_MIXING_GRID = (0.20, 0.40, 0.60, 0.80, 0.95)
 CV_PENALTY_GRID = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
 FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
-# Experimental training-only screen; set to None to reproduce the original model.
-# dy is stored in percentage points, so 500 bp corresponds to 5.0 pp.
+
+# dy is stored in percentage points, so 500 bp corresponds to 5.0 pp. added as a result of extreme yield change outliers impacting forecasting
 MAX_TRAIN_YIELD_CHANGE_BP = 500.0
 
 # Save file location for prepare_stage1_inputs.
