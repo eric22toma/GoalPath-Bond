@@ -125,8 +125,7 @@ def estimator(alpha, l1_ratio):
 
 def training_rows(panel, asof, features, max_yield_change_bp=MAX_TRAIN_YIELD_CHANGE_BP):
     """Use only realized historical targets; optionally exclude extreme changes from training."""
-    known = panel.loc[(panel.month >= pd.Period('2016-01', 'M')) &
-                      (panel.target_month <= asof)].dropna(subset=features + ['dy'])
+    known = panel.loc[(panel.month >= pd.Period('2016-01', 'M')) & (panel.target_month <= asof)].dropna(subset=features + ['dy'])
     if max_yield_change_bp is not None:
         known = known.loc[known.dy.abs() * 100 <= max_yield_change_bp]
     return known.copy()
