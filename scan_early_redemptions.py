@@ -7,26 +7,14 @@ Confirmed early redemptions are grouped in EARLY_REDEMPTIONS. Other reviewed
 bonds are grouped in NOT_REDEEMED_EARLY. Both groups are excluded from future
 scans and recorded in all_reviewed_exclusions.csv; unresolved cases remain.
 
-A bond disappearing from the filtered AGG source is NOT proof of redemption.
-WRDS NEXT_CALL_PRICE is a contractual schedule term, NOT a realized payoff.
+Terminal returns are estimated using the final pre-redemption month's bond
+price, accrued interest, redemption proceeds, and interim coupon payments:
 
-Terminal holding-period return (all dollar figures per $100 face value):
     R_terminal = (P_redemption + AI_redemption + C_interim) / (P_t + AI_t) - 1
 
-where:
-  P_t            last observed clean purchase-date/month-end bond price;
-  AI_t           accrued interest at that valuation date;
-  P_redemption   recorded redemption proceeds per $100 face value;
-  AI_redemption  accrued interest payable on the redemption date, excluding
-                 interest separately paid as an interim coupon; and
-  C_interim      sum of separate coupon payments between valuation and exit.
-
-The scan calculates an indicative return for the month preceding the event,
-with a 30/360 coupon approximation, and reports R_terminal as a decimal and
-R_terminal_pct in percent. A coupon paid on the redemption date is counted
-only once; do not double-count it as both accrued interest and an interim coupon.
-Compare to observed RET_EOM before substituting it in any backtest. The scan
-does NOT change the portfolio, raw returns, eligibility or benchmark.
+Returns are calculated using a 30/360 interest approximation and saved
+in verified_early_redemptions.csv. Bonds without an exact redemption date
+are excluded from the return calculation.
 """
 
 from pathlib import Path
