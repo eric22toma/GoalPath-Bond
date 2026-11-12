@@ -54,7 +54,6 @@ EARLY_REDEMPTIONS = {
     '12673PAJ4': ('2025-10-23', None),    # CA Inc 4.700% 2027: 100% base + make-whole
     '11134LAH2': ('2025-10-23', None),    # Broadcom Corp 3.875% 2027
     '928563AE5': ('2025-10-03', None),    # VMware 4.650% 2027
-    '12673PAJ4': ('2025-10-23', None),    # CA Inc / Broadcom, make-whole + accrued interest
 }
 
 # Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
