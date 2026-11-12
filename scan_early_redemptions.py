@@ -458,6 +458,51 @@ def main():
         print('\nALL FLAGGED BONDS FOR REVIEW:')
         print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
                       'contractual_maturity']].to_string(index=False, max_rows=None))
+    # Audit trail for every excluded CUSIP: verified events, ordinary
+    # maturities, continuing issues, partial tenders and exchanges.
+    excluded_rows = []
+    for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items()):
+        excluded_rows.append({
+            'cusip': cusip, 'review_status': 'FULL_REDEMPTION_DATED',
+            'event_date': date, 'event_month': date[:7],
+            'principal_price_per_100': price,
+            'price_basis': ('ASSUMED_PAR' if cusip in ASSUMED_PAR_REDEMPTIONS
+                            else 'DISCLOSED_OR_VERIFIED'),
+            'review_note': REVIEW_NOTES.get(
+                cusip, 'Reviewed full redemption (SEC/issuer filings)'),
+        })
+    for cusip, (month, price) in sorted(MONTH_ONLY_REDEMPTIONS.items()):
+        excluded_rows.append({
+            'cusip': cusip, 'review_status': 'FULL_REDEMPTION_DAY_PENDING',
+            'event_date': '', 'event_month': month,
+            'principal_price_per_100': price,
+            'price_basis': ('ASSUMED_PAR' if cusip == '16412XAC9'
+                            else 'PAR_CONFIRMED'),
+            'review_note': REVIEW_NOTES.get(
+                cusip, 'Full redemption established; exact payment day unknown'),
+        })
+    for cusip in sorted(REVIEWED_NON_REDEMPTIONS):
+        excluded_rows.append({
+            'cusip': cusip, 'review_status': 'NOT_FULL_REDEMPTION_AT_FLAGGED_DATE',
+            'event_date': '', 'event_month': '',
+            'principal_price_per_100': '', 'price_basis': 'NOT_APPLICABLE',
+            'review_note': REVIEW_NOTES.get(
+                cusip, 'Previously reviewed: continuing issue, partial tender or exchange'),
+        })
+    for cusip, (date, description) in sorted(REVIEWED_SCHEDULED_MATURITIES.items()):
+        excluded_rows.append({
+            'cusip': cusip, 'review_status': 'CONTRACTUAL_MATURITY',
+            'event_date': date, 'event_month': date[:7],
+            'principal_price_per_100': 100.0, 'price_basis': 'PAR_AT_MATURITY',
+            'review_note': REVIEW_NOTES.get(cusip, description),
+        })
+    exclusions = pd.DataFrame(excluded_rows).sort_values(
+        ['review_status', 'cusip']
+    )
+    exclusion_path = args.output.with_name('all_reviewed_exclusions.csv')
+    exclusions.to_csv(exclusion_path, index=False)
+    print(f'Full reviewed/excluded list ({len(exclusions):,} CUSIPs): {exclusion_path}')
+
     verified_path = args.output.with_name('verified_early_redemptions.csv')
     verified = pd.DataFrame([
         {'cusip': cusip, 'redemption_date': date,
@@ -470,6 +515,19 @@ def main():
         compute_terminal_returns(args.bonds), on='cusip',
         how='left', validate='one_to_one'
     )
+    # Date-incomplete events are included in the verified event report,
+    # but cannot have an R_terminal calculated without inventing cash timing.
+    undated = pd.DataFrame([
+        {'cusip': cusip, 'redemption_date': '',
+         'redemption_month': month,
+         'redemption_price_pct_par_ex_accrued': price,
+         'status': ('ASSUMED PAR - EXACT DAY UNVERIFIED' if cusip == '16412XAC9'
+                    else 'PAR REDEMPTION - EXACT DAY UNVERIFIED'),
+         'R_terminal': float('nan'), 'R_terminal_pct': float('nan'),
+         'calculation_status': 'EXACT REDEMPTION DAY NOT VERIFIED'}
+        for cusip, (month, price) in sorted(MONTH_ONLY_REDEMPTIONS.items())
+    ])
+    verified = pd.concat([verified, undated], ignore_index=True)
     verified.to_csv(verified_path, index=False)
     print(f'Verified redemptions and R_terminal saved: {verified_path}')
     print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
