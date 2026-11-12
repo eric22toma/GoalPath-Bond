@@ -103,6 +103,24 @@ EARLY_REDEMPTIONS = {
     '651229AW6': ('2025-05', 100),  # Newell Rubbermaid
     '00751YAH9': ('2025', 100),  # Advance Auto; fiscal Q3 2025, exact date unknown
     '031162DN7': ('2025', 100),  # Amgen; 2025 date unknown
+    '95000U2K8': ('', 100.0),  # Wells Fargo; redemption date not yet recorded
+    '198280AF6': ('', 100.0),  # Columbia Pipeline; redemption date not yet recorded
+    '92857WBJ8': ('', 100.0),  # Vodafone; redemption date not yet recorded
+    '26885BAC4': ('', 100.0),  # EQM Midstream; redemption date not yet recorded
+    '025816CY3': ('', 100.0),  # American Express; redemption date not yet recorded
+    '29336UAF4': ('', 100.0),  # EnLink Midstream Partners; redemption date not yet recorded
+    '81180WAR2': ('', 100.0),  # Seagate; redemption date not yet recorded
+    '37045VAV2': ('', 100.0),  # General Motors; redemption date not yet recorded
+    '403949AB6': ('', 100.0),  # HF Sinclair; redemption date not yet recorded
+    '403949AP5': ('', 100.0),  # HF Sinclair; redemption date not yet recorded
+    '44106MAV4': ('', 100.0),  # Hospitality Properties; redemption date not yet recorded
+    '87264AAT2': ('', 100.0),  # T-Mobile USA; redemption date not yet recorded
+    '98978VAU7': ('', 100.0),  # Zoetis; redemption date not yet recorded
+    '023135BN5': ('', 100.0),  # Amazon; redemption date not yet recorded
+    '28622HAA9': ('', 100.0),  # Elevance Health; redemption date not yet recorded
+    '361841AH2': ('', 100.0),  # GLP Capital; redemption date not yet recorded
+    '674599CH6': ('', 100.0),  # Occidental Petroleum; redemption date not yet recorded
+    '723787AV9': ('', 100.0),  # Pioneer Natural Resources; redemption date not yet recorded
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -146,6 +164,11 @@ NOT_REDEEMED_EARLY = {
     '31572UAF3': "Fibria Overseas — debt exchange / successor security",
     '00217GAA1': "Aptiv — set aside per latest review; prior evidence of early redemption, not rejected",
     '20030NDZ1': "Comcast — announced redemption; settlement not established in this review",
+    '10373QBF6': "BP Capital Markets — continuing issue, excluded from redemption review",
+    '032511BN6': "Anadarko Petroleum — full early redemption not established",
+    '92340LAA7': "VEREIT Operating Partnership — legacy debt exchange",
+    '92340LAD1': "VEREIT Operating Partnership — legacy debt exchange / maturity",
+    '92343VDR2': "Verizon Communications — subsequent holdings of the 2039 issue",
 }
 
 
