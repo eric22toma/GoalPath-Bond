@@ -11,7 +11,12 @@ Both groups are excluded from future exception reports. Unresolved flags remain.
 
 Disappearance from the filtered AGG source is NOT proof of a redemption.
 WRDS NEXT_CALL_PRICE is not necessarily a realized redemption price.\nFor verified full redemptions with unverified make-whole premiums, 100.0 is\na CONSERVATIVE principal-only proxy, not a confirmed redemption price.
-The script does not change any model, backtest or raw bond returns.
+The scan also reconstructs an indicative holding-period terminal return
+R_terminal from the immediately preceding month-end's clean price, accrued
+interest, interim coupons, and verified/assumed redemption price. It uses a
+30/360 coupon-accrual approximation and leaves noncomputable returns blank.
+These are research estimates, not audited cash flows. The backtest does NOT
+consume these estimates automatically, and raw returns remain unchanged.
 
 Primary documents reviewed:
 Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
@@ -20,6 +25,8 @@ Micron: https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-202
 CA Inc/Broadcom: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
 Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef20021903_8k.htm
 Broadcom/CA/VMware redemptions: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
+Dominion South Carolina 2019 PARTIAL tender (837004CK4): https://investors.dominionenergy.com/news/press-release-details/2019/SCEG-Announces-Expiration-Final-Results-of-Its-Any-and-All-Tender-Offer/default.aspx
+Victory Income Fund Sep 2026 holdings, same CUSIP: https://investor.vcm.com/assets/victoryMF/allholdings-pdf/Victory_Income_Fund_Holdings.pdf
 Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
 EQM: https://ir.eqt.com/investor-relations/news/news-release-details/2024/Early-Results-and-Upsizing-of-EQM-Midstream-Partners-LPs-Tender-Offer-and-Consent-Solicitation-for-Certain-of-its-Senior-Notes/default.aspx
 """
@@ -76,6 +83,7 @@ REVIEWED_NON_REDEMPTIONS = {
     '485170AQ7', '485170BC7',
     '84861TAJ7', '264414AX1',
     '92340LAC3',
+    '837004CK4',  # 2019 partial tender; same CUSIP in Sep 2026 fund holdings
 }
 
 
@@ -201,6 +209,215 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
         ascending=[True, True, True]
     ).reset_index(drop=True)
     return result, history_count
+
+
+def number(value):
+    """Read a bond cash field, allowing source $/comma/percent formatting."""
+    if pd.isna(value):
+        return float('nan')
+    clean = str(value).strip().replace('
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--bonds', type=Path, default=DEFAULT_BONDS)
+    parser.add_argument('--wrds', type=Path, default=REFERENCE)
+    parser.add_argument('--output', type=Path, default=OUTPUT)
+    parser.add_argument('--start', default=START_MONTH)
+    parser.add_argument('--end', default=END_MONTH)
+    parser.add_argument('--all-history', action='store_true',
+                        help='Include suspected exits before the backtest window')
+    args = parser.parse_args()
+
+    wrds = read_wrds(args.wrds)
+    bonds, sample_end, source_rows = read_last_bond_observations(args.bonds)
+    result, all_exits = scan(bonds, wrds, sample_end,
+                             pd.Period(args.start, 'M'), pd.Period(args.end, 'M'),
+                             args.all_history)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(args.output, index=False)
+
+    print('\nEARLY REDEMPTION REVIEW (NOT CONFIRMED REDEMPTIONS)')
+    print(f'AGG observations: {source_rows:,} | Unique bonds: {len(bonds):,}')
+    print(f'WRDS CUSIPs: {len(wrds):,} | Last source month: {sample_end}')
+    print(f'Potential premature exits before prior-review exclusions: {all_exits:,}')
+    print(f'Previously confirmed redemptions excluded: {len(EARLY_REDEMPTIONS):,}')
+    print(f'Other previously reviewed CUSIPs excluded: {len(REVIEWED_NON_REDEMPTIONS):,}')
+    print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
+    if not result.empty:
+        print(result.review_priority.value_counts().sort_index().to_string())
+        print('\nALL FLAGGED BONDS FOR REVIEW:')
+        print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
+                      'contractual_maturity']].to_string(index=False, max_rows=None))
+    verified_path = args.output.with_name('verified_early_redemptions.csv')
+    verified = pd.DataFrame([
+        {'cusip': cusip, 'redemption_date': date,
+         'redemption_price_pct_par_ex_accrued': price,
+         'status': ('ASSUMED PAR - MAKE-WHOLE PREMIUM UNVERIFIED'
+                    if cusip in ASSUMED_PAR_REDEMPTIONS
+                    else 'DISCLOSED REDEMPTION PRICE')}
+        for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
+    ]).merge(
+        compute_terminal_returns(args.bonds), on='cusip',
+        how='left', validate='one_to_one'
+    )
+    verified.to_csv(verified_path, index=False)
+    print(f'Verified redemptions and R_terminal saved: {verified_path}')
+    print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
+                    'calculation_status']].to_string(index=False))
+    print(f'Saved: {args.output}')
+    print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
+    print('Do not use this report for point-in-time investment eligibility.')
+
+
+if __name__ == '__main__':
+    main()
+, '').replace(',', '').rstrip('%')
+    return pd.to_numeric(clean, errors='coerce')
+
+
+def days_30_360(start, end):
+    """Approximate 30/360 year fraction used for conventional coupon bonds."""
+    return (
+        360 * (end.year - start.year)
+        + 30 * (end.month - start.month)
+        + min(end.day, 30) - min(start.day, 30)
+    ) / 360.0
+
+
+def coupon_cashflows(row, event_date):
+    """Return coupon cash paid, accrued interest at redemption, estimated AI at t.
+
+    All monetary amounts per $100 face; COUPON is the annual coupon in %.
+    Requires a conventional fixed-rate coupon calendar. No guessed schedule.
+    """
+    rate = number(row['COUPON'])
+    freq_raw = number(row['NCOUPS'])
+    if not pd.notna(rate) or not pd.notna(freq_raw) or rate < 0:
+        raise ValueError('missing or invalid coupon or frequency')
+    if rate == 0:
+        return 0.0, 0.0, 0.0
+    if freq_raw not in (1, 2, 4, 12):
+        raise ValueError('unsupported coupon frequency')
+    frequency = int(freq_raw)
+    next_coupon = pd.to_datetime(row['nextcoup'], errors='coerce')
+    asof_date = row['DATE']
+    if pd.isna(next_coupon) or not (asof_date < next_coupon):
+        raise ValueError('missing or stale next coupon date')
+
+    # Start from the last scheduled coupon preceding the valuation date.
+    step_months = 12 // frequency
+    previous_coupon = next_coupon - pd.DateOffset(months=step_months)
+    coupons_paid = 0.0
+    due = next_coupon
+    while due <= event_date:
+        coupons_paid += rate / frequency
+        previous_coupon = due
+        due = due + pd.DateOffset(months=step_months)
+
+    ai_at_purchase_estimate = rate * days_30_360(
+        next_coupon - pd.DateOffset(months=step_months), asof_date
+    )
+    ai_at_redemption = rate * days_30_360(previous_coupon, event_date)
+    if ai_at_purchase_estimate < -1e-9 or ai_at_redemption < -1e-9:
+        raise ValueError('invalid accrued-interest dates')
+    return coupons_paid, ai_at_redemption, ai_at_purchase_estimate
+
+
+def compute_terminal_returns(bond_path):
+    """Estimate t -> redemption-month returns for the verified event registry.
+
+    Uses month t immediately BEFORE the event month, even if the raw dataset
+    contains an observation in the redemption month. Existing RET_EOM is
+    included only for comparison, never overwritten by this scanner.
+    """
+    path = Path(bond_path)
+    if not path.exists() and Path(str(path) + '.zip').exists():
+        path = Path(str(path) + '.zip')
+    needed = {'cusip', 'DATE', 'PRICE_EOM', 'COUPACC', 'COUPON',
+              'NCOUPS', 'nextcoup', 'RET_EOM'}
+    subsets = []
+    for chunk in pd.read_csv(
+        path, usecols=lambda c: c in needed, dtype=str,
+        chunksize=200_000, encoding='utf-8-sig', low_memory=False
+    ):
+        if not needed.issubset(chunk):
+            raise ValueError(f'Bond history missing terminal cashflow columns: {needed - set(chunk)}')
+        chunk['cusip'] = chunk.cusip.fillna('').str.strip().str.upper()
+        small = chunk.loc[chunk.cusip.isin(EARLY_REDEMPTIONS)].copy()
+        if not small.empty:
+            small['DATE'] = pd.to_datetime(small.DATE, errors='coerce')
+            subsets.append(small)
+    history = (pd.concat(subsets, ignore_index=True)
+               if subsets else pd.DataFrame(columns=list(needed)))
+    history['month'] = history.DATE.dt.to_period('M')
+
+    output = []
+    for cusip, (date, principal_payout) in sorted(EARLY_REDEMPTIONS.items()):
+        event_date = pd.Timestamp(date)
+        event_month = event_date.to_period('M')
+        decision_month = event_month - 1
+        own = history.loc[history.cusip.eq(cusip)]
+        prior = own.loc[own.month.eq(decision_month)].sort_values('DATE')
+        actual = own.loc[own.month.eq(event_month)].sort_values('DATE')
+        info = {
+            'cusip': cusip, 'decision_month': str(decision_month),
+            'redemption_month': str(event_month),
+            'R_terminal': float('nan'), 'R_terminal_pct': float('nan'),
+            'purchase_clean_price_per_100': float('nan'),
+            'purchase_accrued_interest_per_100': float('nan'),
+            'redemption_accrued_interest_per_100': float('nan'),
+            'interim_coupons_per_100': float('nan'),
+            'recorded_event_month_RET_EOM': float('nan'),
+            'calculation_status': 'MISSING PRIOR-MONTH DATA',
+        }
+        if not actual.empty:
+            source_return = str(actual.iloc[-1]['RET_EOM']).strip()
+            # The source expresses realized returns with an explicit percent sign.
+            if source_return.endswith('%'):
+                info['recorded_event_month_RET_EOM'] = (
+                    number(source_return) / 100.0
+                )
+        if prior.empty:
+            output.append(info)
+            continue
+
+        row = prior.iloc[-1]
+        price = number(row['PRICE_EOM'])
+        if pd.isna(price) or price <= 0:
+            info['calculation_status'] = 'INVALID PRIOR-MONTH PRICE'
+            output.append(info)
+            continue
+        try:
+            paid_coupons, final_ai, estimated_purchase_ai = coupon_cashflows(
+                row, event_date
+            )
+            purchase_ai = number(row['COUPACC'])
+            if pd.isna(purchase_ai):
+                purchase_ai = estimated_purchase_ai
+            dirty_purchase = price + purchase_ai
+            if not (pd.notna(dirty_purchase) and dirty_purchase > 0):
+                raise ValueError('invalid purchase dirty price')
+            if row['DATE'] >= event_date:
+                raise ValueError('valuation on/after redemption date')
+            r_terminal = (
+                (principal_payout + final_ai + paid_coupons)
+                / dirty_purchase - 1.0
+            )
+            info.update({
+                'R_terminal': r_terminal,
+                'R_terminal_pct': 100.0 * r_terminal,
+                'purchase_clean_price_per_100': price,
+                'purchase_accrued_interest_per_100': purchase_ai,
+                'redemption_accrued_interest_per_100': final_ai,
+                'interim_coupons_per_100': paid_coupons,
+                'calculation_status': (
+                    'ESTIMATED - PAR PAYOUT ASSUMED, 30/360 INTEREST'
+                    if cusip in ASSUMED_PAR_REDEMPTIONS
+                    else 'ESTIMATED - DISCLOSED PAYOUT, 30/360 INTEREST'
+                ),
+            })
+        except (ValueError, TypeError, OverflowError) as exc:
+            info['calculation_status'] = f'UNRESOLVED CASH FLOWS: {exc}'
+        output.append(info)
+    return pd.DataFrame(output)
 
 
 def main():
