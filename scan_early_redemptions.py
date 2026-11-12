@@ -14,7 +14,7 @@ price, accrued interest, redemption proceeds, and interim coupon payments:
 
 Returns are calculated using a 30/360 interest approximation and saved
 in verified_early_redemptions.csv. Bonds without an exact redemption date
-(including records with only a month or year) are excluded from the return calculation.
+(including records with only a month, year, or an unknown date) are excluded from the return calculation.
 """
 
 from pathlib import Path
@@ -28,8 +28,9 @@ OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
 # Early redemptions: CUSIP -> (redemption date, price per $100 face).
-# YYYY-MM or YYYY means only the month or year is known, not the exact day.
-# In those cases, the return estimate remains blank until a date is available.
+# YYYY-MM or YYYY means only the month or year is known; '' means
+# the exact redemption date has not yet been recorded. Returns remain blank
+# for these entries until the date is verified.
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),
     '876030AE7': ('2024-11-25', 101.0),
@@ -77,6 +78,12 @@ EARLY_REDEMPTIONS = {
     '876030AB3': ('2024-11-25', 101.0),  # Tapestry 2025 notes
     '876030AC1': ('2024-11-25', 101.0),  # Tapestry 2026 notes
     '501044DR9': ('2024-12-18', 101.0),  # Kroger 2026 notes
+    '24703TAC0': ('', 100.0),  # Dell International / EMC; redemption date not yet recorded
+    '95001DCG3': ('', 100.0),  # Wells Fargo; redemption date not yet recorded
+    '00206RMP4': ('', 100.0),  # AT&T; redemption date not yet recorded
+    '31572UAG1': ('', 100.0),  # Fibria Overseas; redemption date not yet recorded
+    '097023CT0': ('', 100.0),  # Boeing; redemption date not yet recorded
+    '025816CQ0': ('', 100.0),  # American Express; redemption date not yet recorded
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -112,6 +119,14 @@ NOT_REDEEMED_EARLY = {
     '161175CM4': "Charter 2026 issue still outstanding in June 2025",
     '837004CK4': "2019 partial tender; CUSIP in September 2026 holdings",
     '517834AG2': "Scheduled maturity 2024-08-08; preceding data gap",
+    '78349AAC7': "RWJ Barnabas Health — set aside for this audit",
+    '29336TAA8': "EnLink Midstream — later holdings; set aside",
+    '29336UAG2': "EnLink Midstream Partners — partial tender / continuing balance",
+    '103730BF6': "BP Capital Markets America — later outstanding debt",
+    '53227JAD6': "Life Storage — debt exchange / successor security",
+    '31572UAF3': "Fibria Overseas — debt exchange / successor security",
+    '00217GAA1': "Aptiv — set aside per latest review; prior evidence of early redemption, not rejected",
+    '20030NDZ1': "Comcast — announced redemption; settlement not established in this review",
 }
 
 
@@ -423,7 +438,9 @@ def main():
             'redemption_date': date if len(date) == 10 else '',
             'redemption_month': date[:7],
             'principal_price_per_100': price,
-            'note': 'Exact redemption day unavailable' if len(date) != 10 else '',
+            'note': 'Redemption date not recorded' if not date else (
+                'Exact redemption day unavailable' if len(date) != 10 else ''
+            ),
         } for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())]
         + [{
             'cusip': cusip,
