@@ -124,6 +124,18 @@ EARLY_REDEMPTIONS = {
     '966837AE6': ('2025-09-30', 100.0),  # Whole Foods Market; month-end proxy
     '71654QBW1': ('2025-10-31', 100.0),  # PEMEX; month-end proxy
     '85207UAK1': ('2025-10-31', 100.0),  # Sprint; month-end proxy
+    '302491AS4': ('2023-12-21', 100.0),  # FMC Corporation; reported actual redemption date
+    '44106MAS1': ('2023-12-09', 100.0),  # Service Properties Trust; reported actual redemption date
+    '81721MAK5': ('2024-01-31', 100.0),  # Diversified Healthcare Trust; month-end proxy from last observed month
+    '559080AH9': ('2024-02-29', 100.0),  # Magellan / ONEOK; month-end proxy, actual call date requires reconciliation
+    '013817AW1': ('2024-07-01', 100.0),  # Howmet Aerospace; reported actual redemption date
+    '105340AN3': ('2024-06-07', 100.0),  # Brandywine Operating Partnership; reported actual redemption date
+    '887389AJ3': ('2024-06-24', 100.0),  # Timken Company; reported actual redemption date
+    '896522AH2': ('2024-06-25', 100.0),  # Trinity Industries; reported actual redemption date
+    '01959EAC2': ('2024-07-24', 100.0),  # Allied World Assurance; reported actual redemption date
+    '202795JE1': ('2024-07-31', 100.0),  # Commonwealth Edison; month-end proxy from last observed month
+    '23317HAD4': ('2024-08-23', 100.0),  # SITE Centers 2025; reported actual redemption date
+    '23317HAE2': ('2024-08-23', 99.4),  # SITE Centers 2026; redemption price per user, reported actual redemption date
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -177,6 +189,23 @@ NOT_REDEEMED_EARLY = {
     '723787AV9': "Pioneer Natural Resources - Not callable",
     '92343VDS0': 'Verizon Communications — ineligible per manual redemption audit',
     '71654QCB6': 'PEMEX — ineligible per manual redemption audit',
+    '25470DAD1': 'Discovery Communications — ineligible per manual audit',
+    '25470DAG4': 'Discovery Communications — ineligible per manual audit',
+    '25470DAJ8': 'Discovery Communications — ineligible per manual audit',
+    '92343VBT0': 'Verizon Communications — ineligible per manual audit',
+    '92343VCR3': 'Verizon Communications — ineligible per manual audit',
+    '125896BM1': 'CMS Energy; excluded per user review (earlier research indicated retirement) — ineligible per manual audit',
+    '302154EA3': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '302154EB1': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '302154EC9': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '559080AJ5': 'Magellan / ONEOK — ineligible per manual audit',
+    '559080AC0': 'Magellan / ONEOK — ineligible per manual audit',
+    '559080AF3': 'Magellan / ONEOK — ineligible per manual audit',
+    '559080AG1': 'Magellan / ONEOK — ineligible per manual audit',
+    '69352PAH6': 'PPL Capital Funding — ineligible per manual audit',
+    '29364WAK4': 'Entergy Louisiana; excluded per user review (earlier research indicated retirement) — ineligible per manual audit',
+    '337932AC1': 'FirstEnergy; excluded per user review (earlier research indicated redemption) — ineligible per manual audit',
+    '73755LAK3': 'Potash Corp. / Nutrien — ineligible per manual audit',
 }
 
 
