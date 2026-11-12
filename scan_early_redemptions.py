@@ -135,33 +135,33 @@ EARLY_REDEMPTIONS = {
     '202795JE1': ('2024-07-31', 100.0),  # Commonwealth Edison; month-end proxy from last observed month
     '23317HAD4': ('2024-08-23', 100.0),  # SITE Centers 2025; reported actual redemption date
     '23317HAE2': ('2024-08-23', 99.4),  # SITE Centers 2026; redemption price per user, reported actual redemption date
-    '256677AD7': ('', 100),  # Dollar General; date not independently confirmed
+    '256677AD7': ('2025-04-29', 100),  # Dollar General; FINRA date supplied by user
     '174610AJ4': ('2025-07-03', 100),  # Citizens Financial; issuer notice redemption date
     '21036PAP3': ('2025-07-02', 100),  # Constellation Brands; issuer notice redemption date
-    '88947EAR1': ('', 100),  # Toll Brothers; date not independently confirmed
+    '88947EAR1': ('2025-07-15', 100),  # Toll Brothers; FINRA date supplied by user
     '06652KAA1': ('2025-08-22', 100),  # BankUnited; full-call notice date
-    '25179MAV5': ('', 100),  # Devon Energy; date not independently confirmed
-    '86765BAS8': ('', 100),  # Energy Transfer; date not independently confirmed
-    '843646AM2': ('', 100),  # Southern Power; date not independently confirmed
-    '681936BH2': ('', 100),  # Omega Healthcare; date not independently confirmed
+    '25179MAV5': ('2025-09-15', 100),  # Devon Energy; FINRA date supplied by user
+    '86765BAS8': ('2025-09-22', 100),  # Energy Transfer; FINRA date supplied by user
+    '843646AM2': ('2025-10-21', 100),  # Southern Power; FINRA date supplied by user
+    '681936BH2': ('2025-10-15', 100),  # Omega Healthcare; FINRA date supplied by user
     '174610AK1': ('2025-11-03', 100),  # Citizens Financial; issuer notice redemption date
-    '92345YAD8': ('', 100),  # Verisk Analytics; date not independently confirmed
-    '12505BAD2': ('', 100.17),  # CBRE Services; date not independently confirmed
-    '053015AE3': ('', 100),  # Automatic Data Processing; date not independently confirmed
-    '09062XAF0': ('', 100),  # Biogen; date not independently confirmed
-    '20030NBN0': ('', 100),  # Comcast; date not independently confirmed
-    '29250RAW6': ('', 100),  # Enbridge Energy Partners; date not independently confirmed
-    '931427AB4': ('', 100),  # Walgreens Boots Alliance; date not independently confirmed
+    '92345YAD8': ('2025-04-21', 100),  # Verisk Analytics; FINRA date supplied by user
+    '12505BAD2': ('2025-05-28', 100.17),  # CBRE Services; FINRA date supplied by user
+    '053015AE3': ('2025-06-15', 100),  # Automatic Data Processing; FINRA date supplied by user
+    '09062XAF0': ('2025-06-27', 100),  # Biogen; FINRA date supplied by user
+    '20030NBN0': ('2025-06-05', 100),  # Comcast; FINRA date supplied by user
+    '29250RAW6': ('2025-07-28', 100),  # Enbridge Energy Partners; FINRA date supplied by user
+    '931427AB4': ('2025-09-29', 100),  # Walgreens Boots Alliance; FINRA date supplied by user
     '931427AC2': ('', 100),  # Walgreens Boots Alliance; date not independently confirmed
-    '98978VAK9': ('', 100),  # Zoetis; date not independently confirmed
-    '58013MEY6': ('', 100),  # McDonald's; date not independently confirmed
+    '98978VAK9': ('2025-09-17', 100),  # Zoetis; FINRA date supplied by user
+    '58013MEY6': ('2025-11-03', 100),  # McDonald's; FINRA date supplied by user
     '279158AL3': ('2024-11-21', 100.763),  # Ecopetrol; exact call date and 100.763% verified
     '47102XAJ4': ('2024-11-07', 100),  # Janus Henderson; exact call date verified; principal price per user
     '85207UAJ4': ('2024-11-15', 100),  # Sprint; exact call date verified
-    '674599CG8': ('', 100),  # Occidental Petroleum; redemption date unverified
-    '68268NAP8': ('', 100),  # ONEOK Partners; redemption date unverified
-    '898813AP5': ('', 100),  # Tucson Electric Power; redemption date unverified
-    '025816BK4': ('', 100),  # American Express; redemption date unverified (not scheduled maturity)
+    '674599CG8': ('2024-12-30', 100),  # Occidental Petroleum; FINRA date supplied by user
+    '68268NAP8': ('2024-12-15', 100),  # ONEOK Partners; FINRA date supplied by user
+    '898813AP5': ('2024-12-16', 100),  # Tucson Electric Power; FINRA date supplied by user
+    '025816BK4': ('2024-11-04', 100),  # American Express; FINRA date supplied by user
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
