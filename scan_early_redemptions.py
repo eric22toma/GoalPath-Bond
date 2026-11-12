@@ -224,19 +224,13 @@ def number(value):
 
 def days_30_360(start, end):
     """Approximate 30/360 year fraction used for conventional coupon bonds."""
-    return (
-        360 * (end.year - start.year)
-        + 30 * (end.month - start.month)
-        + min(end.day, 30) - min(start.day, 30)
-    ) / 360.0
+    return (360 * (end.year - start.year)+ 30 * (end.month - start.month)+ min(end.day, 30) - min(start.day, 30)) / 360.0
 
 
 def coupon_cashflows(row, event_date):
     """Return coupon cash paid, accrued interest at redemption, estimated AI at t.
-
     All monetary amounts per $100 face; COUPON is the annual coupon in %.
-    Requires a conventional fixed-rate coupon calendar. No guessed schedule.
-    """
+    Requires a conventional fixed-rate coupon calendar. No guessed schedule."""
     rate = number(row['COUPON'])
     freq_raw = number(row['NCOUPS'])
     if not pd.notna(rate) or not pd.notna(freq_raw) or rate < 0:
