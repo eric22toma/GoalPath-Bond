@@ -84,6 +84,25 @@ EARLY_REDEMPTIONS = {
     '31572UAG1': ('', 100.0),  # Fibria Overseas; redemption date not yet recorded
     '097023CT0': ('', 100.0),  # Boeing; redemption date not yet recorded
     '025816CQ0': ('', 100.0),  # American Express; redemption date not yet recorded
+    '035240AL4': ('2025-05-30', 100),  # Anheuser-Busch InBev Worldwide
+    '866677AK3': ('2025-05-10', 106.153),  # Sun Communities 2029
+    '866677AJ6': ('2025-05-10', 108.588),  # Sun Communities 2033
+    '74348TAU6': ('2025-06-18', 100),  # Prospect Capital
+    '026874DH7': ('2025-06-26', 100),  # AIG
+    '21036PBN7': ('2025-06-12', 100),  # Constellation Brands
+    '52107QAH8': ('2025-09-18', 100),  # Lazard
+    '55336VAJ9': ('2025-04-09', 100),  # MPLX
+    '674599EE1': ('2025', 100),  # Occidental; Q1 2025, exact date unknown
+    '674599EB7': ('2025', 100),  # Occidental; Apr-Jun 2025, exact date unknown
+    '674599DC6': ('2025', 100),  # Occidental; Apr-Jun 2025, exact date unknown
+    '92343VDD3': ('2025-04-23', 100),  # Verizon
+    '559222AX2': ('2025-05-23', 100),  # Magna
+    '65163LAQ2': ('2025-02-07', 100),  # Newmont/Newcrest
+    '125523CR9': ('2025', 100),  # Cigna; Q1 2025, exact date unknown
+    '302491AW5': ('2025', 100),  # FMC; May-Jun 2025, exact date unknown
+    '651229AW6': ('2025-05', 100),  # Newell Rubbermaid
+    '00751YAH9': ('2025', 100),  # Advance Auto; fiscal Q3 2025, exact date unknown
+    '031162DN7': ('2025', 100),  # Amgen; 2025 date unknown
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
