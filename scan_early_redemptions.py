@@ -12,9 +12,10 @@ price, accrued interest, redemption proceeds, and interim coupon payments:
 
     R_terminal = (P_redemption + AI_redemption + C_interim) / (P_t + AI_t) - 1
 
-Returns are calculated using a 30/360 interest approximation and saved
-in verified_early_redemptions.csv. Bonds without an exact redemption date
-(including records with only a month, year, or an unknown date) are excluded from the return calculation.
+Returns are calculated using a 30/360 interest approximation and saved in
+verified_early_redemptions.csv. Exact known redemption dates are preserved;
+otherwise calendar month-end proxies are used for monthly backtest alignment.
+These dates are modelling approximations, not verified execution dates.
 """
 
 from pathlib import Path
@@ -28,9 +29,10 @@ OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
 # Early redemptions: CUSIP -> (redemption date, price per $100 face).
-# YYYY-MM or YYYY means only the month or year is known; '' means
-# the exact redemption date has not yet been recorded. Returns remain blank
-# for these entries until the date is verified.
+# Preserve exact FINRA/issuer redemption dates where available. Otherwise
+# use calendar month-end as the monthly backtest proxy. Records with only
+# year-level information use the end of their stated reporting period or,
+# when no month is known, December 31. These proxies are not actual call dates.
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),
     '876030AE7': ('2024-11-25', 101.0),
@@ -52,38 +54,38 @@ EARLY_REDEMPTIONS = {
     '87612BBL5': ('2025-07-15', 100.0),
     '256677AE5': ('2025-09-30', 100.0),
     '23317HAF9': ('2024-08-21', 100.0),
-    '81618TAE0': ('2024-03', 100.0),
-    '04273WAD3': ('2024-04', 100.0),
-    '16412XAC9': ('2024-04', 100.0),
+    '81618TAE0': ('2024-03-31', 100.0),
+    '04273WAD3': ('2024-04-30', 100.0),
+    '16412XAC9': ('2024-04-30', 100.0),
     '14162VAB2': ('2025-07-31', 100.0),
     '29250NBQ7': ('2024-03-08', 100.0),
-    '462613AM2': ('2024-04', 100.0),
-    '14448CBB9': ('2024-06', 100.0),
-    '29364WBK3': ('2024-08', 100.0),
-    '581557BS3': ('2024', 100.0),  # McKesson — 2024 redemption; exact month/day unavailable
-    '42824CBM0': ('2024-10', 100.0),  # Hewlett Packard Enterprise
+    '462613AM2': ('2024-04-30', 100.0),
+    '14448CBB9': ('2024-06-30', 100.0),
+    '29364WBK3': ('2024-08-31', 100.0),
+    '581557BS3': ('2024-09-30', 100.0),  # Month-end proxy: September 2024 redemption following refinancing
+    '42824CBM0': ('2024-10-31', 100.0),  # Hewlett Packard Enterprise
     '71429MAB1': ('2024-10-02', 100.0),
-    '444859BW1': ('2024-11', 100.0),
-    '559080AK2': ('2025', 100.0),  # Magellan — 2025 redemption; exact month/day unavailable
-    '844741BJ6': ('2024-12', 100.0),
+    '444859BW1': ('2024-11-30', 100.0),
+    '559080AK2': ('2025-12-31', 100.0),  # Month-end proxy: 2025 known only; conservative year-end
+    '844741BJ6': ('2024-12-31', 100.0),
     '92556HAA5': ('2024-12-27', 100.0),
     '92940PAB0': ('2024-12-06', 100.0),
-    '370334CS1': ('2025', 100.0),  # General Mills — fiscal Q3 FY2025; exact month/day unavailable
+    '370334CS1': ('2025-02-28', 100.0),  # Month-end proxy: fiscal 2025 Q3 period end
     '361841AJ8': ('2025-03-03', 100.0),
     '436106AA6': ('2025-02-16', 100.0),
-    '53522KAB9': ('2025-02', 100.0),
-    '55903VBG7': ('2025-02', 100.0),
-    '595112BM4': ('2025-02', 100.0),
+    '53522KAB9': ('2025-02-28', 100.0),
+    '55903VBG7': ('2025-02-28', 100.0),
+    '595112BM4': ('2025-02-28', 100.0),
     '636180BQ3': ('2025-03-06', 100.0),
     '876030AB3': ('2024-11-25', 101.0),  # Tapestry 2025 notes
     '876030AC1': ('2024-11-25', 101.0),  # Tapestry 2026 notes
     '501044DR9': ('2024-12-18', 101.0),  # Kroger 2026 notes
-    '24703TAC0': ('', 100.0),  # Dell International / EMC; redemption date not yet recorded
-    '95001DCG3': ('', 100.0),  # Wells Fargo; redemption date not yet recorded
-    '00206RMP4': ('', 100.0),  # AT&T; redemption date not yet recorded
-    '31572UAG1': ('', 100.0),  # Fibria Overseas; redemption date not yet recorded
-    '097023CT0': ('', 100.0),  # Boeing; redemption date not yet recorded
-    '025816CQ0': ('', 100.0),  # American Express; redemption date not yet recorded
+    '24703TAC0': ('2024-10-11', 100.0),  # Dell International / EMC; redemption date not yet recorded
+    '95001DCG3': ('2024-10-28', 100.0),  # Wells Fargo; redemption date not yet recorded
+    '00206RMP4': ('2024-11-09', 100.0),  # AT&T; redemption date not yet recorded
+    '31572UAG1': ('2024-11-14', 100.0),  # Fibria Overseas; redemption date not yet recorded
+    '097023CT0': ('2024-12-20', 100.0),  # Boeing; redemption date not yet recorded
+    '025816CQ0': ('2025-02-03', 100.0),  # American Express; redemption date not yet recorded
     '035240AL4': ('2025-05-30', 100),  # Anheuser-Busch InBev Worldwide
     '866677AK3': ('2025-05-10', 106.153),  # Sun Communities 2029
     '866677AJ6': ('2025-05-10', 108.588),  # Sun Communities 2033
@@ -92,32 +94,32 @@ EARLY_REDEMPTIONS = {
     '21036PBN7': ('2025-06-12', 100),  # Constellation Brands
     '52107QAH8': ('2025-09-18', 100),  # Lazard
     '55336VAJ9': ('2025-04-09', 100),  # MPLX
-    '674599EE1': ('2025', 100),  # Occidental; Q1 2025, exact date unknown
-    '674599EB7': ('2025', 100),  # Occidental; Apr-Jun 2025, exact date unknown
-    '674599DC6': ('2025', 100),  # Occidental; Apr-Jun 2025, exact date unknown
+    '674599EE1': ('2025-03-31', 100),  # Month-end proxy: Q1 2025 period end
+    '674599EB7': ('2025-06-30', 100),  # Month-end proxy: Q2 2025 period end
+    '674599DC6': ('2025-06-30', 100),  # Month-end proxy: Q2 2025 period end
     '92343VDD3': ('2025-04-23', 100),  # Verizon
     '559222AX2': ('2025-05-23', 100),  # Magna
     '65163LAQ2': ('2025-02-07', 100),  # Newmont/Newcrest
-    '125523CR9': ('2025', 100),  # Cigna; Q1 2025, exact date unknown
-    '302491AW5': ('2025', 100),  # FMC; May-Jun 2025, exact date unknown
-    '651229AW6': ('2025-05', 100),  # Newell Rubbermaid
-    '00751YAH9': ('2025', 100),  # Advance Auto; fiscal Q3 2025, exact date unknown
-    '031162DN7': ('2025', 100),  # Amgen; 2025 date unknown
-    '95000U2K8': ('', 100.0),  # Wells Fargo; redemption date not yet recorded
-    '198280AF6': ('', 100.0),  # Columbia Pipeline; redemption date not yet recorded
-    '26885BAC4': ('', 100.0),  # EQM Midstream; redemption date not yet recorded
-    '025816CY3': ('', 100.0),  # American Express; redemption date not yet recorded
-    '81180WAR2': ('', 100.0),  # Seagate; redemption date not yet recorded
-    '37045VAV2': ('', 100.0),  # General Motors; redemption date not yet recorded
-    '403949AB6': ('', 100.0),  # HF Sinclair; redemption date not yet recorded
-    '403949AP5': ('', 100.0),  # HF Sinclair; redemption date not yet recorded
-    '44106MAV4': ('', 100.0),  # Hospitality Properties; redemption date not yet recorded
-    '87264AAT2': ('', 100.0),  # T-Mobile USA; redemption date not yet recorded
-    '98978VAU7': ('', 100.0),  # Zoetis; redemption date not yet recorded
-    '023135BN5': ('', 100.0),  # Amazon; redemption date not yet recorded
-    '28622HAA9': ('', 100.0),  # Elevance Health; redemption date not yet recorded
-    '361841AH2': ('', 100.0),  # GLP Capital; redemption date not yet recorded
-    '674599CH6': ('', 100.0),  # Occidental Petroleum; redemption date not yet recorded
+    '125523CR9': ('2025-03-31', 100),  # Month-end proxy: Q1 2025 period end
+    '302491AW5': ('2025-06-30', 100),  # Month-end proxy: May-June 2025 period end
+    '651229AW6': ('2025-05-31', 100),  # Newell Rubbermaid
+    '00751YAH9': ('2025-10-31', 100),  # Month-end proxy: fiscal Q3 2025 period end
+    '031162DN7': ('2025-12-31', 100),  # Month-end proxy: 2025 known only; conservative year-end
+    '95000U2K8': ('2025-02-11', 100.0),  # Wells Fargo; redemption date not yet recorded
+    '198280AF6': ('2025-03-24', 100.0),  # Columbia Pipeline; redemption date not yet recorded
+    '26885BAC4': ('2025-05-01', 100.0),  # EQM Midstream; redemption date not yet recorded
+    '025816CY3': ('2025-07-01', 100.0),  # American Express; redemption date not yet recorded
+    '81180WAR2': ('2025-06-11', 100.0),  # Seagate; redemption date not yet recorded
+    '37045VAV2': ('2025-09-01', 100.0),  # General Motors; redemption date not yet recorded
+    '403949AB6': ('2025-08-30', 100.0),  # HF Sinclair; redemption date not yet recorded
+    '403949AP5': ('2025-08-31', 100.0),  # Month-end proxy: last observed AGG month
+    '44106MAV4': ('2025-09-04', 100.0),  # Hospitality Properties; redemption date not yet recorded
+    '87264AAT2': ('2025-09-01', 100.0),  # T-Mobile USA; redemption date not yet recorded
+    '98978VAU7': ('2025-08-28', 100.0),  # Zoetis; redemption date not yet recorded
+    '023135BN5': ('2025-09-05', 100.0),  # Amazon; redemption date not yet recorded
+    '28622HAA9': ('2025-09-19', 100.0),  # Elevance Health; redemption date not yet recorded
+    '361841AH2': ('2025-09-12', 100.0),  # GLP Capital; redemption date not yet recorded
+    '674599CH6': ('2025-09-30', 100.0),  # Occidental Petroleum; redemption date not yet recorded
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
