@@ -120,6 +120,10 @@ EARLY_REDEMPTIONS = {
     '28622HAA9': ('2025-09-19', 100.0),  # Elevance Health; redemption date not yet recorded
     '361841AH2': ('2025-09-12', 100.0),  # GLP Capital; redemption date not yet recorded
     '674599CH6': ('2025-09-30', 100.0),  # Occidental Petroleum; redemption date not yet recorded
+    '931427AQ1': ('2025-09-30', 100.0),  # Walgreens Boots Alliance; month-end proxy
+    '966837AE6': ('2025-09-30', 100.0),  # Whole Foods Market; month-end proxy
+    '71654QBW1': ('2025-10-31', 100.0),  # PEMEX; month-end proxy
+    '85207UAK1': ('2025-10-31', 100.0),  # Sprint; month-end proxy
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -171,6 +175,8 @@ NOT_REDEEMED_EARLY = {
     '92857WBJ8': "Vodafone - not callable",
     '29336UAF4': "Not callable",
     '723787AV9': "Pioneer Natural Resources - Not callable",
+    '92343VDS0': 'Verizon Communications — ineligible per manual redemption audit',
+    '71654QCB6': 'PEMEX — ineligible per manual redemption audit',
 }
 
 
