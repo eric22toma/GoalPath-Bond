@@ -110,7 +110,9 @@ MONTH_ONLY_REDEMPTIONS = {
     '16412XAC9': ('2024-04', 100.0),  # Cheniere 5.875% 2025, par-only proxy
 }
 
-# Not shown as early redemptions: this bond reached its scheduled due date.
+# Not an early redemption: the bond's stated due date was August 8, 2024.
+# Its June-to-July missing return remains a DATA-COVERAGE issue; ordinary
+# maturity in August does not supply an observed July return.
 REVIEWED_SCHEDULED_MATURITIES = {
     '517834AG2': ('2024-08-08', 'Las Vegas Sands 3.2% contractual maturity'),
 }
@@ -124,7 +126,7 @@ REVIEW_NOTES = {
     '81618TAE0': 'Office Properties redeemed all 4.25% 2024 notes at par in March; day not verified',
     '04273WAD3': 'Arrow called 6.125% 2026 notes at par in April; day not verified',
     '16412XAC9': 'Cheniere fully redeemed 2025 notes in April 2024; pre-Oct par call, premium unknown',
-    '517834AG2': 'Las Vegas Sands stated contractual maturity August 8 2024, no early call established',
+    '517834AG2': 'Due Aug 8 2024; absent from July 2024 AGG data: unresolved preceding-month coverage gap, NOT an established early call',
 }
 
 # Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
@@ -491,7 +493,7 @@ def main():
         })
     for cusip, (date, description) in sorted(REVIEWED_SCHEDULED_MATURITIES.items()):
         excluded_rows.append({
-            'cusip': cusip, 'review_status': 'CONTRACTUAL_MATURITY',
+            'cusip': cusip, 'review_status': 'REGULAR_MATURITY_WITH_DATA_GAP',
             'event_date': date, 'event_month': date[:7],
             'principal_price_per_100': 100.0, 'price_basis': 'PAR_AT_MATURITY',
             'review_note': REVIEW_NOTES.get(cusip, description),
