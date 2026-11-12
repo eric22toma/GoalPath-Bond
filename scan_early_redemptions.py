@@ -349,11 +349,9 @@ def coupon_cashflows(row, event_date):
 
 def compute_terminal_returns(bond_path):
     """Estimate t -> redemption-month returns for the verified event registry.
-
     Uses month t immediately BEFORE the event month, even if the raw dataset
     contains an observation in the redemption month. Existing RET_EOM is
-    included only for comparison, never overwritten by this scanner.
-    """
+    included only for comparison, never overwritten by this scanner."""
     path = Path(bond_path)
     if not path.exists() and Path(str(path) + '.zip').exists():
         path = Path(str(path) + '.zip')
