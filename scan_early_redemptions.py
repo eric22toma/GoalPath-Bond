@@ -155,6 +155,13 @@ EARLY_REDEMPTIONS = {
     '931427AC2': ('', 100),  # Walgreens Boots Alliance; date not independently confirmed
     '98978VAK9': ('', 100),  # Zoetis; date not independently confirmed
     '58013MEY6': ('', 100),  # McDonald's; date not independently confirmed
+    '279158AL3': ('2024-11-21', 100.763),  # Ecopetrol; exact call date and 100.763% verified
+    '47102XAJ4': ('2024-11-07', 100),  # Janus Henderson; exact call date verified; principal price per user
+    '85207UAJ4': ('2024-11-15', 100),  # Sprint; exact call date verified
+    '674599CG8': ('', 100),  # Occidental Petroleum; redemption date unverified
+    '68268NAP8': ('', 100),  # ONEOK Partners; redemption date unverified
+    '898813AP5': ('', 100),  # Tucson Electric Power; redemption date unverified
+    '025816BK4': ('', 100),  # American Express; redemption date unverified (not scheduled maturity)
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -242,6 +249,22 @@ NOT_REDEEMED_EARLY = {
     '92343VCX0': 'Verizon Communications — ineligible per manual audit',
     '931422AK5': 'Walgreen Co. — ineligible per manual audit',
     '884903BM6': 'Thomson Reuters — ineligible per manual audit',
+    '69352PAJ2': 'PPL Capital Funding — ineligible per manual audit',
+    '302154ED7': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '302154EE5': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '690732AE2': 'Owens & Minor — ineligible per manual audit',
+    '12513GBA6': 'CDW — ineligible per manual audit',
+    '302154EG0': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '52107QAG0': 'Lazard — ineligible per manual audit',
+    '125509BQ1': 'Cigna Holding Company — ineligible per manual audit',
+    '232820AK6': 'Cytec Industries / Syensqo — ineligible per manual audit',
+    '302154EJ4': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '302154EK1': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '302154EL9': 'Export-Import Bank of Korea — ineligible per manual audit',
+    '92343VAP9': 'Verizon Communications — ineligible per manual audit',
+    '29082HAB8': 'Embraer Netherlands Finance — ineligible per manual audit',
+    '636180BM2': 'National Fuel Gas — ineligible per manual audit',
+    '92343VAF1': 'Verizon Communications — ineligible per manual audit',
 }
 
 
