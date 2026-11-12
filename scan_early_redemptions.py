@@ -62,7 +62,7 @@ REVIEWED_NON_REDEMPTIONS = {
     '035242AM8', '035242AN6', '29336TAE0',
     '20605PAJ0', '84861TAG3', '03349MAB1',
     '92343VDU5', '92343VDV3', '26885BAE0',
-    '485170AQ7', '485170BC7', '87612BBL5', '837004CK4',
+    '485170AQ7', '485170BC7',
     '11134LAH2', '12673PAJ4', '84861TAJ7', '264414AX1',
     '92340LAC3', '928563AE5',
 }
@@ -232,7 +232,7 @@ def main():
         for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
     ]).to_csv(verified_path, index=False)
     print(f'Verified redemption list saved: {verified_path}')
-    print(f'\\nSaved: {args.output}\\n')
+    print(f'Saved: {args.output}')
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
 
