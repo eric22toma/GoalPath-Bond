@@ -166,9 +166,9 @@ def main():
     print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
     if not result.empty:
         print(result.review_priority.value_counts().sort_index().to_string())
-        print('\nFIRST 20 FOR REVIEW:')
+        print('\nALL FLAGGED BONDS FOR REVIEW:')
         print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
-                      'contractual_maturity']].head(20).to_string(index=False))
+                      'contractual_maturity']].to_string(index=False, max_rows=None))
     for cusip in sorted(TAPESTRY):
         hit = result.loc[result.cusip.eq(cusip)]
         print(f'Tapestry {cusip}: ' + (f"FLAGGED ({hit.iloc[0]['last_observed_month']})"
