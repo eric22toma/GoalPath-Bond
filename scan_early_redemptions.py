@@ -14,7 +14,7 @@ price, accrued interest, redemption proceeds, and interim coupon payments:
 
 Returns are calculated using a 30/360 interest approximation and saved
 in verified_early_redemptions.csv. Bonds without an exact redemption date
-are excluded from the return calculation.
+(including records with only a month or year) are excluded from the return calculation.
 """
 
 from pathlib import Path
@@ -28,7 +28,8 @@ OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
 # Early redemptions: CUSIP -> (redemption date, price per $100 face).
-# YYYY-MM means the redemption month is known but not the exact day.
+# YYYY-MM or YYYY means only the month or year is known, not the exact day.
+# In those cases, the return estimate remains blank until a date is available.
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),
     '876030AE7': ('2024-11-25', 101.0),
@@ -53,6 +54,29 @@ EARLY_REDEMPTIONS = {
     '81618TAE0': ('2024-03', 100.0),
     '04273WAD3': ('2024-04', 100.0),
     '16412XAC9': ('2024-04', 100.0),
+    '14162VAB2': ('2025-07-31', 100.0),
+    '29250NBQ7': ('2024-03-08', 100.0),
+    '462613AM2': ('2024-04', 100.0),
+    '14448CBB9': ('2024-06', 100.0),
+    '29364WBK3': ('2024-08', 100.0),
+    '581557BS3': ('2024', 100.0),  # McKesson — 2024 redemption; exact month/day unavailable
+    '42824CBM0': ('2024-10', 100.0),  # Hewlett Packard Enterprise
+    '71429MAB1': ('2024-10-02', 100.0),
+    '444859BW1': ('2024-11', 100.0),
+    '559080AK2': ('2025', 100.0),  # Magellan — 2025 redemption; exact month/day unavailable
+    '844741BJ6': ('2024-12', 100.0),
+    '92556HAA5': ('2024-12-27', 100.0),
+    '92940PAB0': ('2024-12-06', 100.0),
+    '370334CS1': ('2025', 100.0),  # General Mills — fiscal Q3 FY2025; exact month/day unavailable
+    '361841AJ8': ('2025-03-03', 100.0),
+    '436106AA6': ('2025-02-16', 100.0),
+    '53522KAB9': ('2025-02', 100.0),
+    '55903VBG7': ('2025-02', 100.0),
+    '595112BM4': ('2025-02', 100.0),
+    '636180BQ3': ('2025-03-06', 100.0),
+    '876030AB3': ('2024-11-25', 101.0),  # Tapestry 2025 notes
+    '876030AC1': ('2024-11-25', 101.0),  # Tapestry 2026 notes
+    '501044DR9': ('2024-12-18', 101.0),  # Kroger 2026 notes
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -399,7 +423,7 @@ def main():
             'redemption_date': date if len(date) == 10 else '',
             'redemption_month': date[:7],
             'principal_price_per_100': price,
-            'note': 'Exact redemption day unavailable' if len(date) == 7 else '',
+            'note': 'Exact redemption day unavailable' if len(date) != 10 else '',
         } for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())]
         + [{
             'cusip': cusip,
@@ -424,7 +448,7 @@ def main():
         compute_terminal_returns(args.bonds), on='cusip',
         how='left', validate='one_to_one'
     )
-    no_day = verified.redemption_date.str.len().eq(7)
+    no_day = verified.redemption_date.str.len().ne(10)
     verified.loc[no_day, 'calculation_status'] = 'EXACT REDEMPTION DAY NOT VERIFIED'
     verified.loc[no_day, 'redemption_month'] = verified.loc[no_day, 'redemption_date']
     verified.loc[no_day, 'redemption_date'] = ''
