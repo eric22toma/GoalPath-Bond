@@ -5,7 +5,9 @@ Cross-reference zipped AGG observations against WRDS callable-bond data.
 Redemption exceptions were reviewed against issuer/SEC filings and notices.
 The confirmed full redemption events live in EARLY_REDEMPTIONS; reviewed
 non-redemptions, debt exchanges and partial tenders are excluded separately.
-Neither type is repeated in future candidate outputs; unresolved cases remain.
+These and the separately recorded month-verified redemptions and regular
+maturities are excluded from future candidate outputs; unresolved cases remain.
+An all_reviewed_exclusions.csv ledger lists EVERY excluded CUSIP and reason.
 
 A bond disappearing from the filtered AGG source is NOT proof of redemption.
 WRDS NEXT_CALL_PRICE is a contractual schedule term, NOT a realized payoff.
@@ -32,6 +34,10 @@ only once; do not double-count it as both accrued interest and an interim coupon
 Compare to observed RET_EOM before substituting it in any backtest. The scan
 does NOT change the portfolio, raw returns, eligibility or benchmark.
 
+FINRA bond lookup was also used for CUSIP-specific call and trade history,
+including https://www.finra.org/finra-data/fixed-income/bond?cusip=23317HAF9&bondType=CA .
+A scheduled call provision alone does not prove an exercised call.
+
 Issuer/SEC sources reviewed (examples):
 Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
 Kroger: https://www.sec.gov/Archives/edgar/data/56873/000110465926037723/kr-20260131x10k.htm
@@ -41,6 +47,13 @@ Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef200
 Targa 2025 repayment: https://www.sec.gov/Archives/edgar/data/1389170/000119312526059296/trgp-20251231.htm
 Targa 2027 call schedule: https://www.sec.gov/Archives/edgar/data/1379661/000119312519009886/d683680dex101.htm
 Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
+Dollar General: https://www.sec.gov/Archives/edgar/data/29534/000110465926040416/tm265050d2_ars.pdf
+SITE Centers: https://financialfilings.com/filings/site-centers-corp/annual-report/2025/9961393/
+Office Properties: https://www.sec.gov/Archives/edgar/data/1456772/000145677225000013/opi-20241231.htm
+Arrow: https://www.sec.gov/Archives/edgar/data/7536/000155837024006456/arw-20240330x10q.htm
+Cheniere: https://www.sec.gov/Archives/edgar/data/1693317/000169331724000007/R24.htm
+Charter still outstanding 2Q25: https://ir.charter.com/static-files/d3aaacc7-263c-4172-9927-a86244604a8f
+Booking still outstanding 2025: https://www.sec.gov/Archives/edgar/data/1100663/000175272425157880/primary_doc.xml
 """
 
 from pathlib import Path
@@ -77,6 +90,8 @@ EARLY_REDEMPTIONS = {
     '11134LAH2': ('2025-10-23', 100.0),    # Broadcom Corp 3.875% 2027
     '928563AE5': ('2025-10-03', 100.0),    # VMware 4.650% 2027
     '87612BBL5': ('2025-07-15', 100.0),    # Targa 6.500% 2027: full redemption at par
+    '256677AE5': ('2025-09-30', 100.0),    # Dollar General, par recovery assumption
+    '23317HAF9': ('2024-08-21', 100.0),    # SITE Centers / DDR, par recovery assumption
 }
 
 # Conservative 100%-of-face principal proxies where make-whole cash premium
@@ -84,6 +99,32 @@ EARLY_REDEMPTIONS = {
 ASSUMED_PAR_REDEMPTIONS = {
     '76132FAC1', '595112BP7', '91911TAP8', '595112BV4',
     '595112CA9', '12673PAJ4', '11134LAH2', '928563AE5',
+    '256677AE5', '23317HAF9',
+}
+
+# Full redemptions evidenced by issuer/SEC disclosures, but exact day unknown.
+# These cannot receive a calculated R_terminal until an actual date is verified.
+MONTH_ONLY_REDEMPTIONS = {
+    '81618TAE0': ('2024-03', 100.0),  # Office Properties, at par
+    '04273WAD3': ('2024-04', 100.0),  # Arrow 6.125% 2026, at par
+    '16412XAC9': ('2024-04', 100.0),  # Cheniere 5.875% 2025, par-only proxy
+}
+
+# Not shown as early redemptions: this bond reached its scheduled due date.
+REVIEWED_SCHEDULED_MATURITIES = {
+    '517834AG2': ('2024-08-08', 'Las Vegas Sands 3.2% contractual maturity'),
+}
+
+# Evidence trail / reasons for the newest decisions.
+REVIEW_NOTES = {
+    '09857LAR9': 'Booking 2030 CUSIP appears in 2025 SEC fund holdings',
+    '161175CM4': 'Charter 2026 CUSIP still outstanding on June 2025 issuer debt schedule',
+    '256677AE5': 'Dollar General fully repaid in September 2025; insurer transaction says September 30',
+    '23317HAF9': 'SITE Centers redeemed entire 4.700% 2027 issue on August 21 2024',
+    '81618TAE0': 'Office Properties redeemed all 4.25% 2024 notes at par in March; day not verified',
+    '04273WAD3': 'Arrow called 6.125% 2026 notes at par in April; day not verified',
+    '16412XAC9': 'Cheniere fully redeemed 2025 notes in April 2024; pre-Oct par call, premium unknown',
+    '517834AG2': 'Las Vegas Sands stated contractual maturity August 8 2024, no early call established',
 }
 
 # Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
@@ -100,6 +141,7 @@ REVIEWED_NON_REDEMPTIONS = {
     '485170AQ7', '485170BC7',
     '84861TAJ7', '264414AX1',
     '92340LAC3',
+    '09857LAR9', '161175CM4',  # SEC/issuer still outstanding past flagged month
     '837004CK4',  # 2019 partial tender; same CUSIP in Sep 2026 fund holdings
 }
 
@@ -182,7 +224,8 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
         joined = joined.loc[joined.last_month.between(start, end)].copy()
 
     # Already audited; remove from the list of NEW candidates for review.
-    reviewed = set(EARLY_REDEMPTIONS) | REVIEWED_NON_REDEMPTIONS
+    reviewed = (set(EARLY_REDEMPTIONS) | set(MONTH_ONLY_REDEMPTIONS)
+                | REVIEWED_NON_REDEMPTIONS | set(REVIEWED_SCHEDULED_MATURITIES))
     joined = joined.loc[~joined.cusip.isin(reviewed)].copy()
 
     joined['months_until_maturity'] = (
@@ -407,6 +450,8 @@ def main():
     print(f'Potential premature exits before prior-review exclusions: {all_exits:,}')
     print(f'Previously confirmed redemptions excluded: {len(EARLY_REDEMPTIONS):,}')
     print(f'Other previously reviewed CUSIPs excluded: {len(REVIEWED_NON_REDEMPTIONS):,}')
+    print(f'Confirmed redemption, exact day still unknown: {len(MONTH_ONLY_REDEMPTIONS):,}')
+    print(f'Reviewed ordinary maturities: {len(REVIEWED_SCHEDULED_MATURITIES):,}')
     print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
     if not result.empty:
         print(result.review_priority.value_counts().sort_index().to_string())
