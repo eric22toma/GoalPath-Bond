@@ -105,7 +105,6 @@ EARLY_REDEMPTIONS = {
     '031162DN7': ('2025', 100),  # Amgen; 2025 date unknown
     '95000U2K8': ('', 100.0),  # Wells Fargo; redemption date not yet recorded
     '198280AF6': ('', 100.0),  # Columbia Pipeline; redemption date not yet recorded
-    '92857WBJ8': ('', 100.0),  # Vodafone; redemption date not yet recorded
     '26885BAC4': ('', 100.0),  # EQM Midstream; redemption date not yet recorded
     '025816CY3': ('', 100.0),  # American Express; redemption date not yet recorded
     '29336UAF4': ('', 100.0),  # EnLink Midstream Partners; redemption date not yet recorded
@@ -169,6 +168,7 @@ NOT_REDEEMED_EARLY = {
     '92340LAA7': "VEREIT Operating Partnership — legacy debt exchange",
     '92340LAD1': "VEREIT Operating Partnership — legacy debt exchange / maturity",
     '92343VDR2': "Verizon Communications — subsequent holdings of the 2039 issue",
+    '92857WBJ8': "Vodafone - not callable"
 }
 
 
