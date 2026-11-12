@@ -107,7 +107,6 @@ EARLY_REDEMPTIONS = {
     '198280AF6': ('', 100.0),  # Columbia Pipeline; redemption date not yet recorded
     '26885BAC4': ('', 100.0),  # EQM Midstream; redemption date not yet recorded
     '025816CY3': ('', 100.0),  # American Express; redemption date not yet recorded
-    '29336UAF4': ('', 100.0),  # EnLink Midstream Partners; redemption date not yet recorded
     '81180WAR2': ('', 100.0),  # Seagate; redemption date not yet recorded
     '37045VAV2': ('', 100.0),  # General Motors; redemption date not yet recorded
     '403949AB6': ('', 100.0),  # HF Sinclair; redemption date not yet recorded
@@ -168,7 +167,8 @@ NOT_REDEEMED_EARLY = {
     '92340LAA7': "VEREIT Operating Partnership — legacy debt exchange",
     '92340LAD1': "VEREIT Operating Partnership — legacy debt exchange / maturity",
     '92343VDR2': "Verizon Communications — subsequent holdings of the 2039 issue",
-    '92857WBJ8': "Vodafone - not callable"
+    '92857WBJ8': "Vodafone - not callable",
+    '29336UAF4': "Not callable" 
 }
 
 
