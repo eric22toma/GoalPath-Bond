@@ -1,11 +1,25 @@
-"""One-time audit of bonds that disappear before contractual maturity.
+"""One-time AGG premature-disappearance audit with manually reviewed exceptions.
 
-Run from VS Code (Run Python File) or: python scan_early_redemptions.py
-Reads the existing zipped AGG history and the small WRDS CUSIP reference CSV.
-Writes a review-only CSV; DOES NOT modify the backtest, returns, or eligibility.
+Run from VS Code or: python scan_early_redemptions.py
+Cross-reference zipped AGG observations against WRDS callable-bond data.
+Exceptions were individually checked against SEC 8-K/10-K issuer filings,
+issuer notices, and SEC bond holdings. EARLY_REDEMPTIONS stores full cash
+redemptions with known dates and prices (None when price is unverified);
+REVIEWED_NON_REDEMPTIONS stores continuing issues, partial tenders and earlier
+exchanges, not full redemptions during their flagged months.
+Both groups are excluded from future exception reports. Unresolved flags remain.
 
-A missing future observation + a callable provision is NOT proof of redemption.
-The WRDS NEXT_CALL_PRICE is a contractual schedule price, NOT an actual payoff.
+Disappearance from the filtered AGG source is NOT proof of a redemption.
+WRDS NEXT_CALL_PRICE is not necessarily a realized redemption price.
+The script does not change any model, backtest or raw bond returns.
+
+Primary documents reviewed:
+Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
+Kroger: https://www.sec.gov/Archives/edgar/data/56873/000110465926037723/kr-20260131x10k.htm
+Micron: https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-20260903.htm
+Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef20021903_8k.htm
+Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
+EQM: https://ir.eqt.com/investor-relations/news/news-release-details/2024/Early-Results-and-Upsizing-of-EQM-Midstream-Partners-LPs-Tender-Offer-and-Consent-Solicitation-for-Certain-of-its-Senior-Notes/default.aspx
 """
 
 from pathlib import Path
@@ -18,7 +32,41 @@ REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
 OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
-TAPESTRY = {'876030AD9', '876030AE7', '876030AF4'}
+# Verified FULL cash redemption (date, percent of par EXCLUDING accrued interest).
+# None = exact payoff not yet established; NEVER infer it from NEXT_CALL_PRICE.
+EARLY_REDEMPTIONS = {
+    '876030AD9': ('2024-11-25', 101.0),   # Tapestry
+    '876030AE7': ('2024-11-25', 101.0),
+    '876030AF4': ('2024-11-25', 101.0),
+    '501044DS7': ('2024-12-18', 101.0),   # Kroger
+    '501044DT5': ('2024-12-18', 101.0),
+    '501044DU2': ('2024-12-18', 101.0),
+    '76132FAC1': ('2025-02-22', None),    # Retail Opportunity, make-whole
+    '595112BP7': ('2025-05-27', None),    # Micron 2027
+    '46590XAZ9': ('2025-07-03', 102.478), # JBS
+    '929160BA6': ('2024-03-01', 100.0),   # Vulcan, redeemed at par
+    '750236AX9': ('2024-03-19', 100.396), # Radian
+    '91911TAP8': ('2024-07-25', None),    # Vale make-whole
+    '595112BV4': ('2025-10-24', None),    # Micron 2029 B
+    '595112CA9': ('2025-10-24', None),    # Micron 2028
+}
+
+# Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
+# previous exchanges; not evidence of a full cash redemption at disappearance.
+# Cases with no adequate evidence are NOT added here and remain flagged.
+REVIEWED_NON_REDEMPTIONS = {
+    '25470DAT6', '92343VDC5',
+    '91087BAY6', '91087BAZ3', '91087BBA7',
+    '91087BBB5', '91087BBC3', '91087BBD1',
+    '559080AL0', '559080AM8', '559080AN6', '559080AP1', '559080AQ9',
+    '035242AM8', '035242AN6', '29336TAE0',
+    '20605PAJ0', '84861TAG3', '03349MAB1',
+    '92343VDU5', '92343VDV3', '26885BAE0',
+    '485170AQ7', '485170BC7', '87612BBL5', '837004CK4',
+    '11134LAH2', '12673PAJ4', '84861TAJ7', '264414AX1',
+    '92340LAC3', '928563AE5',
+}
+
 
 
 def excel_date(series):
@@ -97,6 +145,10 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
     if not all_history:
         joined = joined.loc[joined.last_month.between(start, end)].copy()
 
+    # Already audited; remove from the list of NEW candidates for review.
+    reviewed = set(EARLY_REDEMPTIONS) | REVIEWED_NON_REDEMPTIONS
+    joined = joined.loc[~joined.cusip.isin(reviewed)].copy()
+
     joined['months_until_maturity'] = (
         joined.maturity_month.astype('int64')
         - joined.first_missing_month.astype('int64')
@@ -162,18 +214,25 @@ def main():
     print('\nEARLY REDEMPTION REVIEW (NOT CONFIRMED REDEMPTIONS)')
     print(f'AGG observations: {source_rows:,} | Unique bonds: {len(bonds):,}')
     print(f'WRDS CUSIPs: {len(wrds):,} | Last source month: {sample_end}')
-    print(f'Potential premature exits across full history: {all_exits:,}')
+    print(f'Potential premature exits before prior-review exclusions: {all_exits:,}')
+    print(f'Previously confirmed redemptions excluded: {len(EARLY_REDEMPTIONS):,}')
+    print(f'Other previously reviewed CUSIPs excluded: {len(REVIEWED_NON_REDEMPTIONS):,}')
     print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
     if not result.empty:
         print(result.review_priority.value_counts().sort_index().to_string())
         print('\nALL FLAGGED BONDS FOR REVIEW:')
         print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
                       'contractual_maturity']].to_string(index=False, max_rows=None))
-    for cusip in sorted(TAPESTRY):
-        hit = result.loc[result.cusip.eq(cusip)]
-        print(f'Tapestry {cusip}: ' + (f"FLAGGED ({hit.iloc[0]['last_observed_month']})"
-                                        if not hit.empty else 'not flagged (inspect history)'))
-    print(f'\nSaved: {args.output}\n')
+    verified_path = args.output.with_name('verified_early_redemptions.csv')
+    pd.DataFrame([
+        {'cusip': cusip, 'redemption_date': date,
+         'redemption_price_pct_par_ex_accrued': price,
+         'status': ('PAYOFF VERIFIED' if price is not None
+                    else 'REDEMPTION VERIFIED - PRICE UNVERIFIED')}
+        for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
+    ]).to_csv(verified_path, index=False)
+    print(f'Verified redemption list saved: {verified_path}')
+    print(f'\\nSaved: {args.output}\\n')
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
 
