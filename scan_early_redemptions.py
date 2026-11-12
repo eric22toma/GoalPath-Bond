@@ -118,7 +118,6 @@ EARLY_REDEMPTIONS = {
     '28622HAA9': ('', 100.0),  # Elevance Health; redemption date not yet recorded
     '361841AH2': ('', 100.0),  # GLP Capital; redemption date not yet recorded
     '674599CH6': ('', 100.0),  # Occidental Petroleum; redemption date not yet recorded
-    '723787AV9': ('', 100.0),  # Pioneer Natural Resources; redemption date not yet recorded
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -168,7 +167,8 @@ NOT_REDEEMED_EARLY = {
     '92340LAD1': "VEREIT Operating Partnership — legacy debt exchange / maturity",
     '92343VDR2': "Verizon Communications — subsequent holdings of the 2039 issue",
     '92857WBJ8': "Vodafone - not callable",
-    '29336UAF4': "Not callable" 
+    '29336UAF4': "Not callable",
+    '723787AV9': "Pioneer Natural Resources - Not callable",
 }
 
 
