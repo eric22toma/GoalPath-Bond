@@ -1,34 +1,46 @@
-"""One-time AGG premature-disappearance audit with manually reviewed exceptions.
+"""One-time AGG premature-disappearance audit with reviewed exceptions.
 
 Run from VS Code or: python scan_early_redemptions.py
 Cross-reference zipped AGG observations against WRDS callable-bond data.
-Exceptions were individually checked against SEC 8-K/10-K issuer filings,
-issuer notices, and SEC bond holdings. EARLY_REDEMPTIONS stores full cash
-redemptions with dates and payoff assumptions (par proxies clearly labeled);
-REVIEWED_NON_REDEMPTIONS stores continuing issues, partial tenders and earlier
-exchanges, not full redemptions during their flagged months.
-Both groups are excluded from future exception reports. Unresolved flags remain.
+Redemption exceptions were reviewed against issuer/SEC filings and notices.
+The confirmed full redemption events live in EARLY_REDEMPTIONS; reviewed
+non-redemptions, debt exchanges and partial tenders are excluded separately.
+Neither type is repeated in future candidate outputs; unresolved cases remain.
 
-Disappearance from the filtered AGG source is NOT proof of a redemption.
-WRDS NEXT_CALL_PRICE is not necessarily a realized redemption price.\nFor verified full redemptions with unverified make-whole premiums, 100.0 is\na CONSERVATIVE principal-only proxy, not a confirmed redemption price.
-The scan also reconstructs an indicative holding-period terminal return
-R_terminal from the immediately preceding month-end's clean price, accrued
-interest, interim coupons, and verified/assumed redemption price. It uses a
-30/360 coupon-accrual approximation and leaves noncomputable returns blank.
-These are research estimates, not audited cash flows. The backtest does NOT
-consume these estimates automatically, and raw returns remain unchanged.
+A bond disappearing from the filtered AGG source is NOT proof of redemption.
+WRDS NEXT_CALL_PRICE is a contractual schedule term, NOT a realized payoff.
+When a full redemption is confirmed but its make-whole premium is unknown,
+the listed 100.0 is a CONSERVATIVE principal-only assumption, not an exact price.
 
-Primary documents reviewed:
+Terminal holding-period return (all dollar figures per $100 face value):
+
+    R_terminal = (P_redemption + AI_redemption + C_interim) / (P_t + AI_t) - 1
+
+where:
+  P_t            last observed clean purchase-date/month-end bond price;
+  AI_t           accrued interest at that valuation date;
+  P_redemption   verified or clearly labeled assumed redemption principal
+                 payoff, as a percentage of $100 face value;
+  AI_redemption  accrued interest payable on the redemption date, excluding
+                 interest separately paid as an interim coupon; and
+  C_interim      sum of separate coupon payments between valuation and exit.
+
+The scan calculates an indicative return for the month preceding the event,
+with a 30/360 coupon approximation, and reports R_terminal as a decimal and
+R_terminal_pct in percent. A coupon paid on the redemption date is counted
+only once; do not double-count it as both accrued interest and an interim coupon.
+Compare to observed RET_EOM before substituting it in any backtest. The scan
+does NOT change the portfolio, raw returns, eligibility or benchmark.
+
+Issuer/SEC sources reviewed (examples):
 Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
 Kroger: https://www.sec.gov/Archives/edgar/data/56873/000110465926037723/kr-20260131x10k.htm
 Micron: https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-20260903.htm
-CA Inc/Broadcom: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
+CA/Broadcom: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
 Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef20021903_8k.htm
-Broadcom/CA/VMware redemptions: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
-Dominion South Carolina 2019 PARTIAL tender (837004CK4): https://investors.dominionenergy.com/news/press-release-details/2019/SCEG-Announces-Expiration-Final-Results-of-Its-Any-and-All-Tender-Offer/default.aspx
-Victory Income Fund Sep 2026 holdings, same CUSIP: https://investor.vcm.com/assets/victoryMF/allholdings-pdf/Victory_Income_Fund_Holdings.pdf
+Targa 2025 repayment: https://www.sec.gov/Archives/edgar/data/1389170/000119312526059296/trgp-20251231.htm
+Targa 2027 call schedule: https://www.sec.gov/Archives/edgar/data/1379661/000119312519009886/d683680dex101.htm
 Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
-EQM: https://ir.eqt.com/investor-relations/news/news-release-details/2024/Early-Results-and-Upsizing-of-EQM-Midstream-Partners-LPs-Tender-Offer-and-Consent-Solicitation-for-Certain-of-its-Senior-Notes/default.aspx
 """
 
 from pathlib import Path
@@ -41,7 +53,11 @@ REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
 OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
-# Verified FULL redemption (event date, principal payout per $100 face).\n# Excludes accrued interest and any separately payable coupon. For issues with\n# unverified make-whole premiums, assume 100.0 (conservative PAR-ONLY proxy);\n# those CUSIPs are labeled in ASSUMED_PAR_REDEMPTIONS below.\n# NEVER infer an actual executed redemption price from WRDS NEXT_CALL_PRICE.
+# Verified FULL redemption (event date, principal payout per $100 face).
+# Excludes accrued interest and any separately payable coupon. For issues with
+# unverified make-whole premiums, assume 100.0 (conservative PAR-ONLY proxy);
+# those CUSIPs are labeled in ASSUMED_PAR_REDEMPTIONS below.
+# NEVER infer an actual executed redemption price from WRDS NEXT_CALL_PRICE.
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),   # Tapestry
     '876030AE7': ('2024-11-25', 101.0),
@@ -60,6 +76,7 @@ EARLY_REDEMPTIONS = {
     '12673PAJ4': ('2025-10-23', 100.0),    # CA Inc 4.700% 2027: 100% base + make-whole
     '11134LAH2': ('2025-10-23', 100.0),    # Broadcom Corp 3.875% 2027
     '928563AE5': ('2025-10-03', 100.0),    # VMware 4.650% 2027
+    '87612BBL5': ('2025-07-15', 100.0),    # Targa 6.500% 2027: full redemption at par
 }
 
 # Conservative 100%-of-face principal proxies where make-whole cash premium
@@ -212,64 +229,10 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
 
 
 def number(value):
-    """Read a bond cash field, allowing source $/comma/percent formatting."""
+    """Read cash amounts, allowing source $, commas, and percent signs."""
     if pd.isna(value):
         return float('nan')
-    clean = str(value).strip().replace('
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--bonds', type=Path, default=DEFAULT_BONDS)
-    parser.add_argument('--wrds', type=Path, default=REFERENCE)
-    parser.add_argument('--output', type=Path, default=OUTPUT)
-    parser.add_argument('--start', default=START_MONTH)
-    parser.add_argument('--end', default=END_MONTH)
-    parser.add_argument('--all-history', action='store_true',
-                        help='Include suspected exits before the backtest window')
-    args = parser.parse_args()
-
-    wrds = read_wrds(args.wrds)
-    bonds, sample_end, source_rows = read_last_bond_observations(args.bonds)
-    result, all_exits = scan(bonds, wrds, sample_end,
-                             pd.Period(args.start, 'M'), pd.Period(args.end, 'M'),
-                             args.all_history)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(args.output, index=False)
-
-    print('\nEARLY REDEMPTION REVIEW (NOT CONFIRMED REDEMPTIONS)')
-    print(f'AGG observations: {source_rows:,} | Unique bonds: {len(bonds):,}')
-    print(f'WRDS CUSIPs: {len(wrds):,} | Last source month: {sample_end}')
-    print(f'Potential premature exits before prior-review exclusions: {all_exits:,}')
-    print(f'Previously confirmed redemptions excluded: {len(EARLY_REDEMPTIONS):,}')
-    print(f'Other previously reviewed CUSIPs excluded: {len(REVIEWED_NON_REDEMPTIONS):,}')
-    print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
-    if not result.empty:
-        print(result.review_priority.value_counts().sort_index().to_string())
-        print('\nALL FLAGGED BONDS FOR REVIEW:')
-        print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
-                      'contractual_maturity']].to_string(index=False, max_rows=None))
-    verified_path = args.output.with_name('verified_early_redemptions.csv')
-    verified = pd.DataFrame([
-        {'cusip': cusip, 'redemption_date': date,
-         'redemption_price_pct_par_ex_accrued': price,
-         'status': ('ASSUMED PAR - MAKE-WHOLE PREMIUM UNVERIFIED'
-                    if cusip in ASSUMED_PAR_REDEMPTIONS
-                    else 'DISCLOSED REDEMPTION PRICE')}
-        for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
-    ]).merge(
-        compute_terminal_returns(args.bonds), on='cusip',
-        how='left', validate='one_to_one'
-    )
-    verified.to_csv(verified_path, index=False)
-    print(f'Verified redemptions and R_terminal saved: {verified_path}')
-    print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
-                    'calculation_status']].to_string(index=False))
-    print(f'Saved: {args.output}')
-    print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
-    print('Do not use this report for point-in-time investment eligibility.')
-
-
-if __name__ == '__main__':
-    main()
-, '').replace(',', '').rstrip('%')
+    clean = str(value).strip().replace('$', '').replace(',', '').rstrip('%')
     return pd.to_numeric(clean, errors='coerce')
 
 
@@ -419,7 +382,6 @@ def compute_terminal_returns(bond_path):
         output.append(info)
     return pd.DataFrame(output)
 
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bonds', type=Path, default=DEFAULT_BONDS)
@@ -452,18 +414,25 @@ def main():
         print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
                       'contractual_maturity']].to_string(index=False, max_rows=None))
     verified_path = args.output.with_name('verified_early_redemptions.csv')
-    pd.DataFrame([
+    verified = pd.DataFrame([
         {'cusip': cusip, 'redemption_date': date,
          'redemption_price_pct_par_ex_accrued': price,
          'status': ('ASSUMED PAR - MAKE-WHOLE PREMIUM UNVERIFIED'
                     if cusip in ASSUMED_PAR_REDEMPTIONS
                     else 'DISCLOSED REDEMPTION PRICE')}
         for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
-    ]).to_csv(verified_path, index=False)
-    print(f'Verified redemption list saved: {verified_path}')
+    ]).merge(
+        compute_terminal_returns(args.bonds), on='cusip',
+        how='left', validate='one_to_one'
+    )
+    verified.to_csv(verified_path, index=False)
+    print(f'Verified redemptions and R_terminal saved: {verified_path}')
+    print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
+                    'calculation_status']].to_string(index=False))
     print(f'Saved: {args.output}')
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
+
 
 
 if __name__ == '__main__':
