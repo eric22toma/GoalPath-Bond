@@ -17,6 +17,7 @@ Primary documents reviewed:
 Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
 Kroger: https://www.sec.gov/Archives/edgar/data/56873/000110465926037723/kr-20260131x10k.htm
 Micron: https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-20260903.htm
+CA Inc/Broadcom: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
 Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef20021903_8k.htm
 Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
 EQM: https://ir.eqt.com/investor-relations/news/news-release-details/2024/Early-Results-and-Upsizing-of-EQM-Midstream-Partners-LPs-Tender-Offer-and-Consent-Solicitation-for-Certain-of-its-Senior-Notes/default.aspx
@@ -49,6 +50,7 @@ EARLY_REDEMPTIONS = {
     '91911TAP8': ('2024-07-25', None),    # Vale make-whole
     '595112BV4': ('2025-10-24', None),    # Micron 2029 B
     '595112CA9': ('2025-10-24', None),    # Micron 2028
+    '12673PAJ4': ('2025-10-23', None),    # CA Inc / Broadcom, make-whole + accrued interest
 }
 
 # Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
@@ -63,7 +65,7 @@ REVIEWED_NON_REDEMPTIONS = {
     '20605PAJ0', '84861TAG3', '03349MAB1',
     '92343VDU5', '92343VDV3', '26885BAE0',
     '485170AQ7', '485170BC7',
-    '11134LAH2', '12673PAJ4', '84861TAJ7', '264414AX1',
+    '11134LAH2', '84861TAJ7', '264414AX1',
     '92340LAC3', '928563AE5',
 }
 
