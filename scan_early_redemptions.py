@@ -1,8 +1,8 @@
-"""One-time AGG premature-disappearance audit with reviewed exceptions.
+"""One-time AGG premature data disappearance audit for select bonds.
+This file cross-references zipped AGG observations against WRDS callable-bond data
+to flag bonds that may have been redeemed early. Flagged bonds 
+were reviewed against SEC filings and the FINRA fixed income site.
 
-Run from VS Code or: python scan_early_redemptions.py
-Cross-reference zipped AGG observations against WRDS callable-bond data.
-Redemption exceptions were reviewed against issuer/SEC filings and notices.
 The confirmed full redemption events live in EARLY_REDEMPTIONS; reviewed
 non-redemptions, debt exchanges and partial tenders are excluded separately.
 These and the separately recorded month-verified redemptions and regular
@@ -15,7 +15,6 @@ When a full redemption is confirmed but its make-whole premium is unknown,
 the listed 100.0 is a CONSERVATIVE principal-only assumption, not an exact price.
 
 Terminal holding-period return (all dollar figures per $100 face value):
-
     R_terminal = (P_redemption + AI_redemption + C_interim) / (P_t + AI_t) - 1
 
 where:
@@ -33,27 +32,6 @@ R_terminal_pct in percent. A coupon paid on the redemption date is counted
 only once; do not double-count it as both accrued interest and an interim coupon.
 Compare to observed RET_EOM before substituting it in any backtest. The scan
 does NOT change the portfolio, raw returns, eligibility or benchmark.
-
-FINRA bond lookup was also used for CUSIP-specific call and trade history,
-including https://www.finra.org/finra-data/fixed-income/bond?cusip=23317HAF9&bondType=CA .
-A scheduled call provision alone does not prove an exercised call.
-
-Issuer/SEC sources reviewed (examples):
-Tapestry: https://tapestry.gcs-web.com/static-files/46cd29c5-330c-443d-a130-8b77d86ae650
-Kroger: https://www.sec.gov/Archives/edgar/data/56873/000110465926037723/kr-20260131x10k.htm
-Micron: https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-20260903.htm
-CA/Broadcom: https://www.sec.gov/Archives/edgar/data/1730168/000119312525223202/d60592d8k.htm
-Vulcan: https://www.sec.gov/Archives/edgar/data/1396009/000114036124008449/ef20021903_8k.htm
-Targa 2025 repayment: https://www.sec.gov/Archives/edgar/data/1389170/000119312526059296/trgp-20251231.htm
-Targa 2027 call schedule: https://www.sec.gov/Archives/edgar/data/1379661/000119312519009886/d683680dex101.htm
-Verizon: https://www.verizon.com/about/news/verizon-announces-accepted-amounts
-Dollar General: https://www.sec.gov/Archives/edgar/data/29534/000110465926040416/tm265050d2_ars.pdf
-SITE Centers: https://financialfilings.com/filings/site-centers-corp/annual-report/2025/9961393/
-Office Properties: https://www.sec.gov/Archives/edgar/data/1456772/000145677225000013/opi-20241231.htm
-Arrow: https://www.sec.gov/Archives/edgar/data/7536/000155837024006456/arw-20240330x10q.htm
-Cheniere: https://www.sec.gov/Archives/edgar/data/1693317/000169331724000007/R24.htm
-Charter still outstanding 2Q25: https://ir.charter.com/static-files/d3aaacc7-263c-4172-9927-a86244604a8f
-Booking still outstanding 2025: https://www.sec.gov/Archives/edgar/data/1100663/000175272425157880/primary_doc.xml
 """
 
 from pathlib import Path
