@@ -152,7 +152,7 @@ EARLY_REDEMPTIONS = {
     '20030NBN0': ('2025-06-05', 100),  # Comcast; FINRA date supplied by user
     '29250RAW6': ('2025-07-28', 100),  # Enbridge Energy Partners; FINRA date supplied by user
     '931427AB4': ('2025-09-29', 100),  # Walgreens Boots Alliance; FINRA date supplied by user
-    '931427AC2': ('', 100),  # Walgreens Boots Alliance; date not independently confirmed
+    '931427AC2': ('2025-09-29', 100),  # Walgreens Boots Alliance; date not independently confirmed
     '98978VAK9': ('2025-09-17', 100),  # Zoetis; FINRA date supplied by user
     '58013MEY6': ('2025-11-03', 100),  # McDonald's; FINRA date supplied by user
     '279158AL3': ('2024-11-21', 100.763),  # Ecopetrol; exact call date and 100.763% verified
