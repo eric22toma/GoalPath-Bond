@@ -89,22 +89,22 @@ EARLY_REDEMPTIONS = {
     '035240AL4': ('2025-05-30', 100),  # Anheuser-Busch InBev Worldwide
     '866677AK3': ('2025-05-10', 106.153),  # Sun Communities 2029
     '866677AJ6': ('2025-05-10', 108.588),  # Sun Communities 2033
-    '74348TAU6': ('2025-06-18', 100),  # Prospect Capital
-    '026874DH7': ('2025-06-26', 100),  # AIG
-    '21036PBN7': ('2025-06-12', 100),  # Constellation Brands
-    '52107QAH8': ('2025-09-18', 100),  # Lazard
-    '55336VAJ9': ('2025-04-09', 100),  # MPLX
-    '674599EE1': ('2025-03-31', 100),  # Month-end proxy: Q1 2025 period end
-    '674599EB7': ('2025-06-30', 100),  # Month-end proxy: Q2 2025 period end
-    '674599DC6': ('2025-06-30', 100),  # Month-end proxy: Q2 2025 period end
-    '92343VDD3': ('2025-04-23', 100),  # Verizon
-    '559222AX2': ('2025-05-23', 100),  # Magna
-    '65163LAQ2': ('2025-02-07', 100),  # Newmont/Newcrest
-    '125523CR9': ('2025-03-31', 100),  # Month-end proxy: Q1 2025 period end
-    '302491AW5': ('2025-06-30', 100),  # Month-end proxy: May-June 2025 period end
-    '651229AW6': ('2025-05-31', 100),  # Newell Rubbermaid
-    '00751YAH9': ('2025-10-31', 100),  # Month-end proxy: fiscal Q3 2025 period end
-    '031162DN7': ('2025-12-31', 100),  # Month-end proxy: 2025 known only; conservative year-end
+    '74348TAU6': ('2025-06-18', 100.0),  # Prospect Capital
+    '026874DH7': ('2025-06-26', 100.0),  # AIG
+    '21036PBN7': ('2025-06-12', 100.0),  # Constellation Brands
+    '52107QAH8': ('2025-09-18', 100.0),  # Lazard
+    '55336VAJ9': ('2025-04-09', 100.0),  # MPLX
+    '674599EE1': ('2025-03-31', 100.0),  # Month-end proxy: Q1 2025 period end
+    '674599EB7': ('2025-06-30', 100.0),  # Month-end proxy: Q2 2025 period end
+    '674599DC6': ('2025-06-30', 100.0),  # Month-end proxy: Q2 2025 period end
+    '92343VDD3': ('2025-04-23', 100.0),  # Verizon
+    '559222AX2': ('2025-05-23', 100.0),  # Magna
+    '65163LAQ2': ('2025-02-07', 100.0),  # Newmont/Newcrest
+    '125523CR9': ('2025-03-31', 100.0),  # Month-end proxy: Q1 2025 period end
+    '302491AW5': ('2025-06-30', 100.0),  # Month-end proxy: May-June 2025 period end
+    '651229AW6': ('2025-05-31', 100.0),  # Newell Rubbermaid
+    '00751YAH9': ('2025-10-31', 100.0),  # Month-end proxy: fiscal Q3 2025 period end
+    '031162DN7': ('2025-12-31', 100.0),  # Month-end proxy: 2025 known only; conservative year-end
     '95000U2K8': ('2025-02-11', 100.0),  # Wells Fargo; redemption date not yet recorded
     '198280AF6': ('2025-03-24', 100.0),  # Columbia Pipeline; redemption date not yet recorded
     '26885BAC4': ('2025-05-01', 100.0),  # EQM Midstream; redemption date not yet recorded
