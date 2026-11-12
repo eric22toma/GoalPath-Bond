@@ -4,13 +4,13 @@ Run from VS Code or: python scan_early_redemptions.py
 Cross-reference zipped AGG observations against WRDS callable-bond data.
 Exceptions were individually checked against SEC 8-K/10-K issuer filings,
 issuer notices, and SEC bond holdings. EARLY_REDEMPTIONS stores full cash
-redemptions with known dates and prices (None when price is unverified);
+redemptions with dates and payoff assumptions (par proxies clearly labeled);
 REVIEWED_NON_REDEMPTIONS stores continuing issues, partial tenders and earlier
 exchanges, not full redemptions during their flagged months.
 Both groups are excluded from future exception reports. Unresolved flags remain.
 
 Disappearance from the filtered AGG source is NOT proof of a redemption.
-WRDS NEXT_CALL_PRICE is not necessarily a realized redemption price.
+WRDS NEXT_CALL_PRICE is not necessarily a realized redemption price.\nFor verified full redemptions with unverified make-whole premiums, 100.0 is\na CONSERVATIVE principal-only proxy, not a confirmed redemption price.
 The script does not change any model, backtest or raw bond returns.
 
 Primary documents reviewed:
@@ -34,8 +34,7 @@ REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
 OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Match the current backtest decision-month window.
 END_MONTH = '2025-10'
-# Verified FULL cash redemption (date, percent of par EXCLUDING accrued interest).
-# None = exact payoff not yet established; NEVER infer it from NEXT_CALL_PRICE.
+# Verified FULL redemption (event date, principal payout per $100 face).\n# Excludes accrued interest and any separately payable coupon. For issues with\n# unverified make-whole premiums, assume 100.0 (conservative PAR-ONLY proxy);\n# those CUSIPs are labeled in ASSUMED_PAR_REDEMPTIONS below.\n# NEVER infer an actual executed redemption price from WRDS NEXT_CALL_PRICE.
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),   # Tapestry
     '876030AE7': ('2024-11-25', 101.0),
@@ -43,17 +42,24 @@ EARLY_REDEMPTIONS = {
     '501044DS7': ('2024-12-18', 101.0),   # Kroger
     '501044DT5': ('2024-12-18', 101.0),
     '501044DU2': ('2024-12-18', 101.0),
-    '76132FAC1': ('2025-02-22', None),    # Retail Opportunity, make-whole
-    '595112BP7': ('2025-05-27', None),    # Micron 2027
+    '76132FAC1': ('2025-02-22', 100.0),    # Retail Opportunity, make-whole
+    '595112BP7': ('2025-05-27', 100.0),    # Micron 2027
     '46590XAZ9': ('2025-07-03', 102.478), # JBS
     '929160BA6': ('2024-03-01', 100.0),   # Vulcan, redeemed at par
     '750236AX9': ('2024-03-19', 100.396), # Radian
-    '91911TAP8': ('2024-07-25', None),    # Vale make-whole
-    '595112BV4': ('2025-10-24', None),    # Micron 2029 B
-    '595112CA9': ('2025-10-24', None),    # Micron 2028
-    '12673PAJ4': ('2025-10-23', None),    # CA Inc 4.700% 2027: 100% base + make-whole
-    '11134LAH2': ('2025-10-23', None),    # Broadcom Corp 3.875% 2027
-    '928563AE5': ('2025-10-03', None),    # VMware 4.650% 2027
+    '91911TAP8': ('2024-07-25', 100.0),    # Vale make-whole
+    '595112BV4': ('2025-10-24', 100.0),    # Micron 2029 B
+    '595112CA9': ('2025-10-24', 100.0),    # Micron 2028
+    '12673PAJ4': ('2025-10-23', 100.0),    # CA Inc 4.700% 2027: 100% base + make-whole
+    '11134LAH2': ('2025-10-23', 100.0),    # Broadcom Corp 3.875% 2027
+    '928563AE5': ('2025-10-03', 100.0),    # VMware 4.650% 2027
+}
+
+# Conservative 100%-of-face principal proxies where make-whole cash premium
+# was not verified. These are *not* confirmed clean redemption prices.
+ASSUMED_PAR_REDEMPTIONS = {
+    '76132FAC1', '595112BP7', '91911TAP8', '595112BV4',
+    '595112CA9', '12673PAJ4', '11134LAH2', '928563AE5',
 }
 
 # Reviewed through issuer/SEC materials: continuing bonds, partial tenders or
@@ -232,8 +238,9 @@ def main():
     pd.DataFrame([
         {'cusip': cusip, 'redemption_date': date,
          'redemption_price_pct_par_ex_accrued': price,
-         'status': ('PAYOFF VERIFIED' if price is not None
-                    else 'REDEMPTION VERIFIED - PRICE UNVERIFIED')}
+         'status': ('ASSUMED PAR - MAKE-WHOLE PREMIUM UNVERIFIED'
+                    if cusip in ASSUMED_PAR_REDEMPTIONS
+                    else 'DISCLOSED REDEMPTION PRICE')}
         for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
     ]).to_csv(verified_path, index=False)
     print(f'Verified redemption list saved: {verified_path}')
