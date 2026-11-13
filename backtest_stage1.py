@@ -253,7 +253,19 @@ def main():
                 continue
             try:
                 stage = build_inputs(bundle, pretrade_state=state['pretrade_state'],candidate_count=n, initial_capital=state['capital'],use_forecasts=(model == 'elastic_net'))
-                answer, metrics = run_solver(stage, method=method, k=k)[method]
+                #answer, metrics = run_solver(stage, method=method, k=k)[method]
+
+                time_limit = (
+                    120 if asof == pd.Period('2023-12', 'M')
+                    and method == 'exact'
+                    and k in (10, 25)
+                    else 60
+                )
+
+                answer, metrics = run_solver(
+                    stage, method=method, k=k, time_limit=time_limit
+                )[method]
+                
                 held, portfolio_return, benchmark_return, coverage, benchmark = evaluate_month(stage, answer)
                 next_state = settle_portfolio(held, portfolio_return)
             except (RuntimeError, ValueError) as exc:
