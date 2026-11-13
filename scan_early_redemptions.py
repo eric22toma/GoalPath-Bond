@@ -27,134 +27,134 @@ Note that redeemed bonds without a provided redemption price were defauted
 to face value rdemptions of $100 per $100 face value. '''
 
 EARLY_REDEMPTIONS = {
-    '876030AD9': ('2024-11-25', 101.0),
-    '876030AE7': ('2024-11-25', 101.0),
-    '876030AF4': ('2024-11-25', 101.0),
-    '501044DS7': ('2024-12-18', 101.0),
-    '501044DT5': ('2024-12-18', 101.0),
-    '501044DU2': ('2024-12-18', 101.0),
-    '76132FAC1': ('2025-02-22', 100.0),
-    '595112BP7': ('2025-05-27', 100.0),
-    '46590XAZ9': ('2025-07-03', 102.478),
-    '929160BA6': ('2024-03-01', 100.0),
-    '750236AX9': ('2024-03-19', 100.396),
-    '91911TAP8': ('2024-07-25', 100.0),
-    '595112BV4': ('2025-10-24', 100.0),
-    '595112CA9': ('2025-10-24', 100.0),
-    '12673PAJ4': ('2025-10-23', 100.0),
-    '11134LAH2': ('2025-10-23', 100.0),
-    '928563AE5': ('2025-10-03', 100.0),
-    '87612BBL5': ('2025-07-15', 100.0),
-    '256677AE5': ('2025-09-30', 100.0),
-    '23317HAF9': ('2024-08-21', 100.0),
-    '81618TAE0': ('2024-03-31', 100.0),
-    '04273WAD3': ('2024-04-30', 100.0),
-    '16412XAC9': ('2024-04-30', 100.0),
-    '14162VAB2': ('2025-07-31', 100.0),
-    '29250NBQ7': ('2024-03-08', 100.0),
-    '462613AM2': ('2024-04-30', 100.0),
-    '14448CBB9': ('2024-06-30', 100.0),
-    '29364WBK3': ('2024-08-31', 100.0),
-    '581557BS3': ('2024-09-30', 100.0),  # Month-end proxy: September 2024 redemption following refinancing
-    '42824CBM0': ('2024-10-31', 100.0),  # Hewlett Packard Enterprise
-    '71429MAB1': ('2024-10-02', 100.0),
-    '444859BW1': ('2024-11-30', 100.0),
-    '559080AK2': ('2025-12-31', 100.0),  # Month-end proxy: 2025 known only; conservative year-end
-    '844741BJ6': ('2024-12-31', 100.0),
-    '92556HAA5': ('2024-12-27', 100.0),
-    '92940PAB0': ('2024-12-06', 100.0),
-    '370334CS1': ('2025-02-28', 100.0),  # Month-end proxy: fiscal 2025 Q3 period end
-    '361841AJ8': ('2025-03-03', 100.0),
-    '436106AA6': ('2025-02-16', 100.0),
-    '53522KAB9': ('2025-02-28', 100.0),
-    '55903VBG7': ('2025-02-28', 100.0),
-    '595112BM4': ('2025-02-28', 100.0),
-    '636180BQ3': ('2025-03-06', 100.0),
-    '876030AB3': ('2024-11-25', 101.0),  # Tapestry 2025 notes
-    '876030AC1': ('2024-11-25', 101.0),  # Tapestry 2026 notes
-    '501044DR9': ('2024-12-18', 101.0),  # Kroger 2026 notes
-    '24703TAC0': ('2024-10-11', 100.0),  # Dell International / EMC; redemption date not yet recorded
-    '95001DCG3': ('2024-10-28', 100.0),  # Wells Fargo; redemption date not yet recorded
-    '00206RMP4': ('2024-11-09', 100.0),  # AT&T; redemption date not yet recorded
-    '31572UAG1': ('2024-11-14', 100.0),  # Fibria Overseas; redemption date not yet recorded
-    '097023CT0': ('2024-12-20', 100.0),  # Boeing; redemption date not yet recorded
-    '025816CQ0': ('2025-02-03', 100.0),  # American Express; redemption date not yet recorded
-    '035240AL4': ('2025-05-30', 100),  # Anheuser-Busch InBev Worldwide
-    '866677AK3': ('2025-05-10', 106.153),  # Sun Communities 2029
-    '866677AJ6': ('2025-05-10', 108.588),  # Sun Communities 2033
-    '74348TAU6': ('2025-06-18', 100.0),  # Prospect Capital
-    '026874DH7': ('2025-06-26', 100.0),  # AIG
-    '21036PBN7': ('2025-06-12', 100.0),  # Constellation Brands
-    '52107QAH8': ('2025-09-18', 100.0),  # Lazard
-    '55336VAJ9': ('2025-04-09', 100.0),  # MPLX
-    '674599EE1': ('2025-03-31', 100.0),  # Month-end proxy: Q1 2025 period end
-    '674599EB7': ('2025-06-30', 100.0),  # Month-end proxy: Q2 2025 period end
-    '674599DC6': ('2025-06-30', 100.0),  # Month-end proxy: Q2 2025 period end
-    '92343VDD3': ('2025-04-23', 100.0),  # Verizon
-    '559222AX2': ('2025-05-23', 100.0),  # Magna
-    '65163LAQ2': ('2025-02-07', 100.0),  # Newmont/Newcrest
-    '125523CR9': ('2025-03-31', 100.0),  # Month-end proxy: Q1 2025 period end
-    '302491AW5': ('2025-06-30', 100.0),  # Month-end proxy: May-June 2025 period end
-    '651229AW6': ('2025-05-31', 100.0),  # Newell Rubbermaid
-    '00751YAH9': ('2025-10-31', 100.0),  # Month-end proxy: fiscal Q3 2025 period end
-    '031162DN7': ('2025-12-31', 100.0),  # Month-end proxy: 2025 known only; conservative year-end
-    '95000U2K8': ('2025-02-11', 100.0),  # Wells Fargo; redemption date not yet recorded
-    '198280AF6': ('2025-03-24', 100.0),  # Columbia Pipeline; redemption date not yet recorded
-    '26885BAC4': ('2025-05-01', 100.0),  # EQM Midstream; redemption date not yet recorded
-    '025816CY3': ('2025-07-01', 100.0),  # American Express; redemption date not yet recorded
-    '81180WAR2': ('2025-06-11', 100.0),  # Seagate; redemption date not yet recorded
-    '37045VAV2': ('2025-09-01', 100.0),  # General Motors; redemption date not yet recorded
-    '403949AB6': ('2025-08-30', 100.0),  # HF Sinclair; redemption date not yet recorded
-    '403949AP5': ('2025-08-31', 100.0),  # Month-end proxy: last observed AGG month
-    '44106MAV4': ('2025-09-04', 100.0),  # Hospitality Properties; redemption date not yet recorded
-    '87264AAT2': ('2025-09-01', 100.0),  # T-Mobile USA; redemption date not yet recorded
-    '98978VAU7': ('2025-08-28', 100.0),  # Zoetis; redemption date not yet recorded
-    '023135BN5': ('2025-09-05', 100.0),  # Amazon; redemption date not yet recorded
-    '28622HAA9': ('2025-09-19', 100.0),  # Elevance Health; redemption date not yet recorded
-    '361841AH2': ('2025-09-12', 100.0),  # GLP Capital; redemption date not yet recorded
-    '674599CH6': ('2025-09-30', 100.0),  # Occidental Petroleum; redemption date not yet recorded
-    '931427AQ1': ('2025-09-30', 100.0),  # Walgreens Boots Alliance; month-end proxy
-    '966837AE6': ('2025-09-30', 100.0),  # Whole Foods Market; month-end proxy
-    '85207UAK1': ('2025-10-31', 100.0),  # Sprint; month-end proxy
-    '302491AS4': ('2023-12-21', 100.0),  # FMC Corporation; reported actual redemption date
-    '44106MAS1': ('2023-12-09', 100.0),  # Service Properties Trust; reported actual redemption date
-    '81721MAK5': ('2024-01-31', 100.0),  # Diversified Healthcare Trust; month-end proxy from last observed month
-    '559080AH9': ('2024-02-29', 100.0),  # Magellan / ONEOK; month-end proxy, actual call date requires reconciliation
-    '013817AW1': ('2024-07-01', 100.0),  # Howmet Aerospace; reported actual redemption date
-    '105340AN3': ('2024-06-07', 100.0),  # Brandywine Operating Partnership; reported actual redemption date
-    '887389AJ3': ('2024-06-24', 100.0),  # Timken Company; reported actual redemption date
-    '896522AH2': ('2024-06-25', 100.0),  # Trinity Industries; reported actual redemption date
-    '01959EAC2': ('2024-07-24', 100.0),  # Allied World Assurance; reported actual redemption date
-    '202795JE1': ('2024-07-31', 100.0),  # Commonwealth Edison; month-end proxy from last observed month
-    '23317HAD4': ('2024-08-23', 100.0),  # SITE Centers 2025; reported actual redemption date
-    '23317HAE2': ('2024-08-23', 99.4),  # SITE Centers 2026; redemption price per user, reported actual redemption date
-    '256677AD7': ('2025-04-29', 100),  # Dollar General; FINRA date supplied by user
-    '174610AJ4': ('2025-07-03', 100),  # Citizens Financial; issuer notice redemption date
-    '21036PAP3': ('2025-07-02', 100),  # Constellation Brands; issuer notice redemption date
-    '88947EAR1': ('2025-07-15', 100),  # Toll Brothers; FINRA date supplied by user
-    '06652KAA1': ('2025-08-22', 100),  # BankUnited; full-call notice date
-    '25179MAV5': ('2025-09-15', 100),  # Devon Energy; FINRA date supplied by user
-    '86765BAS8': ('2025-09-22', 100),  # Energy Transfer; FINRA date supplied by user
-    '843646AM2': ('2025-10-21', 100),  # Southern Power; FINRA date supplied by user
-    '681936BH2': ('2025-10-15', 100),  # Omega Healthcare; FINRA date supplied by user
-    '174610AK1': ('2025-11-03', 100),  # Citizens Financial; issuer notice redemption date
-    '92345YAD8': ('2025-04-21', 100),  # Verisk Analytics; FINRA date supplied by user
-    '12505BAD2': ('2025-05-28', 100.17),  # CBRE Services; FINRA date supplied by user
-    '053015AE3': ('2025-06-15', 100),  # Automatic Data Processing; FINRA date supplied by user
-    '09062XAF0': ('2025-06-27', 100),  # Biogen; FINRA date supplied by user
-    '20030NBN0': ('2025-06-05', 100),  # Comcast; FINRA date supplied by user
-    '29250RAW6': ('2025-07-28', 100),  # Enbridge Energy Partners; FINRA date supplied by user
-    '931427AB4': ('2025-09-29', 100),  # Walgreens Boots Alliance; FINRA date supplied by user
-    '931427AC2': ('2025-09-29', 100),  # Walgreens Boots Alliance; date not independently confirmed
-    '98978VAK9': ('2025-09-17', 100),  # Zoetis; FINRA date supplied by user
-    '58013MEY6': ('2025-11-03', 100),  # McDonald's; FINRA date supplied by user
-    '279158AL3': ('2024-11-21', 100.763),  # Ecopetrol; exact call date and 100.763% verified
-    '47102XAJ4': ('2024-11-07', 100),  # Janus Henderson; exact call date verified; principal price per user
-    '85207UAJ4': ('2024-11-15', 100),  # Sprint; exact call date verified
-    '674599CG8': ('2024-12-30', 100),  # Occidental Petroleum; FINRA date supplied by user
-    '68268NAP8': ('2024-12-15', 100),  # ONEOK Partners; FINRA date supplied by user
-    '898813AP5': ('2024-12-16', 100),  # Tucson Electric Power; FINRA date supplied by user
-    '025816BK4': ('2024-11-04', 100),  # American Express; FINRA date supplied by user
+    '876030AD9': ('2024-11-25', 101.0),  # Tapestry Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '876030AE7': ('2024-11-25', 101.0),  # Tapestry Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '876030AF4': ('2024-11-25', 101.0),  # Tapestry Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '501044DS7': ('2024-12-18', 101.0),  # Kroger Co; issuer/SEC-reported date; not independently checked against FINRA
+    '501044DT5': ('2024-12-18', 101.0),  # Kroger Co; issuer/SEC-reported date; not independently checked against FINRA
+    '501044DU2': ('2024-12-18', 101.0),  # Kroger Co; issuer/SEC-reported date; not independently checked against FINRA
+    '76132FAC1': ('2025-02-22', 100.0),  # Retail Opportunity Investments Partnership LP; date retained from prior audit; official FINRA source not documented
+    '595112BP7': ('2025-05-27', 100.0),  # Micron Technology Inc; date retained from prior audit; official FINRA source not documented
+    '46590XAZ9': ('2025-07-03', 102.478),  # JBS USA / JBS USA Finance; date retained from prior audit; official FINRA source not documented
+    '929160BA6': ('2024-03-01', 100.0),  # Vulcan Materials Co; issuer/SEC-reported date; not independently checked against FINRA
+    '750236AX9': ('2024-03-19', 100.396),  # Radian Group Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '91911TAP8': ('2024-07-25', 100.0),  # Vale Overseas Ltd; issuer/SEC-reported date; not independently checked against FINRA
+    '595112BV4': ('2025-10-24', 100.0),  # Micron Technology Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '595112CA9': ('2025-10-24', 100.0),  # Micron Technology Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '12673PAJ4': ('2025-10-23', 100.0),  # CA Inc; date retained from prior audit; official FINRA source not documented
+    '11134LAH2': ('2025-10-23', 100.0),  # Broadcom Corp / Broadcom Cayman Finance Ltd; date retained from prior audit; official FINRA source not documented
+    '928563AE5': ('2025-10-03', 100.0),  # VMware Inc; date retained from prior audit; official FINRA source not documented
+    '87612BBL5': ('2025-07-15', 100.0),  # Targa Resources Partners LP; date retained from prior audit; official FINRA source not documented
+    '256677AE5': ('2025-09-30', 100.0),  # Dollar General Corp; month-end modelling proxy; not a confirmed FINRA date
+    '23317HAF9': ('2024-08-21', 100.0),  # DDR Corp (SITE Centers); date retained from prior audit; official FINRA source not documented
+    '81618TAE0': ('2024-03-31', 100.0),  # Select Income REIT; date retained from prior audit; official FINRA source not documented
+    '04273WAD3': ('2024-04-30', 100.0),  # Arrow Electronics Inc; date retained from prior audit; official FINRA source not documented
+    '16412XAC9': ('2024-04-30', 100.0),  # Cheniere Energy Inc; date retained from prior audit; official FINRA source not documented
+    '14162VAB2': ('2025-07-31', 100.0),  # Care Capital Properties LP; date retained from prior audit; official FINRA source not documented
+    '29250NBQ7': ('2024-03-08', 100.0),  # Enbridge Inc; date retained from prior audit; official FINRA source not documented
+    '462613AM2': ('2024-04-30', 100.0),  # IPALCO Enterprises Inc; date retained from prior audit; official FINRA source not documented
+    '14448CBB9': ('2024-06-30', 100.0),  # Carrier Global Corp; date retained from prior audit; official FINRA source not documented
+    '29364WBK3': ('2024-08-31', 100.0),  # Entergy Louisiana LLC; date retained from prior audit; official FINRA source not documented
+    '581557BS3': ('2024-09-30', 100.0),  # McKesson Corp; month-end modelling proxy; not a confirmed FINRA date
+    '42824CBM0': ('2024-10-31', 100.0),  # Hewlett Packard Enterprise Co; date retained from prior audit; official FINRA source not documented
+    '71429MAB1': ('2024-10-02', 100.0),  # Perrigo Finance Unlimited Co; date retained from prior audit; official FINRA source not documented
+    '444859BW1': ('2024-11-30', 100.0),  # Humana Inc; date retained from prior audit; official FINRA source not documented
+    '559080AK2': ('2025-12-31', 100.0),  # Magellan Midstream Partners LP; month-end modelling proxy; not a confirmed FINRA date
+    '844741BJ6': ('2024-12-31', 100.0),  # Southwest Airlines Co; date retained from prior audit; official FINRA source not documented
+    '92556HAA5': ('2024-12-27', 100.0),  # ViacomCBS Inc (Paramount Global); date retained from prior audit; official FINRA source not documented
+    '92940PAB0': ('2024-12-06', 100.0),  # WRKCo Inc (WestRock); date retained from prior audit; official FINRA source not documented
+    '370334CS1': ('2025-02-28', 100.0),  # General Mills Inc; month-end modelling proxy; not a confirmed FINRA date
+    '361841AJ8': ('2025-03-03', 100.0),  # GLP Capital LP / GLP Financing II Inc; date retained from prior audit; official FINRA source not documented
+    '436106AA6': ('2025-02-16', 100.0),  # HollyFrontier Corp; date retained from prior audit; official FINRA source not documented
+    '53522KAB9': ('2025-02-28', 100.0),  # Linde Inc; date retained from prior audit; official FINRA source not documented
+    '55903VBG7': ('2025-02-28', 100.0),  # WarnerMedia Holdings Inc; date retained from prior audit; official FINRA source not documented
+    '595112BM4': ('2025-02-28', 100.0),  # Micron Technology Inc; date retained from prior audit; official FINRA source not documented
+    '636180BQ3': ('2025-03-06', 100.0),  # National Fuel Gas Co; date retained from prior audit; official FINRA source not documented
+    '876030AB3': ('2024-11-25', 101.0),  # Tapestry Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '876030AC1': ('2024-11-25', 101.0),  # Tapestry Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '501044DR9': ('2024-12-18', 101.0),  # Kroger Co; issuer/SEC-reported date; not independently checked against FINRA
+    '24703TAC0': ('2024-10-11', 100.0),  # Dell International LLC / EMC Corp; date confirmed via official FINRA site (supplied by user)
+    '95001DCG3': ('2024-10-28', 100.0),  # Wells Fargo & Co; date confirmed via official FINRA site (supplied by user)
+    '00206RMP4': ('2024-11-09', 100.0),  # AT&T Inc; date confirmed via official FINRA site (supplied by user)
+    '31572UAG1': ('2024-11-14', 100.0),  # Fibria Overseas Finance Ltd; date confirmed via official FINRA site (supplied by user)
+    '097023CT0': ('2024-12-20', 100.0),  # Boeing Co; date confirmed via official FINRA site (supplied by user)
+    '025816CQ0': ('2025-02-03', 100.0),  # American Express Co; date confirmed via official FINRA site (supplied by user)
+    '035240AL4': ('2025-05-30', 100),  # Anheuser-Busch InBev Worldwide Inc; date retained from prior audit; official FINRA source not documented
+    '866677AK3': ('2025-05-10', 106.153),  # Sun Communities Operating LP; date retained from prior audit; official FINRA source not documented
+    '866677AJ6': ('2025-05-10', 108.588),  # Sun Communities Operating LP; date retained from prior audit; official FINRA source not documented
+    '74348TAU6': ('2025-06-18', 100.0),  # Prospect Capital Corp; date retained from prior audit; official FINRA source not documented
+    '026874DH7': ('2025-06-26', 100.0),  # American International Group Inc; date retained from prior audit; official FINRA source not documented
+    '21036PBN7': ('2025-06-12', 100.0),  # Constellation Brands Inc; date retained from prior audit; official FINRA source not documented
+    '52107QAH8': ('2025-09-18', 100.0),  # Lazard Group LLC; date retained from prior audit; official FINRA source not documented
+    '55336VAJ9': ('2025-04-09', 100.0),  # MPLX LP; date retained from prior audit; official FINRA source not documented
+    '674599EE1': ('2025-03-31', 100.0),  # Occidental Petroleum Corp; month-end modelling proxy; not a confirmed FINRA date
+    '674599EB7': ('2025-06-30', 100.0),  # Occidental Petroleum Corp; month-end modelling proxy; not a confirmed FINRA date
+    '674599DC6': ('2025-06-30', 100.0),  # Occidental Petroleum Corp; month-end modelling proxy; not a confirmed FINRA date
+    '92343VDD3': ('2025-04-23', 100.0),  # Verizon Communications Inc; date retained from prior audit; official FINRA source not documented
+    '559222AX2': ('2025-05-23', 100.0),  # Magna International Inc; date retained from prior audit; official FINRA source not documented
+    '65163LAQ2': ('2025-02-07', 100.0),  # Newmont Corp / Newcrest Finance Pty Ltd; date retained from prior audit; official FINRA source not documented
+    '125523CR9': ('2025-03-31', 100.0),  # The Cigna Group; month-end modelling proxy; not a confirmed FINRA date
+    '302491AW5': ('2025-06-30', 100.0),  # FMC Corp; month-end modelling proxy; not a confirmed FINRA date
+    '651229AW6': ('2025-05-31', 100.0),  # Newell Rubbermaid Inc; date retained from prior audit; official FINRA source not documented
+    '00751YAH9': ('2025-10-31', 100.0),  # Advance Auto Parts Inc; month-end modelling proxy; not a confirmed FINRA date
+    '031162DN7': ('2025-12-31', 100.0),  # Amgen Inc; month-end modelling proxy; not a confirmed FINRA date
+    '95000U2K8': ('2025-02-11', 100.0),  # Wells Fargo & Co; date confirmed via official FINRA site (supplied by user)
+    '198280AF6': ('2025-03-24', 100.0),  # Columbia Pipeline Group Inc; date confirmed via official FINRA site (supplied by user)
+    '26885BAC4': ('2025-05-01', 100.0),  # EQM Midstream Partners LP; date confirmed via official FINRA site (supplied by user)
+    '025816CY3': ('2025-07-01', 100.0),  # American Express Co; date confirmed via official FINRA site (supplied by user)
+    '81180WAR2': ('2025-06-11', 100.0),  # Seagate HDD Cayman; date confirmed via official FINRA site (supplied by user)
+    '37045VAV2': ('2025-09-01', 100.0),  # General Motors Corp; date confirmed via official FINRA site (supplied by user)
+    '403949AB6': ('2025-08-30', 100.0),  # HF Sinclair Corp; date confirmed via official FINRA site (supplied by user)
+    '403949AP5': ('2025-08-31', 100.0),  # HF Sinclair Corp; month-end modelling proxy; not a confirmed FINRA date
+    '44106MAV4': ('2025-09-04', 100.0),  # Hospitality Properties Trust (Service Properties Trust); date confirmed via official FINRA site (supplied by user)
+    '87264AAT2': ('2025-09-01', 100.0),  # T-Mobile USA Inc; date confirmed via official FINRA site (supplied by user)
+    '98978VAU7': ('2025-08-28', 100.0),  # Zoetis Inc; date confirmed via official FINRA site (supplied by user)
+    '023135BN5': ('2025-09-05', 100.0),  # Amazon.com Inc; date confirmed via official FINRA site (supplied by user)
+    '28622HAA9': ('2025-09-19', 100.0),  # Elevance Health Inc; date confirmed via official FINRA site (supplied by user)
+    '361841AH2': ('2025-09-12', 100.0),  # GLP Capital LP / GLP Financing II Inc; date confirmed via official FINRA site (supplied by user)
+    '674599CH6': ('2025-09-30', 100.0),  # Occidental Petroleum Corp; date confirmed via official FINRA site (supplied by user)
+    '931427AQ1': ('2025-09-30', 100.0),  # Walgreens Boots Alliance Inc; month-end modelling proxy; not a confirmed FINRA date
+    '966837AE6': ('2025-09-30', 100.0),  # Whole Foods Market Inc; month-end modelling proxy; not a confirmed FINRA date
+    '85207UAK1': ('2025-10-31', 100.0),  # Sprint Corp; month-end modelling proxy; not a confirmed FINRA date
+    '302491AS4': ('2023-12-21', 100.0),  # FMC Corp; issuer/SEC-reported date; not independently checked against FINRA
+    '44106MAS1': ('2023-12-09', 100.0),  # Hospitality Properties Trust (Service Properties Trust); issuer/SEC-reported date; not independently checked against FINRA
+    '81721MAK5': ('2024-01-31', 100.0),  # Diversified Healthcare Trust; month-end modelling proxy; not a confirmed FINRA date
+    '559080AH9': ('2024-02-29', 100.0),  # Magellan Midstream Partners LP; month-end modelling proxy; not a confirmed FINRA date
+    '013817AW1': ('2024-07-01', 100.0),  # Howmet Aerospace Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '105340AN3': ('2024-06-07', 100.0),  # Brandywine Operating Partnership LP; issuer/SEC-reported date; not independently checked against FINRA
+    '887389AJ3': ('2024-06-24', 100.0),  # Timken Co; issuer/SEC-reported date; not independently checked against FINRA
+    '896522AH2': ('2024-06-25', 100.0),  # Trinity Industries Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '01959EAC2': ('2024-07-24', 100.0),  # Allied World Assurance Holdings; issuer/SEC-reported date; not independently checked against FINRA
+    '202795JE1': ('2024-07-31', 100.0),  # Commonwealth Edison Co; month-end modelling proxy; not a confirmed FINRA date
+    '23317HAD4': ('2024-08-23', 100.0),  # SITE Centers Corp; issuer/SEC-reported date; not independently checked against FINRA
+    '23317HAE2': ('2024-08-23', 99.4),  # SITE Centers Corp; issuer/SEC-reported date; not independently checked against FINRA
+    '256677AD7': ('2025-04-29', 100),  # Dollar General Corp; date confirmed via official FINRA site (supplied by user)
+    '174610AJ4': ('2025-07-03', 100),  # Citizens Financial Group Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '21036PAP3': ('2025-07-02', 100),  # Constellation Brands Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '88947EAR1': ('2025-07-15', 100),  # Toll Brothers Finance Corp; date confirmed via official FINRA site (supplied by user)
+    '06652KAA1': ('2025-08-22', 100),  # BankUnited Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '25179MAV5': ('2025-09-15', 100),  # Devon Energy Corp; date confirmed via official FINRA site (supplied by user)
+    '86765BAS8': ('2025-09-22', 100),  # Sunoco Logistics Partners Operations LP (Energy Transfer); date confirmed via official FINRA site (supplied by user)
+    '843646AM2': ('2025-10-21', 100),  # Southern Power Co; date confirmed via official FINRA site (supplied by user)
+    '681936BH2': ('2025-10-15', 100),  # Omega Healthcare Investors Inc; date confirmed via official FINRA site (supplied by user)
+    '174610AK1': ('2025-11-03', 100),  # Citizens Financial Group Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '92345YAD8': ('2025-04-21', 100),  # Verisk Analytics Inc; date confirmed via official FINRA site (supplied by user)
+    '12505BAD2': ('2025-05-28', 100.17),  # CBRE Services Inc; date confirmed via official FINRA site (supplied by user)
+    '053015AE3': ('2025-06-15', 100),  # Automatic Data Processing Inc; date confirmed via official FINRA site (supplied by user)
+    '09062XAF0': ('2025-06-27', 100),  # Biogen Inc; date confirmed via official FINRA site (supplied by user)
+    '20030NBN0': ('2025-06-05', 100),  # Comcast Corp; date confirmed via official FINRA site (supplied by user)
+    '29250RAW6': ('2025-07-28', 100),  # Enbridge Energy Partners LP; date confirmed via official FINRA site (supplied by user)
+    '931427AB4': ('2025-09-29', 100),  # Walgreens Boots Alliance Inc; date confirmed via official FINRA site (supplied by user)
+    '931427AC2': ('2025-09-29', 100),  # Walgreens Boots Alliance Inc; redemption date not independently confirmed on official FINRA site
+    '98978VAK9': ('2025-09-17', 100),  # Zoetis Inc; date confirmed via official FINRA site (supplied by user)
+    '58013MEY6': ('2025-11-03', 100),  # McDonald's Corp; date confirmed via official FINRA site (supplied by user)
+    '279158AL3': ('2024-11-21', 100.763),  # Ecopetrol SA; issuer/SEC-reported date; not independently checked against FINRA
+    '47102XAJ4': ('2024-11-07', 100),  # Janus Henderson US Holdings Inc; issuer/SEC-reported date; not independently checked against FINRA
+    '85207UAJ4': ('2024-11-15', 100),  # Sprint Corp; issuer/SEC-reported date; not independently checked against FINRA
+    '674599CG8': ('2024-12-30', 100),  # Occidental Petroleum Corp; date confirmed via official FINRA site (supplied by user)
+    '68268NAP8': ('2024-12-15', 100),  # ONEOK Partners LP; date confirmed via official FINRA site (supplied by user)
+    '898813AP5': ('2024-12-16', 100),  # Tucson Electric Power Co; date confirmed via official FINRA site (supplied by user)
+    '025816BK4': ('2024-11-04', 100),  # American Express Co; date confirmed via official FINRA site (supplied by user)
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
