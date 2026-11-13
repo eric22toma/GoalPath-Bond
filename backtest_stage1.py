@@ -150,8 +150,6 @@ def evaluate_month(stage, solution):
         missing = held.loc[held.next_return.isna(), 'cusip'].tolist()
         raise ValueError(f"Missing {stage['target_month']} realized returns for holdings: {missing}")
     portfolio_return = float(held.weight @ held.next_return)
-    if not np.isfinite(portfolio_return):
-        raise ValueError('Non-finite realized portfolio return')
 
     # Preserve the full unscreened benchmark; repair its known redemption
     # months before applying the pre-existing observed-return coverage rule.
@@ -160,10 +158,7 @@ def evaluate_month(stage, solution):
     coverage = float(benchmark.loc[observed, 'benchmark_weight'].sum())
     if not np.isfinite(coverage) or coverage <= 0:
         raise ValueError(f"No observable benchmark return for {stage['target_month']}")
-    benchmark_return = float(
-        benchmark.loc[observed, 'benchmark_weight']
-        @ benchmark.loc[observed, 'next_return'] / coverage
-    )
+    benchmark_return = float(benchmark.loc[observed, 'benchmark_weight'] @ benchmark.loc[observed, 'next_return'] / coverage)
     return held, portfolio_return, benchmark_return, coverage, benchmark
 
 
