@@ -74,20 +74,9 @@ def terminal_redemption_return(bond, redemption_date, principal_price):
     coupon = float(bond['COUPON'])
     frequency = float(bond['NCOUPS']) if pd.notna(bond['NCOUPS']) else np.nan
     principal = float(principal_price)
-    if pd.isna(asof) or pd.isna(event) or asof >= event:
-        raise ValueError('invalid valuation/redemption dates')
-    if not all(np.isfinite(x) for x in (clean, coupon, principal)):
-        raise ValueError('missing price, coupon or redemption proceeds')
-    if clean <= 0 or coupon < 0 or principal <= 0:
-        raise ValueError('nonpositive price/proceeds or negative coupon')
-
     interim_coupons, accrued_redemption, estimated_accrued_start = 0.0, 0.0, 0.0
     if coupon > 0:
-        if frequency not in (1, 2, 4, 12):
-            raise ValueError('missing or unsupported coupon frequency')
         next_coupon = pd.to_datetime(bond['nextcoup'], errors='coerce')
-        if pd.isna(next_coupon) or next_coupon <= asof:
-            raise ValueError('missing or stale next-coupon date')
         step = pd.DateOffset(months=12 // int(frequency))
         previous_coupon = next_coupon - step
         estimated_accrued_start = coupon * days_30_360(previous_coupon, asof)
@@ -97,18 +86,11 @@ def terminal_redemption_return(bond, redemption_date, principal_price):
             previous_coupon = due
             due += step
         accrued_redemption = coupon * days_30_360(previous_coupon, event)
-        if estimated_accrued_start < -1e-9 or accrued_redemption < -1e-9:
-            raise ValueError('invalid accrued-interest dates')
 
     recorded_accrued = pd.to_numeric(bond['COUPACC'], errors='coerce')
-    accrued_start = (float(recorded_accrued) if pd.notna(recorded_accrued)
-                     else estimated_accrued_start)
+    accrued_start = (float(recorded_accrued) if pd.notna(recorded_accrued) else estimated_accrued_start)
     dirty_start = clean + accrued_start
-    if not np.isfinite(dirty_start) or dirty_start <= 0 or accrued_start < 0:
-        raise ValueError('invalid initial dirty price')
     total_return = (principal + accrued_redemption + interim_coupons) / dirty_start - 1.0
-    if not np.isfinite(total_return) or total_return <= -1:
-        raise ValueError('invalid terminal return')
     return float(total_return)
 
 
