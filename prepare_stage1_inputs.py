@@ -129,7 +129,7 @@ def reduced_tracking_objective(stage):
     return Q, (H+H.T)/2, linear, float(constant)
 
 
-def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0, use_forecasts=True):
+def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_portfolio=None, candidate_count=60, lookback=RISK_WINDOW_MONTHS, initial_capital=100_000.0, use_forecasts=True, pretrade_state=None):
     """Create full-benchmark Stage 1 inputs, with a reduced tradable candidate set."""
     asof = pd.Period(bundle['asof'], freq='M')
     now = bundle['snapshot'].copy()
@@ -215,7 +215,16 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     eligible['psi'] = eligible.cusip.map(by_cusip.psi)
     eligible['benchmark_weight'] = eligible.cusip.map(by_cusip.benchmark_weight)
 
-    if prior_portfolio is None:
+    # A settled pretrade state already includes realized returns and redeemed cash.
+    # Do not reapply RET_EOM through the legacy prior_portfolio pathway.
+    if pretrade_state is not None and prior_portfolio is not None:
+        raise ValueError('Provide pretrade_state or prior_portfolio, not both')
+    if pretrade_state is not None:
+        eligible, forced_outside, initial_cash_weight = (
+            prepare_pretrade_holdings(eligible, pretrade_state)
+        )
+        holdings_type = 'settled_pretrade_holdings'
+    elif prior_portfolio is None:
         '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
         capital... cash budgeting and self-financing constraints deferred to Stage 2.'''
         eligible['current_weight'] = 0.0
