@@ -91,11 +91,10 @@ def bond_loadings(bonds, tenor_coefs):
     factor_sensitivity = np.column_stack([np.interp(maturity, TENORS, tenor_coefs[:, j]) for j in range(3)])
     return -duration[:, None] * factor_sensitivity / 100.0
 
-
+#review later!!!!
 def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
     """Estimate bond-specific idiosyncratic variances (diagonal of Psi).
-    Fall back to rating/maturity buckets, then the overall pooled variance.
-    """
+    Fall back to rating/maturity buckets, then the overall pooled variance."""
     history = history.loc[
         history.month.isin(factor_moves.index) &
         history.RET_EOM.notna() &
