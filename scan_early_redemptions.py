@@ -19,9 +19,12 @@ from process_investable_universe import DEFAULT_BONDS, PROJECT_ROOT
 REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
 START_MONTH = '2023-12'  # Set as this date to match the current backtest decision-month window.
 END_MONTH = '2025-10'
-# Early redemptions: CUSIP -> (redemption date, price per $100 face).
-# Preserve exact FINRA/issuer redemption dates where available; otherwise,
-# use calendar month-end given all other datasets follow this convention.
+
+'''Early redemptions: CUSIP -> (redemption date, price per $100 face).
+Preserve exact FINRA/issuer redemption dates where available; otherwise
+ use calendar month-end given all other datasets follow this convention.
+ Note that redeemed bonds without a provided redemption price were defauted 
+ to face value rdemptions of $100 per $100 face value'''
 
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),
