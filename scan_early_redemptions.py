@@ -508,7 +508,6 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
 # --- END DISABLED terminal-return calculations ---
 
 def main():
-    # Run directly from VS Code; edit the constants at the top to change the scan window.
     wrds = read_wrds(REFERENCE)
     bonds, sample_end, source_rows = read_last_bond_observations(DEFAULT_BONDS)
     result, all_exits = scan(bonds, wrds, sample_end, pd.Period(START_MONTH, 'M'), pd.Period(END_MONTH, 'M'))
