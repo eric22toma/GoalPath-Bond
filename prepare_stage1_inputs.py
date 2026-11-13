@@ -220,9 +220,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     if pretrade_state is not None and prior_portfolio is not None:
         raise ValueError('Provide pretrade_state or prior_portfolio, not both')
     if pretrade_state is not None:
-        eligible, forced_outside, initial_cash_weight = (
-            prepare_pretrade_holdings(eligible, pretrade_state)
-        )
+        eligible, forced_outside, initial_cash_weight = (prepare_pretrade_holdings(eligible, pretrade_state))
         holdings_type = 'settled_pretrade_holdings'
     elif prior_portfolio is None:
         '''Initial investment of $100,000, allocated across at most K bonds. Transaction costs are penalized separately from 
