@@ -24,10 +24,8 @@ MIN_BUCKET_RESIDUALS = 30
 
 def filter_ineligible_bonds(eligible):
     """Exclude manually audited non-investable CUSIPs from trading only.
-
     This ex-post data-quality screen must not affect model training or the
-    full benchmark, and does not use future early-redemption information.
-    """
+    full benchmark"""
     return eligible.loc[~eligible.cusip.isin(NOT_REDEEMED_EARLY)].copy()
 
 
@@ -205,6 +203,7 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     if benchmark_weights is None:
         eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
     eligible = eligible.loc[eligible.cusip.isin(benchmark.cusip)].copy().reset_index(drop=True)
+
     # Ex-post data-quality exclusions apply only to portfolio eligibility.
     eligible = filter_ineligible_bonds(eligible)
 
