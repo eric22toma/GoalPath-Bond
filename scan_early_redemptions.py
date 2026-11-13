@@ -5,7 +5,8 @@ were reviewed against SEC filings and the FINRA fixed income site.
 
 Confirmed early redemptions are grouped in EARLY_REDEMPTIONS. Other reviewed
 bonds are grouped in NOT_REDEEMED_EARLY. Both groups are excluded from future
-scans and recorded in all_reviewed_exclusions.csv; unresolved cases remain.
+flaggings for efficiency
+---- and recorded in all_reviewed_exclusions.csv; unresolved cases remain.
 
 The audit only identifies and categorizes possible premature exits, then
 writes the candidate list and reviewed-exclusion ledger. Terminal-return
@@ -21,13 +22,12 @@ from process_investable_universe import DEFAULT_BONDS, PROJECT_ROOT
 
 REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
 OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
-START_MONTH = '2023-12'  # Match the current backtest decision-month window.
+START_MONTH = '2023-12'  # Set as this date to match the current backtest decision-month window.
 END_MONTH = '2025-10'
 # Early redemptions: CUSIP -> (redemption date, price per $100 face).
-# Preserve exact FINRA/issuer redemption dates where available. Otherwise
-# use calendar month-end as the monthly backtest proxy. Records with only
-# year-level information use the end of their stated reporting period or,
-# when no month is known, December 31. These proxies are not actual call dates.
+# Preserve exact FINRA/issuer redemption dates where available; otherwise,
+# use calendar month-end given all other datasets follow this convention.
+
 EARLY_REDEMPTIONS = {
     '876030AD9': ('2024-11-25', 101.0),
     '876030AE7': ('2024-11-25', 101.0),
@@ -274,8 +274,6 @@ def excel_date(series):
 def read_wrds(path):
     wrds = pd.read_csv(path, dtype=str, keep_default_na=False)
     needed = {'COMPLETE_CUSIP', 'CALLABLE', 'MAKE_WHOLE', 'MATURITY'}
-    if not needed.issubset(wrds):
-        raise ValueError(f'WRDS reference missing: {sorted(needed - set(wrds))}')
     wrds['cusip'] = wrds.COMPLETE_CUSIP.str.strip().str.upper()
     wrds = wrds.loc[wrds.cusip.ne('')].drop_duplicates('cusip').copy()
     for col in ('MATURITY', 'NEXT_CALL_DATE', 'CALL_DATE'):
@@ -290,15 +288,10 @@ def read_last_bond_observations(path):
     path = Path(path)
     if not path.exists() and Path(str(path) + '.zip').exists():
         path = Path(str(path) + '.zip')
-    if not path.exists():
-        raise FileNotFoundError(f'Bond source not found: {path}')
-
     latest = {}
     sample_end = None
     source_rows = 0
-    for chunk in pd.read_csv(path, usecols=lambda col: col in columns,
-                             dtype=str, chunksize=200_000,
-                             encoding='utf-8-sig', low_memory=False):
+    for chunk in pd.read_csv(path, usecols=lambda col: col in columns, dtype=str, chunksize=200_000, encoding='utf-8-sig', low_memory=False):
         if not {'cusip', 'DATE', 'MATURITY'}.issubset(chunk):
             raise ValueError('AGG source requires cusip, DATE, MATURITY')
         source_rows += len(chunk)
@@ -316,9 +309,6 @@ def read_last_bond_observations(path):
             cusip = rec['cusip']
             if cusip not in latest or rec['DATE'] > latest[cusip]['DATE']:
                 latest[cusip] = rec
-
-    if sample_end is None:
-        raise ValueError('No dated bond observations found')
     return pd.DataFrame(latest.values()), sample_end.to_period('M'), source_rows
 
 
@@ -331,10 +321,7 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
     joined['first_missing_month'] = joined.last_month + 1
     joined['maturity_month'] = joined.maturity_for_scan.dt.to_period('M')
     # Right-censored sample-end rows and scheduled maturities aren't early exits.
-    joined = joined.loc[
-        joined.first_missing_month.le(sample_end)
-        & joined.maturity_month.gt(joined.first_missing_month)
-    ].copy()
+    joined = joined.loc[joined.first_missing_month.le(sample_end) & joined.maturity_month.gt(joined.first_missing_month)].copy()
     history_count = len(joined)
     if not all_history:
         joined = joined.loc[joined.last_month.between(start, end)].copy()
@@ -343,22 +330,13 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
     reviewed = set(EARLY_REDEMPTIONS) | set(NOT_REDEEMED_EARLY)
     joined = joined.loc[~joined.cusip.isin(reviewed)].copy()
 
-    joined['months_until_maturity'] = (
-        joined.maturity_month.astype('int64')
-        - joined.first_missing_month.astype('int64')
-    )
-    joined['tapestry_like'] = (
-        joined.CALLABLE.eq('Y') & joined.MAKE_WHOLE.eq('Y')
-        & joined.NEXT_CALL_DATE.gt(joined.DATE)
-        & pd.to_numeric(joined.NEXT_CALL_PRICE, errors='coerce').eq(100)
-    )
+    joined['months_until_maturity'] = (joined.maturity_month.astype('int64') - joined.first_missing_month.astype('int64'))
+    joined['tapestry_like'] = (joined.CALLABLE.eq('Y') & joined.MAKE_WHOLE.eq('Y') & joined.NEXT_CALL_DATE.gt(joined.DATE) 
+                                & pd.to_numeric(joined.NEXT_CALL_PRICE, errors='coerce').eq(100))
     joined['review_priority'] = '3 - Other premature exit'
     joined.loc[joined.CALLABLE.eq('Y'), 'review_priority'] = '2 - Callable premature exit'
     joined.loc[joined.tapestry_like, 'review_priority'] = '1 - Tapestry-like call terms'
-    joined['maturity_match'] = (
-        joined.MATURITY.dt.to_period('M')
-        .eq(joined.MATURITY_wrds.dt.to_period('M'))
-    )
+    joined['maturity_match'] = (joined.MATURITY.dt.to_period('M').eq(joined.MATURITY_wrds.dt.to_period('M')))
     joined['maturity_match'] = joined.maturity_match.astype('boolean')
     joined.loc[joined.MATURITY_wrds.isna() | joined.MATURITY.isna(), 'maturity_match'] = pd.NA
 
@@ -379,10 +357,7 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
         'last_recorded_yield': joined.get('YIELD'),
         'verification_status': 'POTENTIAL EXIT - NOT VERIFIED',
     })
-    result = result.sort_values(
-        ['review_priority', 'last_observed_month', 'cusip'],
-        ascending=[True, True, True]
-    ).reset_index(drop=True)
+    result = result.sort_values(['review_priority', 'last_observed_month', 'cusip'], ascending=[True, True, True]).reset_index(drop=True)
     return result, history_count
 
 
@@ -613,8 +588,6 @@ def main():
     print(f'Saved: {args.output}')
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
-
-
 
 if __name__ == '__main__':
     main()
