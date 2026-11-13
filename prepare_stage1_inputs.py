@@ -7,6 +7,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 from elastic_net_one_period import (sven_yield, PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE,)
+from scan_early_redemptions import NOT_REDEEMED_EARLY
 
 DEFAULT_RESULTS = PROJECT_ROOT / 'stage1_outputs'
 DEFAULT_STAGE_DIR = DEFAULT_RESULTS / 'inputs'
@@ -20,6 +21,54 @@ MAX_INVESTABLE_YIELD = 0.15
 MIN_FACTOR_OBSERVATIONS = 12
 MIN_BOND_RESIDUALS = 12
 MIN_BUCKET_RESIDUALS = 30
+
+def filter_ineligible_bonds(eligible):
+    """Exclude manually audited non-investable CUSIPs from trading only.
+
+    This ex-post data-quality screen must not affect model training or the
+    full benchmark, and does not use future early-redemption information.
+    """
+    return eligible.loc[~eligible.cusip.isin(NOT_REDEEMED_EARLY)].copy()
+
+
+def prepare_pretrade_holdings(eligible, pretrade_state):
+    """Map a previously settled month-end portfolio to starting Stage 1 weights.
+
+    pretrade_state requires:
+      holdings: DataFrame of surviving bonds with 'cusip' and month-end 'weight';
+      cash_weight: fraction of portfolio value already held as cash.
+
+    The backtest must first apply realized bond returns and move any completed
+    redemptions into cash. This helper does not inspect redemption dates.
+    """
+    if not isinstance(pretrade_state, dict):
+        raise TypeError('pretrade_state must be a dictionary')
+    holdings = pretrade_state.get('holdings')
+    if not isinstance(holdings, pd.DataFrame) or not {'cusip', 'weight'}.issubset(holdings):
+        raise ValueError("pretrade_state['holdings'] must contain cusip and weight")
+    holdings = holdings[['cusip', 'weight']].copy()
+    holdings['cusip'] = holdings.cusip.astype(str).str.strip().str.upper()
+    holdings['weight'] = pd.to_numeric(holdings.weight, errors='coerce')
+    if (holdings.cusip.eq('').any() or holdings.cusip.duplicated().any()
+            or not np.isfinite(holdings.weight.to_numpy(float)).all()
+            or holdings.weight.lt(0).any()):
+        raise ValueError('Invalid CUSIPs or weights in settled pretrade holdings')
+    cash_weight = float(pretrade_state.get('cash_weight', 0.0))
+    if not np.isfinite(cash_weight) or cash_weight < 0:
+        raise ValueError('Invalid settled cash weight')
+    if not np.isclose(holdings.weight.sum() + cash_weight, 1.0, atol=1e-5, rtol=0):
+        raise ValueError('Pretrade bond and cash weights must sum to one')
+
+    result = eligible.copy()
+    if result.cusip.duplicated().any():
+        raise ValueError('Duplicate eligible CUSIPs')
+    weights = holdings.set_index('cusip').weight
+    result['current_weight'] = result.cusip.map(weights).fillna(0.0)
+    forced_outside = (holdings.loc[~holdings.cusip.isin(result.cusip)]
+                      .rename(columns={'weight': 'current_weight'})
+                      .reset_index(drop=True))
+    return result, forced_outside, cash_weight
+
 
 def read_weight_file(path, asof=None):
     """Read explicit CUSIP weights; monthly benchmark files require DATE."""
@@ -156,6 +205,8 @@ def build_inputs(bundle, benchmark_weights=None, benchmark_proxy=False, prior_po
     if benchmark_weights is None:
         eligible = eligible.loc[pd.to_numeric(eligible.AMOUNT_OUTSTANDING, errors='coerce').gt(0)].reset_index(drop=True)
     eligible = eligible.loc[eligible.cusip.isin(benchmark.cusip)].copy().reset_index(drop=True)
+    # Ex-post data-quality exclusions apply only to portfolio eligibility.
+    eligible = filter_ineligible_bonds(eligible)
 
     eligible['duration'] = eligible.DURATION.astype(float)
     eligible['mu'] = (eligible.YIELD / 12 - eligible.duration * (eligible.predicted_dy_pp / 100) if use_forecasts else 0.0)
