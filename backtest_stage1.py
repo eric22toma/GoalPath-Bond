@@ -254,6 +254,12 @@ def main():
             try:
                 stage = build_inputs(bundle, pretrade_state=state['pretrade_state'],candidate_count=n, initial_capital=state['capital'],use_forecasts=(model == 'elastic_net'))
                 answer, metrics = run_solver(stage, method=method, k=k)[method]
+                if method == 'exact' and not metrics['optimal']:
+                    print(
+                        f"{asof} | {name} | "
+                        f"Status: {metrics['solver_status']} | "
+                        f"MIP Gap: {metrics['mip_gap']:.4%}"
+                    )
                 held, portfolio_return, benchmark_return, coverage, benchmark = evaluate_month(stage, answer)
                 next_state = settle_portfolio(held, portfolio_return)
             except (RuntimeError, ValueError) as exc:
