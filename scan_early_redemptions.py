@@ -245,7 +245,7 @@ NOT_REDEEMED_EARLY = {
     '690732AE2': 'Owens & Minor Inc - ineligible per manual audit',
     '12513GBA6': 'CDW LLC - ineligible per manual audit',
     '302154EG0': 'Export-Import Bank of Korea - ineligible per manual audit',
-    '52107QAG0': 'Lazard Ltd - ineligible per manual audit',
+    '52107QAG0': 'Lazard Group LLC - ineligible per manual audit',
     '125509BQ1': 'Cigna Holding Company - ineligible per manual audit',
     '232820AK6': 'Cytec Industries Inc - ineligible per manual audit',
     '302154EJ4': 'Export-Import Bank of Korea - ineligible per manual audit',
