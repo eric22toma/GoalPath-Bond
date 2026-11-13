@@ -96,24 +96,19 @@ def terminal_redemption_return(bond, redemption_date, principal_price):
 
 def resolve_next_month_returns(bonds, target_month):
     """Apply actual redemptions only in realized-return evaluation, never in MVO.
-
     Prefer cash-flow reconstruction for redemption-month returns. An existing
     source RET_EOM is retained, but explicitly flagged, if reconstruction fails.
-    Missing returns remain missing rather than being silently set to zero.
-    """
+    Missing returns remain missing rather than being silently set to zero. """
     target = pd.Period(target_month, freq='M')
     events = {
         cusip: (pd.Timestamp(date), price)
         for cusip, (date, price) in EARLY_REDEMPTIONS.items()
         if pd.notna(pd.to_datetime(date, errors='coerce'))
-        and pd.Timestamp(date).to_period('M') == target
-    }
+        and pd.Timestamp(date).to_period('M') == target}
     result = bonds.copy()
     result['was_redeemed'] = False
     result['redemption_date'] = ''
-    result['return_source'] = np.where(
-        result.next_return.notna(), 'observed_RET_EOM', 'missing'
-    )
+    result['return_source'] = np.where(result.next_return.notna(), 'observed_RET_EOM', 'missing')
     result['return_note'] = ''
     for idx in result.index[result.cusip.isin(events)]:
         cusip = result.at[idx, 'cusip']
@@ -127,11 +122,7 @@ def resolve_next_month_returns(bonds, target_month):
             result.at[idx, 'return_source'] = 'estimated_redemption_30_360'
         except (ValueError, TypeError, OverflowError) as exc:
             result.at[idx, 'return_note'] = str(exc)
-            result.at[idx, 'return_source'] = (
-                'observed_redemption_month_unverified'
-                if pd.notna(result.at[idx, 'next_return'])
-                else 'unresolved_redemption'
-            )
+            result.at[idx, 'return_source'] = ('observed_redemption_month_unverified' if pd.notna(result.at[idx, 'next_return']) else 'unresolved_redemption')
     return result
 
 
