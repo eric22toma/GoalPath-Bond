@@ -5,8 +5,7 @@ were reviewed against SEC filings and the FINRA fixed income site.
 
 Confirmed early redemptions are grouped in EARLY_REDEMPTIONS, and other
 reviewed bonds in NOT_REDEEMED_EARLY. Both are excluded from future scans.
-New candidates are printed to the terminal with priorities 1, 2, and 3;
-no CSV files are generated.
+New candidates are printed to the terminal with priorities 1, 2, and 3.
 
 Terminal-return calculations remain commented out for possible future
 investigations. This diagnostic scanner is not part of the backtest pipeline.
@@ -509,10 +508,7 @@ def main():
     # Run directly from VS Code; edit the constants at the top to change the scan window.
     wrds = read_wrds(REFERENCE)
     bonds, sample_end, source_rows = read_last_bond_observations(DEFAULT_BONDS)
-    result, all_exits = scan(
-        bonds, wrds, sample_end,
-        pd.Period(START_MONTH, 'M'), pd.Period(END_MONTH, 'M')
-    )
+    result, all_exits = scan(bonds, wrds, sample_end, pd.Period(START_MONTH, 'M'), pd.Period(END_MONTH, 'M'))
 
     print('\nEARLY REDEMPTION REVIEW (NOT CONFIRMED REDEMPTIONS)')
     print(f'AGG observations: {source_rows:,} | Unique bonds: {len(bonds):,}')
@@ -528,27 +524,6 @@ def main():
                       'contractual_maturity']].to_string(index=False, max_rows=None))
     else:
         print('No new premature-exit candidates found.')
-
-    # --- DISABLED: terminal return CSV generation; scanner is flag-only ---
-    # verified_path = args.output.with_name('verified_early_redemptions.csv')
-    # verified = pd.DataFrame([
-    #     {'cusip': cusip, 'redemption_date': date,
-    #      'redemption_price_pct_par_ex_accrued': price,
-    #      'status': 'EARLY REDEMPTION'}
-    #     for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
-    # ]).merge(
-    #     compute_terminal_returns(DEFAULT_BONDS), on='cusip',
-    #     how='left', validate='one_to_one'
-    # )
-    # no_day = verified.redemption_date.str.len().ne(10)
-    # verified.loc[no_day, 'calculation_status'] = 'EXACT REDEMPTION DAY NOT VERIFIED'
-    # verified.loc[no_day, 'redemption_month'] = verified.loc[no_day, 'redemption_date']
-    # verified.loc[no_day, 'redemption_date'] = ''
-    # verified.to_csv(verified_path, index=False)
-    # print(f'Verified redemptions and R_terminal saved: {verified_path}')
-    # print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
-    #                 'calculation_status']].to_string(index=False))
-    # --- END DISABLED terminal return CSV generation ---
 
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
