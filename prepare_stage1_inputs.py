@@ -30,38 +30,24 @@ def filter_ineligible_bonds(eligible):
 
 
 def prepare_pretrade_holdings(eligible, pretrade_state):
-    """Map a previously settled month-end portfolio to starting Stage 1 weights.
+    """Map already-settled surviving holdings and cash into Stage 1 inputs.
 
-    pretrade_state requires:
-      holdings: DataFrame of surviving bonds with 'cusip' and month-end 'weight';
-      cash_weight: fraction of portfolio value already held as cash.
-
-    The backtest must first apply realized bond returns and move any completed
-    redemptions into cash. This helper does not inspect redemption dates.
+    The backtest applies realized returns and settles redemptions before
+    supplying holdings (cusip, weight) and cash_weight here.
     """
-    if not isinstance(pretrade_state, dict):
-        raise TypeError('pretrade_state must be a dictionary')
-    holdings = pretrade_state.get('holdings')
-    if not isinstance(holdings, pd.DataFrame) or not {'cusip', 'weight'}.issubset(holdings):
-        raise ValueError("pretrade_state['holdings'] must contain cusip and weight")
-    holdings = holdings[['cusip', 'weight']].copy()
+    holdings = pretrade_state['holdings'][['cusip', 'weight']].copy()
     holdings['cusip'] = holdings.cusip.astype(str).str.strip().str.upper()
     holdings['weight'] = pd.to_numeric(holdings.weight, errors='coerce')
-    if (holdings.cusip.eq('').any() or holdings.cusip.duplicated().any()
-            or not np.isfinite(holdings.weight.to_numpy(float)).all()
-            or holdings.weight.lt(0).any()):
-        raise ValueError('Invalid CUSIPs or weights in settled pretrade holdings')
     cash_weight = float(pretrade_state.get('cash_weight', 0.0))
-    if not np.isfinite(cash_weight) or cash_weight < 0:
-        raise ValueError('Invalid settled cash weight')
+
+    # Ensure the settled bond positions and cash account for the full portfolio.
     if not np.isclose(holdings.weight.sum() + cash_weight, 1.0, atol=1e-5, rtol=0):
         raise ValueError('Pretrade bond and cash weights must sum to one')
 
     result = eligible.copy()
-    if result.cusip.duplicated().any():
-        raise ValueError('Duplicate eligible CUSIPs')
-    weights = holdings.set_index('cusip').weight
-    result['current_weight'] = result.cusip.map(weights).fillna(0.0)
+    result['current_weight'] = result.cusip.map(
+        holdings.set_index('cusip').weight
+    ).fillna(0.0)
     forced_outside = (holdings.loc[~holdings.cusip.isin(result.cusip)]
                       .rename(columns={'weight': 'current_weight'})
                       .reset_index(drop=True))
