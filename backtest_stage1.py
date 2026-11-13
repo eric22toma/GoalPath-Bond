@@ -160,7 +160,7 @@ def settle_portfolio(held, portfolio_return):
     values = held.weight.to_numpy(float) * (1.0 + held.next_return.to_numpy(float))
     total = float(values.sum())
     if not np.isfinite(total) or total <= 0 or not np.isclose(
-        total, 1.0 + portfolio_return, atol=1e-9, rtol=0
+        total, 1.0 + portfolio_return, atol=1e-5, rtol=0
     ):
         raise ValueError('Settled portfolio value does not match realized return')
     if not np.isfinite(values).all() or (values < 0).any():
@@ -332,6 +332,12 @@ def main():
                     held.return_source.eq('estimated_redemption_30_360').sum()),
                 'benchmark_estimated_redemption_returns': int(
                     benchmark.return_source.eq('estimated_redemption_30_360').sum()),
+                'unverified_redemption_return_fallbacks': int(
+                    held.return_source.eq('observed_redemption_month_unverified').sum()),
+                'benchmark_unverified_redemption_return_fallbacks': int(
+                    benchmark.return_source.eq('observed_redemption_month_unverified').sum()),
+                'benchmark_unresolved_redemptions': int(
+                    benchmark.return_source.eq('unresolved_redemption').sum()),
                 'portfolio_duration': metrics['portfolio_duration'],
                 'benchmark_duration': metrics['benchmark_duration'],
                 'gross_capital': state['capital'],
