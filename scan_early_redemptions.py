@@ -3,25 +3,21 @@ This file cross-references zipped AGG observations against WRDS callable-bond da
 to flag bonds that may have been redeemed early. Flagged bonds 
 were reviewed against SEC filings and the FINRA fixed income site.
 
-Confirmed early redemptions are grouped in EARLY_REDEMPTIONS. Other reviewed
-bonds are grouped in NOT_REDEEMED_EARLY. Both groups are excluded from future
-flaggings for efficiency
----- and recorded in all_reviewed_exclusions.csv; unresolved cases remain.
+Confirmed early redemptions are grouped in EARLY_REDEMPTIONS, and other
+reviewed bonds in NOT_REDEEMED_EARLY. Both are excluded from future scans.
+New candidates are printed to the terminal with priorities 1, 2, and 3;
+no CSV files are generated.
 
-The audit only identifies and categorizes possible premature exits, then
-writes the candidate list and reviewed-exclusion ledger. Terminal-return
-calculations and their CSV output are disabled below but retained as comments
-for possible future investigations; this script is not part of the backtest pipeline.
+Terminal-return calculations remain commented out for possible future
+investigations. This diagnostic scanner is not part of the backtest pipeline.
 """
 
 from pathlib import Path
-import argparse
 import pandas as pd
 
 from process_investable_universe import DEFAULT_BONDS, PROJECT_ROOT
 
 REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
-OUTPUT = PROJECT_ROOT / 'stage1_outputs' / 'early_redemption_candidates.csv'
 START_MONTH = '2023-12'  # Set as this date to match the current backtest decision-month window.
 END_MONTH = '2025-10'
 # Early redemptions: CUSIP -> (redemption date, price per $100 face).
@@ -510,23 +506,13 @@ def scan(bonds, wrds, sample_end, start, end, all_history=False):
 # --- END DISABLED terminal-return calculations ---
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--bonds', type=Path, default=DEFAULT_BONDS)
-    parser.add_argument('--wrds', type=Path, default=REFERENCE)
-    parser.add_argument('--output', type=Path, default=OUTPUT)
-    parser.add_argument('--start', default=START_MONTH)
-    parser.add_argument('--end', default=END_MONTH)
-    parser.add_argument('--all-history', action='store_true',
-                        help='Include suspected exits before the backtest window')
-    args = parser.parse_args()
-
-    wrds = read_wrds(args.wrds)
-    bonds, sample_end, source_rows = read_last_bond_observations(args.bonds)
-    result, all_exits = scan(bonds, wrds, sample_end,
-                             pd.Period(args.start, 'M'), pd.Period(args.end, 'M'),
-                             args.all_history)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(args.output, index=False)
+    # Run directly from VS Code; edit the constants at the top to change the scan window.
+    wrds = read_wrds(REFERENCE)
+    bonds, sample_end, source_rows = read_last_bond_observations(DEFAULT_BONDS)
+    result, all_exits = scan(
+        bonds, wrds, sample_end,
+        pd.Period(START_MONTH, 'M'), pd.Period(END_MONTH, 'M')
+    )
 
     print('\nEARLY REDEMPTION REVIEW (NOT CONFIRMED REDEMPTIONS)')
     print(f'AGG observations: {source_rows:,} | Unique bonds: {len(bonds):,}')
@@ -534,36 +520,14 @@ def main():
     print(f'Potential premature exits before prior-review exclusions: {all_exits:,}')
     print(f'Confirmed early redemptions excluded: {len(EARLY_REDEMPTIONS):,}')
     print(f'Other reviewed bonds excluded: {len(NOT_REDEEMED_EARLY):,}')
-    print(f'Candidates in review window {args.start} through {args.end}: {len(result):,}')
+    print(f'Candidates in review window {START_MONTH} through {END_MONTH}: {len(result):,}')
     if not result.empty:
         print(result.review_priority.value_counts().sort_index().to_string())
         print('\nALL FLAGGED BONDS FOR REVIEW:')
         print(result[['review_priority', 'cusip', 'issuer', 'last_observed_month',
                       'contractual_maturity']].to_string(index=False, max_rows=None))
-    # Store all previously reviewed bonds in a single exclusion ledger.
-    exclusions = pd.DataFrame(
-        [{
-            'cusip': cusip,
-            'classification': 'EARLY_REDEMPTION',
-            'redemption_date': date if len(date) == 10 else '',
-            'redemption_month': date[:7],
-            'principal_price_per_100': price,
-            'note': 'Redemption date not recorded' if not date else (
-                'Exact redemption day unavailable' if len(date) != 10 else ''
-            ),
-        } for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())]
-        + [{
-            'cusip': cusip,
-            'classification': 'NOT_REDEEMED_EARLY',
-            'redemption_date': '',
-            'redemption_month': '',
-            'principal_price_per_100': '',
-            'note': note or '',
-        } for cusip, note in sorted(NOT_REDEEMED_EARLY.items())]
-    )
-    exclusion_path = args.output.with_name('all_reviewed_exclusions.csv')
-    exclusions.to_csv(exclusion_path, index=False)
-    print(f'Full reviewed/excluded list ({len(exclusions):,} CUSIPs): {exclusion_path}')
+    else:
+        print('No new premature-exit candidates found.')
 
     # --- DISABLED: terminal return CSV generation; scanner is flag-only ---
     # verified_path = args.output.with_name('verified_early_redemptions.csv')
@@ -573,7 +537,7 @@ def main():
     #      'status': 'EARLY REDEMPTION'}
     #     for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
     # ]).merge(
-    #     compute_terminal_returns(args.bonds), on='cusip',
+    #     compute_terminal_returns(DEFAULT_BONDS), on='cusip',
     #     how='left', validate='one_to_one'
     # )
     # no_day = verified.redemption_date.str.len().ne(10)
@@ -585,9 +549,10 @@ def main():
     # print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
     #                 'calculation_status']].to_string(index=False))
     # --- END DISABLED terminal return CSV generation ---
-    print(f'Saved: {args.output}')
+
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
     print('Do not use this report for point-in-time investment eligibility.')
+
 
 if __name__ == '__main__':
     main()
