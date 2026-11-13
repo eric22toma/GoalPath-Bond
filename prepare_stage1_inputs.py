@@ -93,21 +93,49 @@ def bond_loadings(bonds, tenor_coefs):
 
 
 def residual_variances(history, eligible, tenor_coefs, factor_moves, lookback):
-    """Estimate bond-specific idiosyncratic variances (diagonal of Psi)."""
+    """Estimate bond-specific idiosyncratic variances (diagonal of Psi).
+    Fall back to rating/maturity buckets, then the overall pooled variance.
+    """
     history = history.loc[
         history.month.isin(factor_moves.index) &
         history.RET_EOM.notna() &
         history.DURATION.gt(0) &
         history.time_to_maturity.gt(0)].copy()
-    # Calculate residual returns unexplained by Treasury factors.
+
+    # Calculate residual returns unexplained by Treasury factors (unchanged).
     factors = factor_moves.loc[history.month, list(FACTOR_NAMES)].to_numpy()
     B = bond_loadings(history, tenor_coefs)
     history['residual'] = history.RET_EOM.to_numpy() - np.sum(B * factors, axis=1)
-    # Estimate idiosyncratic variance for each bond.
-    psi = history.groupby('cusip').residual.var()
-    pooled_var = history.residual.var()
-    return eligible.cusip.map(psi).fillna(pooled_var).to_numpy(dtype=float)
 
+    pooled_var = history.residual.var()
+    if not np.isfinite(pooled_var):
+        raise ValueError('Insufficient history for residual variance estimation')
+
+    # Use bond-specific variance only with sufficient historical observations.
+    bond_stats = history.groupby('cusip').residual.agg(['var', 'count'])
+    bond_stats.loc[bond_stats['count'] < MIN_BOND_RESIDUALS, 'var'] = np.nan
+
+    # Historical rating/maturity buckets for bonds with short histories.
+    maturity_bins = [0, 3, 7, 10, 20, np.inf]
+    history['maturity_bucket'] = pd.cut(
+        history.time_to_maturity, bins=maturity_bins, include_lowest=True)
+    bucket_stats = history.groupby(
+        ['RATING_NUM', 'maturity_bucket'], observed=True
+    ).residual.agg(['var', 'count'])
+    bucket_stats.loc[bucket_stats['count'] < MIN_BUCKET_RESIDUALS, 'var'] = np.nan
+
+    # Match each decision-month bond to its present rating/maturity bucket.
+    eligible_buckets = eligible[['RATING_NUM', 'time_to_maturity']].copy()
+    eligible_buckets['maturity_bucket'] = pd.cut(
+        eligible_buckets.time_to_maturity, bins=maturity_bins, include_lowest=True)
+    bucket_var = eligible_buckets.join(
+        bucket_stats['var'].rename('bucket_var'),
+        on=['RATING_NUM', 'maturity_bucket']
+    )['bucket_var']
+
+    # Bond-specific -> rating/maturity bucket -> pooled residual variance.
+    psi = eligible.cusip.map(bond_stats['var']).fillna(bucket_var).fillna(pooled_var)
+    return psi.to_numpy(dtype=float)
 
 
 def reduced_tracking_objective(stage):
