@@ -31,10 +31,8 @@ def filter_ineligible_bonds(eligible):
 
 def prepare_pretrade_holdings(eligible, pretrade_state):
     """Map already-settled surviving holdings and cash into Stage 1 inputs.
-
     The backtest applies realized returns and settles redemptions before
-    supplying holdings (cusip, weight) and cash_weight here.
-    """
+    supplying holdings (cusip, weight) and cash_weight here."""
     holdings = pretrade_state['holdings'][['cusip', 'weight']].copy()
     holdings['cusip'] = holdings.cusip.astype(str).str.strip().str.upper()
     holdings['weight'] = pd.to_numeric(holdings.weight, errors='coerce')
@@ -45,9 +43,7 @@ def prepare_pretrade_holdings(eligible, pretrade_state):
         raise ValueError('Pretrade bond and cash weights must sum to one')
 
     result = eligible.copy()
-    result['current_weight'] = result.cusip.map(
-        holdings.set_index('cusip').weight
-    ).fillna(0.0)
+    result['current_weight'] = result.cusip.map(holdings.set_index('cusip').weight).fillna(0.0)
     forced_outside = (holdings.loc[~holdings.cusip.isin(result.cusip)]
                       .rename(columns={'weight': 'current_weight'})
                       .reset_index(drop=True))
@@ -60,8 +56,7 @@ def read_weight_file(path, asof=None):
     if 'CUSIP' in table.columns and 'cusip' not in table.columns:
         table = table.rename(columns={'CUSIP': 'cusip'})
     if asof is not None:
-        date_name = next((x for x in ('DATE', 'Date', 'date', 'month')
-                          if x in table.columns), None)
+        date_name = next((x for x in ('DATE', 'Date', 'date', 'month') if x in table.columns), None)
         periods = pd.to_datetime(table[date_name], errors='coerce').dt.to_period('M')
         table = table.loc[periods == asof].copy()
     table['cusip'] = table.cusip.astype(str).str.strip()
@@ -351,11 +346,7 @@ def main():
     output_dir = DEFAULT_STAGE_DIR
 
     print(f'\nLoading forecasts from {forecast_file}')
-    stage = build_inputs(
-        pd.read_pickle(forecast_file),
-        benchmark_proxy=True,
-        candidate_count=20,
-        initial_capital=100_000.0,)
+    stage = build_inputs(pd.read_pickle(forecast_file), benchmark_proxy=True, candidate_count=20, initial_capital=100_000.0,)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts = [output_dir / 'stage1_inputs.pkl',
