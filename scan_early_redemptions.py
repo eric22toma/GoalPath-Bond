@@ -593,13 +593,13 @@ def main():
     # --- DISABLED: terminal return CSV generation; scanner is flag-only ---
     # verified_path = args.output.with_name('verified_early_redemptions.csv')
     # verified = pd.DataFrame([
-    # {'cusip': cusip, 'redemption_date': date,
-    # 'redemption_price_pct_par_ex_accrued': price,
-    # 'status': 'EARLY REDEMPTION'}
-    # for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
+    #     {'cusip': cusip, 'redemption_date': date,
+    #      'redemption_price_pct_par_ex_accrued': price,
+    #      'status': 'EARLY REDEMPTION'}
+    #     for cusip, (date, price) in sorted(EARLY_REDEMPTIONS.items())
     # ]).merge(
-    # compute_terminal_returns(args.bonds), on='cusip',
-    # how='left', validate='one_to_one'
+    #     compute_terminal_returns(args.bonds), on='cusip',
+    #     how='left', validate='one_to_one'
     # )
     # no_day = verified.redemption_date.str.len().ne(10)
     # verified.loc[no_day, 'calculation_status'] = 'EXACT REDEMPTION DAY NOT VERIFIED'
@@ -608,7 +608,7 @@ def main():
     # verified.to_csv(verified_path, index=False)
     # print(f'Verified redemptions and R_terminal saved: {verified_path}')
     # print(verified[['cusip', 'redemption_date', 'R_terminal_pct',
-    # 'calculation_status']].to_string(index=False))
+    #                 'calculation_status']].to_string(index=False))
     # --- END DISABLED terminal return CSV generation ---
     print(f'Saved: {args.output}')
     print('WARNING: A premature exit can be a redemption OR data/index coverage loss.')
