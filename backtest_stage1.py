@@ -59,17 +59,15 @@ def forecast_baselines(panel, asof, now, penalties=None):
 
 def days_30_360(start, end):
     """Simple 30/360 coupon accrual approximation (year fraction)."""
-    return (360 * (end.year - start.year) + 30 * (end.month - start.month)
-            + min(end.day, 30) - min(start.day, 30)) / 360.0
+    return (360 * (end.year - start.year) + 30 * (end.month - start.month)+ min(end.day, 30) - min(start.day, 30)) / 360.0
 
 
 def terminal_redemption_return(bond, redemption_date, principal_price):
     """Estimate the completed month's redemption return, in decimal units.
-
     Prices, coupon payments and accrued interest are per $100 face. Uses the
     decision-month dirty price, interim coupons and redemption proceeds.
-    Redemption timing/price are used only AFTER portfolio optimization.
-    """
+    Redemption timing/price are used only AFTER portfolio optimization."""
+    
     asof = pd.Timestamp(bond['DATE'])
     event = pd.Timestamp(redemption_date)
     clean = float(bond['PRICE_EOM'])
