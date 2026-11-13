@@ -131,19 +131,14 @@ def settle_portfolio(held, portfolio_return):
     values = held.weight.to_numpy(float) * (1.0 + held.next_return.to_numpy(float))
     total = float(values.sum())
     if not np.isfinite(total) or total <= 0 or not np.isclose(
-        total, 1.0 + portfolio_return, atol=1e-5, rtol=0
-    ):
+        total, 1.0 + portfolio_return, atol=1e-5, rtol=0):
         raise ValueError('Settled portfolio value does not match realized return')
     if not np.isfinite(values).all() or (values < 0).any():
         raise ValueError('Invalid settled holding values')
     redeemed = held.was_redeemed.to_numpy(bool)
     surviving = held.loc[~redeemed, ['cusip']].copy().reset_index(drop=True)
     surviving['weight'] = values[~redeemed] / total
-    return {
-        'holdings': surviving,
-        'cash_weight': float(values[redeemed].sum() / total),
-    }
-
+    return {'holdings': surviving, 'cash_weight': float(values[redeemed].sum() / total)}
 
 def evaluate_month(stage, solution):
     """Evaluate completed target-month returns, including actual redemptions."""
