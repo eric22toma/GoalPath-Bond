@@ -482,8 +482,6 @@ def main():
         pickle.dump(bundle, output, protocol=pickle.HIGHEST_PROTOCOL)
     temporary_file.replace(DEFAULT_FORECAST_BUNDLE)
     print(f'\nStage 1 forecasts saved to {DEFAULT_FORECAST_BUNDLE.resolve()}')
-    print('Next: run prepare_stage1_inputs.py (no forecast re-fitting).')
-
 
 if __name__ == '__main__':
     main()
