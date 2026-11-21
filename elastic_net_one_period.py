@@ -257,9 +257,7 @@ def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas,
         valid['alpha_mixing'] = mixing
         valid['lambda_penalty'] = penalty
         # Match Stage 1's yield-based carry; return errors inform Stage 2 uncertainty.
-        valid['predicted_return'] = (
-            valid.YIELD / 12 - valid.DURATION * valid.predicted_dy_pp / 100
-        ).where(valid.DURATION.gt(0))
+        valid['predicted_return'] = (valid.YIELD / 12 - valid.DURATION * valid.predicted_dy_pp / 100).where(valid.DURATION.gt(0))
         valid['return_error'] = valid.next_return - valid.predicted_return
         results.append(valid)
     if not results:
