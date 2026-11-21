@@ -228,6 +228,7 @@ __marimo__/
 !/stage1_outputs/inputs/
 /stage1_outputs/forecasts/*
 !/stage1_outputs/forecasts/elastic_net_outputs.pkl.gz
+!/stage1_outputs/forecasts/bond_forecast_history.csv.gz
 /stage1_outputs/inputs/*
 !/stage1_outputs/inputs/stage1_inputs.pkl
 !/stage1_outputs/inputs/eligible_inputs.csv
