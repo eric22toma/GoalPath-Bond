@@ -249,14 +249,17 @@ def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas,
                 last_tuning_year = asof.year
             mixing, penalty = selected_params
         now, _, _ = fit_forecast(panel, asof, features, mixing, penalty)
-        valid = now.dropna(subset=['dy']).copy()
+        # Keep every forecast, even if the subsequent yield or return is missing.
+        valid = now.copy()
         if valid.empty:
             continue
         valid['forecast_error_bp'] = (valid.dy - valid.predicted_dy_pp) * 100
         valid['alpha_mixing'] = mixing
         valid['lambda_penalty'] = penalty
-        # These return errors are used by the single-period optimizer.
-        valid['predicted_return'] = (valid.COUPON / valid.PRICE_EOM / 12 -valid.DURATION * valid.predicted_dy_pp / 100 )
+        # Match Stage 1's yield-based carry; return errors inform Stage 2 uncertainty.
+        valid['predicted_return'] = (
+            valid.YIELD / 12 - valid.DURATION * valid.predicted_dy_pp / 100
+        ).where(valid.DURATION.gt(0))
         valid['return_error'] = valid.next_return - valid.predicted_return
         results.append(valid)
     if not results:
@@ -267,7 +270,8 @@ def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas,
 def rolling_metrics(backtest):
     if backtest.empty:
         return pd.DataFrame()
-    result = backtest.copy()
+    # Evaluate yield accuracy only where the next-month yield was observed.
+    result = backtest.dropna(subset=['forecast_error_bp']).copy()
     result['year'] = result.target_month.dt.year
     return result.groupby(['year'], as_index=False).agg(
         observations=('forecast_error_bp', 'size'),
@@ -340,7 +344,7 @@ def main():
     """Run one H=1 forecast and save the bundle consumed by Stage 1."""
     # Change these two settings when needed; no command-line arguments required.
     forecast_month = '2025-10'  # Forecast October -> November 2025.
-    run_backtest = False       # Optional expanding-window historical evaluation.
+    run_backtest = True        # Generate historical errors for Stage 2 uncertainty.
     features = FEATURES.copy()
 
     # Prepare the original source datasets and construct bond-month predictors.
@@ -414,7 +418,7 @@ def main():
                       f'RMSE {np.sqrt(np.mean(ordinary_errors ** 2)):.2f} bp, '
                       f'MAE {np.mean(np.abs(ordinary_errors)):.2f} bp.')
 
-    # Optional historical backtest; disabled for the normal four-script workflow.
+    # Generate rolling out-of-sample forecasts through the decision month.
     history_errors = pd.DataFrame()
     if run_backtest:
         backtest_start = first_backtest_target(panel, features, asof)
@@ -427,7 +431,7 @@ def main():
         else:
             print('\nONE-MONTH EXPANDING-WINDOW BACKTEST')
             print(rolling_metrics(history_errors).to_string(index=False))
-            earliest = history_errors.sort_values(
+            earliest = history_errors.dropna(subset=['forecast_error_bp']).sort_values(
                 ['target_month', 'cusip']
             ).head(3).copy()
             earliest['predicted_change_bp'] = earliest.predicted_dy_pp * 100
@@ -436,6 +440,20 @@ def main():
             print(earliest[['cusip', 'month', 'target_month',
                             'predicted_change_bp', 'actual_change_bp',
                             'forecast_error_bp']].to_string(index=False))
+
+            # Save a compact bond-level history alongside the existing forecast bundle.
+            # Missing realized outcomes remain NaN; they are not treated as zero errors.
+            forecast_columns = [
+                'cusip', 'month', 'target_month', 'RATING_NUM', 'time_to_maturity',
+                'YIELD', 'DURATION', 'predicted_dy_pp', 'dy', 'forecast_error_bp',
+                'predicted_return', 'next_return', 'return_error',
+                'alpha_mixing', 'lambda_penalty'
+            ]
+            output_path = DEFAULT_FORECAST_BUNDLE.parent / 'bond_forecast_history.csv.gz'
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            history_errors[forecast_columns].to_csv(
+                output_path, index=False, compression='gzip')
+            print(f'Bond-level forecast history saved to {output_path.resolve()}')
 
     # Save the same shared H=1 bundle expected by prepare_stage1_inputs.py.
     import gzip
