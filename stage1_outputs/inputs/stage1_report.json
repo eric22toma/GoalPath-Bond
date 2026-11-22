@@ -9,7 +9,7 @@
   "benchmark_risk_proxy_count": 24,
   "tradable_candidates": 20,
   "benchmark_duration": 6.724725379567069,
-  "benchmark_expected_return": 0.0029064092589144506,
+  "benchmark_expected_return": 0.002689047290264226,
   "risk_factor_months": [
     "2022-11",
     "2022-12",
