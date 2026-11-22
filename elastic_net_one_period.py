@@ -146,7 +146,7 @@ def load_panel(prepared_bonds, macro, params):
 
 
 def estimator(alpha, l1_ratio):
-    return make_pipeline(StandardScaler(),ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-7))
+    return make_pipeline(StandardScaler(),ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=50000, tol=1e-4))
 
 def training_rows(panel, asof, features, max_yield_change_bp=MAX_TRAIN_YIELD_CHANGE_BP):
     """Use only realized historical targets; optionally exclude extreme changes from training."""
