@@ -48,7 +48,7 @@ def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, 
     m.Params.TimeLimit = time_limit
     m.Params.MIPGap = 0.001
     if exact:
-        # Discourage tiny positive weights attached to near-zero binary selectors.
+        # Discourage tiny positive weights attached to near-zero binary selectors to avoid going over the K limit; Gurobi considers very small weights eqaul to zero.
         m.Params.IntegralityFocus = 1
     w = m.addMVar(n, lb=0, ub=max_weight, name='weight')
     buy = m.addMVar(n, lb=0, name='buy')
