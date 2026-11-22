@@ -121,14 +121,61 @@ def main():
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_FILE, 'wb') as file:
         pickle.dump(stage, file, protocol=pickle.HIGHEST_PROTOCOL)
-    print(f'STAGE 2 INPUTS | asof={ASOF}, H={HORIZON}, forecast={FORECAST_MODEL}')
-    print(f'Candidates: {len(stage["candidates"])}, benchmark bonds: {len(stage["benchmark"])}')
+    print(f'\nSTAGE 2 INPUTS | asof={ASOF}, H={HORIZON}, forecast={FORECAST_MODEL}')
+    print('=' * 76)
+    print(f'Capital: ${stage["initial_capital"]:,.2f}; eligible bonds: {len(stage["eligible"]):,}; '
+          f'tradable candidates: {len(stage["candidates"]):,}; benchmark bonds: {len(stage["benchmark"]):,}')
     print(f'Initial cash: {stage["cash_weight"]:.2%}; forced sales: {stage["forced_sale_weight"]:.2%}')
-    for period in stage['periods']:
-        print(f'  {period["month"]}: mean mu={period["mu"].mean():.4%}, '
-              f'mean uncertainty={period["rho"].mean():.4%}, '
+    print('\nADDITIONAL REQUIRED INPUTS FOR STAGE 2')
+    print('1. H-PERIOD EXPECTED RETURNS mu[h]: one monthly return forecast per candidate and planned month.')
+    print(f'   Forecast method: {FORECAST_MODEL}; H={HORIZON} monthly return vectors, '
+          f'each with {len(stage["candidates"])} candidates.')
+    print('2. FORECAST UNCERTAINTY rho[h]: standard deviation of past out-of-sample '
+          'monthly return errors for each candidate and horizon.')
+    print(f'   At least {MIN_ERROR_OBSERVATIONS} errors per bond; otherwise use the '
+          f'horizon-pooled estimate. Only errors realized by {ASOF} are used.')
+    print('3. TRACKING-RISK TERMS: active variance = x.T Q x + risk_linear.T x + risk_constant.')
+    print(f'   Q shape: {stage["candidate_covariance"].shape}; '
+          f'linear shape: {stage["risk_linear"].shape}; '
+          f'constant: {stage["risk_constant"]:.8f}.')
+    print('   Q and full benchmark exposures are reused from Stage 1 and held fixed in the plan.')
+    print('4. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
+          f'{stage["cash_monthly_return"]:.2%} per month.')
+    print('   The optimizer will enforce self-financing and deduct transaction costs.')
+    print('5. MATURITIES: a candidate-bond flag for each planned month.')
+    print('   The optimizer will transfer repayments into cash; no future redemptions are assumed.')
+    print('6. BENCHMARK RETURN: weighted expected monthly return of the full benchmark, '
+          'using yield/12 when a forecast is unavailable.')
+
+    # Preview exactly the first five eligible bonds, not merely the candidate subset.
+    sample = stage['eligible'][[
+        'cusip', 'benchmark_weight', 'current_weight', 'duration', 'MATURITY'
+    ]].head(5).copy()
+    return_col = 'predicted_return' if FORECAST_MODEL == 'direct' else 'constant_predicted_return'
+    for h, period in enumerate(stage['periods'], start=1):
+        print(f'\nH={h} | planned month: {period["month"]}')
+        print(f'  Candidate mu: min={period["mu"].min():+.4%}, '
+              f'mean={period["mu"].mean():+.4%}, max={period["mu"].max():+.4%}; '
+              f'benchmark mu={period["benchmark_mu"]:+.4%}')
+        print(f'  Candidate rho: min={period["rho"].min():.4%}, '
+              f'mean={period["rho"].mean():.4%}, max={period["rho"].max():.4%}; '
               f'maturities={period["matures_in_month"].sum()}')
-    print(f'Saved: {OUTPUT_FILE}')
+
+        forecast_h = latest.loc[latest.horizon.eq(h)].set_index('cusip')[return_col]
+        candidate_rho = pd.Series(period['rho'], index=stage['candidates'].cusip)
+        preview = sample.copy()
+        preview['mu'] = preview.cusip.map(forecast_h)
+        preview['rho'] = preview.cusip.map(candidate_rho)
+        preview['matures'] = pd.to_datetime(preview.MATURITY).dt.to_period('M').eq(
+            pd.Period(period['month'], freq='M'))
+        preview = preview[['cusip', 'mu', 'rho', 'benchmark_weight',
+                           'current_weight', 'duration', 'matures']]
+        print(f'  First {len(preview)} eligible bonds (monthly decimal returns/weights):')
+        print(preview.to_string(index=False, na_rep='n/a',
+                                float_format=lambda x: f'{x:,.6f}'))
+        print('  Note: rho is n/a for eligible bonds outside the selected candidate set.')
+
+    print(f'\nSaved: {OUTPUT_FILE}')
 
 
 if __name__ == '__main__':
