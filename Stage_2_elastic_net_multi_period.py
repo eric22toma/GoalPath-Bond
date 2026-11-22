@@ -4,7 +4,6 @@ and H=1 tuning. Each horizon predicts cumulative yield changes from a common dec
 differences of these forecasts give the monthly return inputs for Boyd's MPO.
 No optimizer, future benchmark data, or realized future predictors are used. """
 
-import argparse
 import numpy as np
 import pandas as pd
 
@@ -17,6 +16,8 @@ from elastic_net_one_period import (
 
 HORIZON = 3
 FINAL_ASOF = '2025-10'
+START_ORIGIN = None  # None uses the earliest feasible historical origin.
+SAVE_OUTPUTS = True
 PORTFOLIO_START = '2023-12'
 OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'forecasts'
 HISTORY_FILE = OUTPUT_DIR / 'Stage_2_bond_forecast_history.csv.gz'
@@ -203,18 +204,8 @@ def forecast_accuracy(history):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--horizon', type=int, default=HORIZON)
-    parser.add_argument('--asof', default=FINAL_ASOF, help='Last forecast origin (YYYY-MM)')
-    parser.add_argument('--start-origin', default=None, help='Optional first forecast origin')
-    parser.add_argument('--no-save', action='store_true', help='Diagnostic without overwriting outputs')
-    args = parser.parse_args()
-    if args.horizon < 1:
-        parser.error('--horizon must be positive')
-    asof = pd.Period(args.asof, freq='M')
-    start = pd.Period(args.start_origin, freq='M') if args.start_origin else None
-    if start is not None and start > asof:
-        parser.error('--start-origin must not follow --asof')
+    asof = pd.Period(FINAL_ASOF, freq='M')
+    start = pd.Period(START_ORIGIN, freq='M') if START_ORIGIN else None
 
     # Same data and predictors as Stage 1; prepare once for all horizons.
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -228,22 +219,22 @@ def main():
     if not panel.month.eq(asof).any():
         raise ValueError(f'No bond observations for final origin {asof}')
 
-    print(f'STAGE 2.1 | H={args.horizon} | last origin={asof}', flush=True)
+    print(f'STAGE 2.1 | H={HORIZON} | last origin={asof}', flush=True)
     forecasts = {}
-    for h in range(1, args.horizon + 1):
+    for h in range(1, HORIZON + 1):
         horizon_panel = build_horizon_panel(panel, h)
         forecasts[h] = rolling_horizon(horizon_panel, h, asof, start)
         del horizon_panel
 
     history = map_monthly_returns(forecasts)
     del forecasts
-    if not history.loc[history.month.eq(asof), 'horizon'].nunique() == args.horizon:
+    if not history.loc[history.month.eq(asof), 'horizon'].nunique() == HORIZON:
         raise ValueError('One or more horizons missing for the final decision month')
     scores = forecast_accuracy(history)
     print('\nMatched forecast accuracy (yield in bp; returns in decimal units):')
     print(scores.to_string(index=False))
     preview = history.loc[history.month.eq(asof)]
-    complete = preview.groupby('cusip').horizon.transform('nunique').eq(args.horizon)
+    complete = preview.groupby('cusip').horizon.transform('nunique').eq(HORIZON)
     preview = preview.loc[complete]
     selected = preview.cusip.drop_duplicates().head(3)
     print('\nLatest forecast paths (first three bonds with complete horizons):')
@@ -252,7 +243,7 @@ def main():
         'predicted_period_dy_pp', 'predicted_return', 'next_return'
     ]].to_string(index=False))
     print(f'\nSaved-history candidate rows: {len(history):,}')
-    if not args.no_save:
+    if SAVE_OUTPUTS:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         history.to_csv(HISTORY_FILE, index=False, compression='gzip')
         scores.to_csv(ACCURACY_FILE, index=False)
