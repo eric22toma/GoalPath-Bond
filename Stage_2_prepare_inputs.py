@@ -143,15 +143,9 @@ def main():
     print('4. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
           f'{stage["cash_monthly_return"]:.2%} per month.')
     print('   The optimizer will enforce self-financing and deduct transaction costs.')
-    print('5. MATURITIES: a candidate-bond flag for each planned month.')
-    print('   The optimizer will transfer repayments into cash; no future redemptions are assumed.')
-    print('6. BENCHMARK RETURN: weighted expected monthly return of the full benchmark, '
-          'using yield/12 when a forecast is unavailable.')
 
     # Preview exactly the first five eligible bonds, not merely the candidate subset.
-    sample = stage['eligible'][[
-        'cusip', 'benchmark_weight', 'current_weight', 'duration', 'MATURITY'
-    ]].head(5).copy()
+    sample = stage['eligible'][['cusip', 'benchmark_weight', 'current_weight', 'duration', 'MATURITY']].head(5).copy()
     return_col = 'predicted_return' if FORECAST_MODEL == 'direct' else 'constant_predicted_return'
     for h, period in enumerate(stage['periods'], start=1):
         print(f'\nH={h} | planned month: {period["month"]}')
@@ -167,13 +161,10 @@ def main():
         preview = sample.copy()
         preview['mu'] = preview.cusip.map(forecast_h)
         preview['rho'] = preview.cusip.map(candidate_rho)
-        preview['matures'] = pd.to_datetime(preview.MATURITY).dt.to_period('M').eq(
-            pd.Period(period['month'], freq='M'))
-        preview = preview[['cusip', 'mu', 'rho', 'benchmark_weight',
-                           'current_weight', 'duration', 'matures']]
+        preview['matures'] = pd.to_datetime(preview.MATURITY).dt.to_period('M').eq(pd.Period(period['month'], freq='M'))
+        preview = preview[['cusip', 'mu', 'rho', 'benchmark_weight', 'current_weight', 'duration', 'matures']]
         print(f'  First {len(preview)} eligible bonds (monthly decimal returns/weights):')
-        print(preview.to_string(index=False, na_rep='n/a',
-                                float_format=lambda x: f'{x:,.6f}'))
+        print(preview.to_string(index=False, na_rep='n/a',float_format=lambda x: f'{x:,.6f}'))
         print('  Note: rho is n/a for eligible bonds outside the selected candidate set.')
 
     print(f'\nSaved: {OUTPUT_FILE}')
