@@ -205,12 +205,27 @@ def main():
     scores = forecast_accuracy(history)
     print('\nMatched forecast accuracy (yield in bp; returns in decimal units):')
     print(scores.to_string(index=False))
-    preview = history.loc[history.month.eq(asof)]
-    complete = preview.groupby('cusip').horizon.transform('nunique').eq(HORIZON)
+    # Preview the latest origin with three fully observable forecast paths.
+    # Keep the full history (including forecasts beyond observed returns) intact.
+    preview = history.loc[
+        np.isfinite(history['predicted_return']) & np.isfinite(history['next_return'])
+    ]
+    complete = preview.groupby(['month', 'cusip']).horizon.transform('nunique').eq(HORIZON)
     preview = preview.loc[complete]
-    selected = preview.cusip.drop_duplicates().head(3)
-    print('\nLatest forecast paths (first three bonds with complete horizons):')
-    print(preview.loc[preview.cusip.isin(selected), ['cusip', 'month', 'target_month', 'horizon', 'predicted_dy_pp', 'predicted_period_dy_pp', 'predicted_return', 'next_return']].to_string(index=False))
+    if preview.empty:
+        print('\nNo forecast origin has complete predicted and realized returns for all horizons.')
+    else:
+        counts = preview.groupby('month').cusip.nunique()
+        enough_bonds = counts.loc[counts.ge(3)]
+        # Prefer three complete bonds; fall back to fewer if necessary.
+        preview_asof = enough_bonds.index.max() if not enough_bonds.empty else counts.index.max()
+        preview = preview.loc[preview.month.eq(preview_asof)]
+        selected = preview.cusip.drop_duplicates().head(3)
+        print(f'\nLatest fully observable forecast paths (origin={preview_asof}):')
+        print(preview.loc[preview.cusip.isin(selected), [
+            'cusip', 'month', 'target_month', 'horizon', 'predicted_dy_pp',
+            'predicted_period_dy_pp', 'predicted_return', 'next_return'
+        ]].sort_values(['cusip', 'horizon']).to_string(index=False))
     print(f'\nSaved-history candidate rows: {len(history):,}')
     if SAVE_OUTPUTS:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
