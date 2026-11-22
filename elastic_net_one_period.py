@@ -27,7 +27,7 @@ FIRST_OOS_YEAR = 2019
 LAST_OOS_YEAR = 2025
 
 # dy is stored in percentage points, so 500 bp corresponds to 5.0 pp.; added as a result of extreme yield change outliers impacting forecasting
-MAX_TRAIN_YIELD_CHANGE_BP = 300.0 #maybe tighten this more
+MAX_TRAIN_YIELD_CHANGE_BP = 500.0 #maybe tighten this more
 
 # Save file location for prepare_stage1_inputs.
 DEFAULT_FORECAST_BUNDLE = (PROJECT_ROOT / 'stage1_outputs' / 'forecasts'/ 'elastic_net_outputs.pkl.gz')
