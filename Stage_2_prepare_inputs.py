@@ -144,8 +144,8 @@ def main():
           f'{stage["cash_monthly_return"]:.2%} per month.')
     print('   The optimizer will enforce self-financing and deduct transaction costs.')
 
-    # Preview exactly the first five eligible bonds, not merely the candidate subset.
-    sample = stage['eligible'][['cusip', 'benchmark_weight', 'current_weight', 'duration', 'MATURITY']].head(5).copy()
+    # Preview the first five tradable candidates; each has a matching rho value.
+    sample = stage['candidates'][['cusip', 'benchmark_weight', 'current_weight', 'duration', 'MATURITY']].head(5).copy()
     return_col = 'predicted_return' if FORECAST_MODEL == 'direct' else 'constant_predicted_return'
     for h, period in enumerate(stage['periods'], start=1):
         print(f'\nH={h} | planned month: {period["month"]}')
@@ -163,9 +163,8 @@ def main():
         preview['rho'] = preview.cusip.map(candidate_rho)
         preview['matures'] = pd.to_datetime(preview.MATURITY).dt.to_period('M').eq(pd.Period(period['month'], freq='M'))
         preview = preview[['cusip', 'mu', 'rho', 'benchmark_weight', 'current_weight', 'duration', 'matures']]
-        print(f'  First {len(preview)} eligible bonds (monthly decimal returns/weights):')
+        print(f'  First {len(preview)} tradable candidates (monthly decimal returns/weights):')
         print(preview.to_string(index=False, na_rep='n/a',float_format=lambda x: f'{x:,.6f}'))
-        print('  Note: rho is n/a for eligible bonds outside the selected candidate set.')
 
     print(f'\nSaved: {OUTPUT_FILE}')
 
