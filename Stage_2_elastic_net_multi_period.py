@@ -1,10 +1,9 @@
 """Stage 2.1: direct multi-horizon elastic-net forecasts for GoalPath-Bond.
-
-Reuses Stage 1 preparation, fitting, regularization and H=1 tuning. Each
-horizon predicts cumulative yield changes from a common decision month;
+Reuses the implementaiton made in Stage 1 including preparation, fitting, regularization 
+and H=1 tuning. Each horizon predicts cumulative yield changes from a common decision month;
 differences of these forecasts give the monthly return inputs for Boyd's MPO.
-No optimizer, future benchmark data, or realized future predictors are used.
-"""
+No optimizer, future benchmark data, or realized future predictors are used. """
+
 import argparse
 import numpy as np
 import pandas as pd
@@ -23,20 +22,13 @@ OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'forecasts'
 HISTORY_FILE = OUTPUT_DIR / 'Stage_2_bond_forecast_history.csv.gz'
 ACCURACY_FILE = OUTPUT_DIR / 'Stage_2_forecast_accuracy.csv'
 KEYS = ['cusip', 'month']
-BASE_COLUMNS = list(dict.fromkeys(
-    KEYS + FEATURES + ['YIELD', 'DURATION', 'RATING_NUM', 'RET_EOM',
-                        'next_yield', 'next_return', 'target_month', 'dy']
-))
+BASE_COLUMNS = list(dict.fromkeys(KEYS + FEATURES + ['YIELD', 'DURATION', 'RATING_NUM', 'RET_EOM','next_yield', 'next_return', 'target_month', 'dy']))
 
 
 def build_horizon_panel(panel, h):
     """Use exact calendar matches, not row shifts; dy is cumulative in pp.
-
     next_return is the realized ONE-month return ending at t+h,
-    not the compounded return over h months.
-    """
-    if h < 1:
-        raise ValueError('Forecast horizon must be positive')
+    not the compounded return over h months. """
     if h == 1:
         return panel
     base = panel.drop(columns=['next_yield', 'next_return', 'target_month', 'dy'])
@@ -50,15 +42,11 @@ def build_horizon_panel(panel, h):
 
 
 def tune_horizon(known, h):
-    """Reuse H=1 CV unchanged; purge overlapping labels for h>1.
-
-    A validation fold is forecast using only targets that were observable
-    by its earliest forecast origin. Final fitting uses Stage 1 training_rows,
-    including its existing 500 bp cumulative training-target screen.
-    """
+    """Tune elastic-net hyperparameters for each forecasting horizon using
+    chronological cross-validation, excluding training targets not yet
+    observable at the validation date. Retain the 500 bp training filter."""
     if h == 1:
-        mixing, penalty, _, _, _ = tune_elastic_net(
-            known, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID)
+        mixing, penalty, _, _, _ = tune_elastic_net(known, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID)
         return mixing, penalty
 
     sampled = limit_tuning_rows(known)
