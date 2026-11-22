@@ -345,31 +345,6 @@ def main():
     run_backtest = True        # Generate historical errors for Stage 2 uncertainty.
     features = FEATURES.copy()
 
-    # Diagnostic only: check numerical versus agency credit-rating coverage.
-    rating_path = DEFAULT_BONDS if DEFAULT_BONDS.is_file() else Path(str(DEFAULT_BONDS) + '.zip')
-    rating_cols = ['RATING_NUM', 'R_FR', 'N_FR', 'R_SP', 'N_SP', 'R_MR', 'N_MR']
-    ratings = pd.read_csv(rating_path, usecols=rating_cols, dtype='string')
-    ratings = ratings.apply(lambda s: s.str.strip().replace(
-        {'': pd.NA, 'NR': pd.NA, 'N/A': pd.NA, 'NA': pd.NA}))
-    print('\nCREDIT-RATING DIAGNOSTIC (raw bond-month observations)')
-    print('Rating coverage (% nonmissing):')
-    print((100 * ratings.notna().mean()).round(2).to_string())
-    print('\nFitch alphabetical rating -> Fitch numerical value consistency:')
-    print(ratings.dropna(subset=['R_FR', 'N_FR']).groupby('R_FR')['N_FR']
-          .agg(['count', 'nunique']).sort_values('nunique', ascending=False).to_string())
-    print('\nFitch alphabetical rating -> RATING_NUM consistency:')
-    print(ratings.dropna(subset=['R_FR', 'RATING_NUM']).groupby('R_FR')['RATING_NUM']
-          .agg(['count', 'nunique']).sort_values('nunique', ascending=False).to_string())
-    missing_rating = ratings.RATING_NUM.isna()
-    agency_rated = ratings[['R_FR', 'R_SP', 'R_MR']].notna().any(axis=1)
-    print(f'\nMissing RATING_NUM: {missing_rating.sum():,} / {len(ratings):,}')
-    print(f'Of these, with at least one alphabetical agency rating: '
-          f'{(missing_rating & agency_rated).sum():,}')
-    print('Agency coverage when RATING_NUM is missing (%):')
-    print((100 * ratings.loc[missing_rating, ['R_FR', 'R_SP', 'R_MR']]
-           .notna().mean()).round(2).to_string())
-    del ratings
-
     # Prepare the original source datasets and construct bond-month predictors.
     data = process_all_data(bond_columns=BOND_COLUMNS)
     macro, curve_params = macro_features(
