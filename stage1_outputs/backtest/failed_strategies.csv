@@ -1,1 +1,3 @@
 strategy,decision_month,reason
+elastic_net_exact_K50_N150,2024-03,Portfolio violates holdings or investment constraint.
+no_forecast_exact_K50_N150,2025-04,Portfolio violates holdings or investment constraint.

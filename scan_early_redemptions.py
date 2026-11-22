@@ -17,7 +17,7 @@ import pandas as pd
 from process_investable_universe import DEFAULT_BONDS, PROJECT_ROOT
 
 REFERENCE = PROJECT_ROOT / '01_Source_Data' / 'early_redemption_reference.csv'
-START_MONTH = '2023-12'  # Set as this date to match the current backtest decision-month window.
+START_MONTH = '2020-12'  # Set as this date to match the current backtest decision-month window.
 END_MONTH = '2025-10'
 
 '''Early redemptions: CUSIP -> (redemption date, price per $100 face).
