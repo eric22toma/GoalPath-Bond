@@ -105,7 +105,8 @@ def main():
         selected = part.loc[part.month.eq(ASOF) & part.horizon.between(1, HORIZON)]
         if not selected.empty:
             latest.append(selected)
-    stage = prepare_inputs(bundle, pd.concat(latest, ignore_index=True))
+    latest = pd.concat(latest, ignore_index=True)
+    stage = prepare_inputs(bundle, latest)
 
     # Read errors only for chosen bonds and only if their target was realized
     # on/before the decision date. No look-ahead from future outcomes.
