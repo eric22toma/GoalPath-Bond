@@ -210,6 +210,10 @@ def main():
     print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
     states = {f'{model}_{method}_K{k}_N{n}': {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0} for model, k, method, n in configs}
     monthly, positions, forecasting, failures = [], [], [], []
+    # Diagnostic aggregates across all evaluated bond-month forecasts.
+    total_squared_error = 0.0
+    tail_squared_error = {threshold: 0.0 for threshold in (100, 300, 500)}
+    largest_error_rows = []
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
@@ -228,10 +232,24 @@ def main():
                 'random_walk_rmse_bp': float(np.sqrt(np.mean((valid.dy * 100) ** 2))),}
             row['elastic_net_mae_bp'] = float(np.mean(np.abs(error)))
             row['random_walk_mae_bp'] = float(np.mean(np.abs(valid.dy.to_numpy(float) * 100)))
-            # Diagnostic only: percent of observed bond forecasts with extreme errors.
+            # Diagnostics use realized outcomes only; they do not screen training or holdings.
+            squared_error = error.pow(2)
+            monthly_squared_error = float(squared_error.sum())
+            total_squared_error += monthly_squared_error
             for threshold in (100, 300, 500):
+                tail = error.abs() > threshold
+                tail_sum = float(squared_error.loc[tail].sum())
+                tail_squared_error[threshold] += tail_sum
                 row[f'elastic_net_abs_error_gt_{threshold}bp_pct'] = float(
-                    100 * (error.abs() > threshold).mean())
+                    100 * tail.mean())
+                row[f'elastic_net_squared_error_share_gt_{threshold}bp_pct'] = (
+                    100 * tail_sum / monthly_squared_error
+                    if monthly_squared_error > 0 else 0.0)
+            largest_error_rows.append(
+                valid[['cusip', 'month', 'target_month', 'dy', 'predicted_dy_pp']]
+                .assign(forecast_error_bp=error, abs_error_bp=error.abs())
+                .nlargest(10, 'abs_error_bp')
+            )
             preds, baseline_penalties = forecast_baselines(panel, asof, now, baseline_penalties)
             for name, estimate in preds.items():
                 difference = (now.dy.to_numpy(float) - estimate) * 100
@@ -363,6 +381,20 @@ def main():
             column = f'elastic_net_abs_error_gt_{threshold}bp_pct'
             pct = np.average(scores[column], weights=scores.forecast_bonds)
             print(f'  |error| > {threshold} bp: {pct:.2f}%')
+        print('\nSHARE OF TOTAL ELASTIC-NET SQUARED ERROR FROM EXTREME OBSERVATIONS')
+        for threshold in (100, 300, 500):
+            share = (100 * tail_squared_error[threshold] / total_squared_error
+                     if total_squared_error > 0 else 0.0)
+            print(f'  |error| > {threshold} bp: {share:.2f}% of squared error')
+        if largest_error_rows:
+            worst = (pd.concat(largest_error_rows, ignore_index=True)
+                     .nlargest(10, 'abs_error_bp').copy())
+            worst['predicted_change_bp'] = worst.predicted_dy_pp * 100
+            worst['realized_change_bp'] = worst.dy * 100
+            print('\nTEN LARGEST ABSOLUTE ELASTIC-NET FORECAST ERRORS')
+            print(worst[['cusip', 'month', 'target_month',
+                         'predicted_change_bp', 'realized_change_bp',
+                         'forecast_error_bp']].to_string(index=False))
 
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
 
