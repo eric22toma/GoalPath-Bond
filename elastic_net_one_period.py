@@ -12,7 +12,8 @@ from sklearn.linear_model import ElasticNet
 from process_investable_universe import (process_all_data, history_for_features, PROJECT_ROOT,DEFAULT_BONDS, DEFAULT_FRED, DEFAULT_CURVE)
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
-            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1']
+            'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1',
+            'yield_momentum_bp', 'spread_change_bp', 'RATING_NUM', 'bond_volatility_bp']
 OPTIONAL_FEATURES = ['forward_5y']
 BOND_COLUMNS = ['cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
@@ -110,6 +111,27 @@ def load_panel(prepared_bonds, macro, params):
         if month not in params.index or params.loc[month].isna().any(): continue
         ix = p.loc[rows].index[p.loc[rows,'time_to_maturity']>0]
         p.loc[ix,'rich_cheap'] = 100*p.loc[ix,'YIELD']-sven_yield(p.loc[ix,'time_to_maturity'],params.loc[month])
+
+    # Bond-specific predictors use only observations known by each forecast month.
+    p = p.sort_values(['cusip', 'month']).copy()
+    bonds = p.groupby('cusip', sort=False)
+    consecutive = p.month.eq(bonds.month.shift(1) + 1)
+
+    # Monthly bond yield momentum, in basis points (source YIELD is decimal).
+    p['yield_momentum_bp'] = (10000 * bonds.YIELD.diff()).where(consecutive)
+
+    # Change in the bond-minus-Treasury rich/cheap spread, in basis points.
+    # rich_cheap is already stored in percentage points.
+    p['spread_change_bp'] = (100 * bonds.rich_cheap.diff()).where(consecutive)
+
+    # Trailing six observations of monthly yield changes, including month t.
+    # Require at least three valid consecutive-month changes in the window.
+    p['bond_volatility_bp'] = (
+        p.groupby('cusip', sort=False)['yield_momentum_bp']
+        .transform(lambda x: x.rolling(window=6, min_periods=3).std())
+    )
+    # RATING_NUM is already a numeric bond field loaded via BOND_COLUMNS.
+
     # Require the immediately following calendar month for realized targets.
     future = p[['cusip','month','YIELD','RET_EOM','PRICE_EOM']].copy()
     future['month'] = future.month-1
