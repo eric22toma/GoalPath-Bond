@@ -47,6 +47,9 @@ def solve_quadratic(stage, k, max_weight, transaction_cost, duration_tolerance, 
     m.Params.OutputFlag = 0
     m.Params.TimeLimit = time_limit
     m.Params.MIPGap = 0.001
+    if exact:
+        # Discourage tiny positive weights attached to near-zero binary selectors.
+        m.Params.IntegralityFocus = 1
     w = m.addMVar(n, lb=0, ub=max_weight, name='weight')
     buy = m.addMVar(n, lb=0, name='buy')
     sell = m.addMVar(n, lb=0, name='sell')
