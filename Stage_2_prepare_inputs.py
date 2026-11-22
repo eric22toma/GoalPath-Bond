@@ -32,8 +32,7 @@ def prepare_inputs(bundle, forecasts, pretrade_state=None):
         raise ValueError(f'Forecast file does not contain every horizon through H={HORIZON}')
     complete_cusips = forecast_matrix.dropna(subset=required_horizons).index
 
-    # Use Stage 2's H=1 forecast for the existing Stage 1 input constructor.
-    # Only the tradable snapshot is restricted; the full benchmark stays intact.
+    # Use Stage 2's H=1 forecast for the existing Stage 1 input.
     h1 = forecasts.loc[forecasts.horizon.eq(1)].set_index('cusip')
     snapshot = bundle['snapshot'].loc[bundle['snapshot'].cusip.isin(complete_cusips)].copy()
     snapshot['predicted_dy_pp'] = snapshot.cusip.map(h1.predicted_dy_pp)
@@ -51,9 +50,7 @@ def prepare_inputs(bundle, forecasts, pretrade_state=None):
     b_factor = np.asarray(stage['benchmark_factor'], dtype=float)
     sigma_f = np.asarray(stage['sigma_f'], dtype=float)
     stage['risk_linear'] = -2 * (B @ sigma_f @ b_factor + psi * b)
-    stage['risk_constant'] = float(
-        b_factor @ sigma_f @ b_factor +
-        np.sum(benchmark.psi.to_numpy(float) * benchmark.benchmark_weight.to_numpy(float)**2))
+    stage['risk_constant'] = float(b_factor @ sigma_f @ b_factor + np.sum(benchmark.psi.to_numpy(float) * benchmark.benchmark_weight.to_numpy(float)**2))
     
     # The Stage 1 covariance and benchmark composition are held at t when planning future months: no realized future constituents, weights or risk.
     stage['horizon'] = HORIZON
@@ -76,7 +73,6 @@ def prepare_inputs(bundle, forecasts, pretrade_state=None):
             'benchmark_mu': float(benchmark.benchmark_weight @ benchmark_returns),
             'rho': None,  # Filled using past out-of-sample errors below.
             'matures_in_month': maturity_month.eq(asof + h).to_numpy(bool)})
-
 
     # Current cash + candidate holdings + bonds requiring liquidation = 100%.
     allocated = candidates.current_weight.sum() + stage['cash_weight'] + stage['forced_sale_weight']
