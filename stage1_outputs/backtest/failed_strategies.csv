@@ -1,3 +1,1 @@
 strategy,decision_month,reason
-elastic_net_exact_K50_N150,2024-03,"Portfolio violates holdings or investment constraint: holdings=51, K=50, weight_sum=1.0000002282, tiny_weights=[8.551407261246713e-06], solver_status=2, mip_gap=0.0"
-no_forecast_exact_K50_N150,2025-04,"Portfolio violates holdings or investment constraint: holdings=51, K=50, weight_sum=1.0000000000, tiny_weights=[8.085175178564107e-06], solver_status=2, mip_gap=0.0"
