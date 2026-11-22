@@ -290,18 +290,6 @@ def rolling_backtest(panel, features, final_asof, start_target, alphas, lambdas,
     return pd.concat(results, ignore_index=True)
 
 
-def rolling_metrics(backtest):
-    if backtest.empty:
-        return pd.DataFrame()
-    # Evaluate yield accuracy only where the next-month yield was observed.
-    result = backtest.dropna(subset=['forecast_error_bp']).copy()
-    result['year'] = result.target_month.dt.year
-    return result.groupby(['year'], as_index=False).agg(
-        observations=('forecast_error_bp', 'size'),
-        rmse_yield_bp=('forecast_error_bp',lambda x: float(np.sqrt(np.mean(x ** 2)))),
-        mae_yield_bp=('forecast_error_bp',lambda x: float(np.mean(np.abs(x)))),)
-
-
 def show_selected_bonds(now, coef, asof, cusips=None):
     """Show bond predictors, next-month forecasts, and realized yield changes."""
     if cusips:
@@ -420,27 +408,6 @@ def main():
     print(coefficients[['feature', 'coefficient_original_units']].to_string(index=False))
     show_selected_bonds(now, coefficients, asof)
 
-    # Diagnostic evaluation; realized future outcomes are never model inputs.
-    evaluated = now.loc[now.dy.notna()]
-    if not evaluated.empty:
-        flat = int(evaluated.dy.abs().le(1e-10).sum())
-        residual_bp = (evaluated.dy - evaluated.predicted_dy_pp) * 100
-        print(f'ALL-BOND EVALUATION (unscreened): '
-              f'{len(evaluated):,} realized yield changes; '
-              f'{flat:,} unchanged ({flat/len(evaluated):.1%}).')
-        print(f'  Full-month RMSE: {np.sqrt(np.mean(residual_bp ** 2)):.2f} bp; '
-              f'MAE: {np.mean(np.abs(residual_bp)):.2f} bp.')
-        print('  NOTE: Evaluation data have not been screened for stale prices.')
-        if MAX_TRAIN_YIELD_CHANGE_BP is not None:
-            # Additional diagnostic only: primary evaluation above remains unfiltered.
-            ordinary = evaluated.loc[evaluated.dy.abs() * 100 <= MAX_TRAIN_YIELD_CHANGE_BP]
-            if not ordinary.empty:
-                ordinary_errors = (ordinary.dy - ordinary.predicted_dy_pp) * 100
-                print(f'  Diagnostic (realized changes <= {MAX_TRAIN_YIELD_CHANGE_BP:g} bp): '
-                      f'{len(ordinary):,} bonds, '
-                      f'RMSE {np.sqrt(np.mean(ordinary_errors ** 2)):.2f} bp, '
-                      f'MAE {np.mean(np.abs(ordinary_errors)):.2f} bp.')
-
     # Generate rolling out-of-sample forecasts through the decision month.
     history_errors = pd.DataFrame()
     if run_backtest:
@@ -452,18 +419,6 @@ def main():
         if history_errors.empty:
             print('No historical one-month backtest observations available.')
         else:
-            print('\nONE-MONTH EXPANDING-WINDOW BACKTEST')
-            print(rolling_metrics(history_errors).to_string(index=False))
-            earliest = history_errors.dropna(subset=['forecast_error_bp']).sort_values(
-                ['target_month', 'cusip']
-            ).head(3).copy()
-            earliest['predicted_change_bp'] = earliest.predicted_dy_pp * 100
-            earliest['actual_change_bp'] = earliest.dy * 100
-            print('First three out-of-sample bond yield-change forecasts:')
-            print(earliest[['cusip', 'month', 'target_month',
-                            'predicted_change_bp', 'actual_change_bp',
-                            'forecast_error_bp']].to_string(index=False))
-
             # Save a compact bond-level history alongside the existing forecast bundle.
             # Missing realized outcomes remain NaN; they are not treated as zero errors.
             forecast_columns = [
