@@ -186,17 +186,13 @@ def main():
 
     # Same data and predictors as Stage 1; prepare once for all horizons.
     data = process_all_data(bond_columns=BOND_COLUMNS)
-    macro, curve = macro_features(history_for_features(data, 'curve'),
-                                  history_for_features(data, 'fred'))
+    macro, curve = macro_features(history_for_features(data, 'curve'),history_for_features(data, 'fred'))
     months = data['bonds'][1].DATE.dt.to_period('M')
     model_months = pd.period_range(months.min(), months.max(), freq='M')
-    panel = load_panel(data['bonds'][1], macro.reindex(model_months),
-                       curve.reindex(model_months))[BASE_COLUMNS].copy()
+    panel = load_panel(data['bonds'][1], macro.reindex(model_months), curve.reindex(model_months))[BASE_COLUMNS].copy()
     del data
-    if not panel.month.eq(asof).any():
-        raise ValueError(f'No bond observations for final origin {asof}')
 
-    print(f'STAGE 2.1 | H={HORIZON} | last origin={asof}', flush=True)
+    print(f'STAGE 2 | H={HORIZON} | last origin={asof}', flush=True)
     forecasts = {}
     for h in range(1, HORIZON + 1):
         horizon_panel = build_horizon_panel(panel, h)
@@ -205,8 +201,7 @@ def main():
 
     history = map_monthly_returns(forecasts)
     del forecasts
-    if not history.loc[history.month.eq(asof), 'horizon'].nunique() == HORIZON:
-        raise ValueError('One or more horizons missing for the final decision month')
+
     scores = forecast_accuracy(history)
     print('\nMatched forecast accuracy (yield in bp; returns in decimal units):')
     print(scores.to_string(index=False))
@@ -215,10 +210,7 @@ def main():
     preview = preview.loc[complete]
     selected = preview.cusip.drop_duplicates().head(3)
     print('\nLatest forecast paths (first three bonds with complete horizons):')
-    print(preview.loc[preview.cusip.isin(selected), [
-        'cusip', 'month', 'target_month', 'horizon', 'predicted_dy_pp',
-        'predicted_period_dy_pp', 'predicted_return', 'next_return'
-    ]].to_string(index=False))
+    print(preview.loc[preview.cusip.isin(selected), ['cusip', 'month', 'target_month', 'horizon', 'predicted_dy_pp', 'predicted_period_dy_pp', 'predicted_return', 'next_return']].to_string(index=False))
     print(f'\nSaved-history candidate rows: {len(history):,}')
     if SAVE_OUTPUTS:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
