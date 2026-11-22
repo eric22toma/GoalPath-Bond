@@ -228,6 +228,10 @@ def main():
                 'random_walk_rmse_bp': float(np.sqrt(np.mean((valid.dy * 100) ** 2))),}
             row['elastic_net_mae_bp'] = float(np.mean(np.abs(error)))
             row['random_walk_mae_bp'] = float(np.mean(np.abs(valid.dy.to_numpy(float) * 100)))
+            # Diagnostic only: percent of observed bond forecasts with extreme errors.
+            for threshold in (100, 300, 500):
+                row[f'elastic_net_abs_error_gt_{threshold}bp_pct'] = float(
+                    100 * (error.abs() > threshold).mean())
             preds, baseline_penalties = forecast_baselines(panel, asof, now, baseline_penalties)
             for name, estimate in preds.items():
                 difference = (now.dy.to_numpy(float) - estimate) * 100
@@ -353,6 +357,12 @@ def main():
         mae_columns = [col for col in scores if col.endswith('_mae_bp')]
         print('\nFORECAST ACCURACY COMPARISON (average monthly MAE, basis points)')
         print(scores[mae_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
+        print('\nELASTIC-NET EXTREME FORECAST ERRORS (all observed bond-months)')
+        # Weight month-level percentages by the number of evaluated bonds.
+        for threshold in (100, 300, 500):
+            column = f'elastic_net_abs_error_gt_{threshold}bp_pct'
+            pct = np.average(scores[column], weights=scores.forecast_bonds)
+            print(f'  |error| > {threshold} bp: {pct:.2f}%')
 
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
 
