@@ -105,7 +105,14 @@ def report_solution(stage, solution, k, transaction_cost, method, duration_toler
     portfolio_duration = float(c.duration @ w)
     holdings = int((w > 1e-6).sum())
     if holdings > k or not np.isclose(w.sum(), 1.0, atol=1e-5):
-        raise ValueError('Portfolio violates holdings or investment constraint.')
+        # Diagnose tiny numerical positions versus a genuine investment violation.
+        tiny = w[(w > 1e-6) & (w < 1e-4)]
+        raise ValueError(
+            f'Portfolio violates holdings or investment constraint: '
+            f'holdings={holdings}, K={k}, weight_sum={w.sum():.10f}, '
+            f'tiny_weights={tiny.tolist()}, solver_status={solution["solver_status"]}, '
+            f'mip_gap={solution["mip_gap"]}'
+        )
     if abs(portfolio_duration - stage['benchmark_duration']) > duration_tolerance + 1e-5:
         raise ValueError('Portfolio violates benchmark duration constraint.')
 
