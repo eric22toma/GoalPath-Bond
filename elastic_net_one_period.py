@@ -13,7 +13,8 @@ from process_investable_universe import (process_all_data, history_for_features,
 
 FEATURES = ['level', 'slope', 'curvature', 'lag_level_change', 'rate_volatility',
             'fed_funds_change', 'vix', 'time_to_maturity', 'rich_cheap', 'cpi_inflation_lag1',
-            'yield_momentum_bp', 'spread_change_bp', 'RATING_NUM', 'bond_volatility_bp']
+            'yield_momentum_bp', 'spread_change_bp', 'RATING_NUM', 'bond_volatility_bp',
+            'lag_slope_change', 'lag_curvature_change']
 OPTIONAL_FEATURES = ['forward_5y']
 BOND_COLUMNS = ['cusip', 'DATE', 'YIELD', 'MATURITY', 'RET_EOM', 'DURATION', 'COUPON',
     'PRICE_EOM', 'COUPACC', 'AMOUNT_OUTSTANDING', 'T_DVolume',
@@ -59,6 +60,8 @@ def macro_features(curve, fred, core=None):
     if 'SVENF05' in monthly:
         f['forward_5y'] = monthly.SVENF05
     f['lag_level_change'] = f.level.shift(1)-f.level.shift(2)
+    f['lag_slope_change'] = f.slope.shift(1)-f.slope.shift(2)
+    f['lag_curvature_change'] = f.curvature.shift(1)-f.curvature.shift(2)
     # Daily changes include the prior month's final trading day.
     f['rate_volatility'] = daily.SVENY10.diff().groupby(daily.index.to_period('M')).std()
     macro = fred.sort_values('Date').set_index('Date')
