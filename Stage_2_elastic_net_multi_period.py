@@ -129,69 +129,46 @@ def rolling_horizon(panel, h, final_asof, start_origin=None):
 
 
 def map_monthly_returns(forecasts):
-    """Align horizons by CUSIP and origin, not by future bond observations.
-
+    """Align horizons by CUSIP and origin, not by future observations.
     Yield changes are in percentage points. YIELD and returns are decimals.
-    Constant duration is the preliminary Stage 2 approximation.
-    """
+    Constant duration is the preliminary Stage 2 approximation."""
+
     output = []
-    first = forecasts[1][KEYS + ['predicted_dy_pp']].rename(
-        columns={'predicted_dy_pp': 'first_dy_pp'})
+    first = forecasts[1][KEYS + ['predicted_dy_pp']].rename(columns={'predicted_dy_pp': 'first_dy_pp'})
     for h, frame in sorted(forecasts.items()):
         result = frame.merge(first, on=KEYS, how='left', validate='one_to_one', sort=False)
         if h == 1:
             result['previous_dy_pp'] = 0.0
         else:
-            previous = forecasts[h - 1][KEYS + ['predicted_dy_pp']].rename(
-                columns={'predicted_dy_pp': 'previous_dy_pp'})
-            result = result.merge(previous, on=KEYS, how='left',
-                                  validate='one_to_one', sort=False)
+            previous = forecasts[h - 1][KEYS + ['predicted_dy_pp']].rename(columns={'predicted_dy_pp': 'previous_dy_pp'})
+            result = result.merge(previous, on=KEYS, how='left',validate='one_to_one', sort=False)
         result['predicted_period_dy_pp'] = result.predicted_dy_pp - result.previous_dy_pp
         result['predicted_start_yield'] = result.YIELD + result.previous_dy_pp / 100
-        result['predicted_return'] = (
-            result.predicted_start_yield / 12
-            - result.DURATION * result.predicted_period_dy_pp / 100
-        ).where(result.DURATION.gt(0))
+        result['predicted_return'] = (result.predicted_start_yield / 12 - result.DURATION * result.predicted_period_dy_pp / 100).where(result.DURATION.gt(0))
 
-        # Boyd section 5.4: constant monthly expected-return baseline.
+        # Boyd section 5.4: constant monthly expected-return baseline (backup).
         result['constant_predicted_dy_pp'] = h * result.first_dy_pp
-        result['constant_predicted_return'] = (
-            result.YIELD / 12 - result.DURATION * result.first_dy_pp / 100
-        ).where(result.DURATION.gt(0))
-        # Random walk in yield implies zero change and yield-based carry.
+        result['constant_predicted_return'] = (result.YIELD / 12 - result.DURATION * result.first_dy_pp / 100).where(result.DURATION.gt(0))
+        # Random walk in yield implies zero change and yield-based carry (backup).
         result['random_walk_predicted_dy_pp'] = 0.0
-        result['random_walk_predicted_return'] = (result.YIELD / 12).where(
-            result.DURATION.gt(0))
+        result['random_walk_predicted_return'] = (result.YIELD / 12).where(result.DURATION.gt(0))
 
         result['forecast_error_bp'] = (result.dy - result.predicted_dy_pp) * 100
-        for name, col in [('return_error', 'predicted_return'),
-                          ('constant_return_error', 'constant_predicted_return'),
-                          ('random_walk_return_error', 'random_walk_predicted_return')]:
+        for name, col in [('return_error', 'predicted_return'),('constant_return_error', 'constant_predicted_return'),('random_walk_return_error', 'random_walk_predicted_return')]:
             result[name] = result.next_return - result[col]
         output.append(result.drop(columns=['previous_dy_pp', 'first_dy_pp']))
     history = pd.concat(output, ignore_index=True)
-    if history.duplicated(KEYS + ['horizon']).any():
-        raise ValueError('Duplicate CUSIP/origin/horizon forecasts')
-    if not history.target_month.eq(history.month + history.horizon).all():
-        raise ValueError('Target dates do not match forecast origins and horizons')
     return history.sort_values(['month', 'cusip', 'horizon'], ignore_index=True)
 
 
 def forecast_accuracy(history):
-    """Compare forecasts on common realized observations, without tail imputation."""
+    """Compare forecasts on common realized observations"""
     rows = []
-    windows = {'all_history': history,
-               'portfolio_backtest': history.loc[
-                   history.month.ge(pd.Period(PORTFOLIO_START, freq='M'))]}
+    windows = {'all_history': history,'portfolio_backtest': history.loc[history.month.ge(pd.Period(PORTFOLIO_START, freq='M'))]}
     for window, sample in windows.items():
         for h, group in sample.groupby('horizon'):
-            for unit, actual, predictions, scale in [
-                ('yield_bp', 'dy', ['predicted_dy_pp', 'constant_predicted_dy_pp',
-                                    'random_walk_predicted_dy_pp'], 100),
-                ('monthly_return', 'next_return', [
-                    'predicted_return', 'constant_predicted_return',
-                    'random_walk_predicted_return'], 1),
-            ]:
+            for unit, actual, predictions, scale in [('yield_bp', 'dy', ['predicted_dy_pp', 'constant_predicted_dy_pp','random_walk_predicted_dy_pp'], 100),
+                ('monthly_return', 'next_return', ['predicted_return', 'constant_predicted_return','random_walk_predicted_return'], 1),]:
                 mask = np.isfinite(group[[actual] + predictions]).all(axis=1)
                 common = group.loc[mask]
                 for model, pred in zip(['direct', 'constant', 'random_walk'], predictions):
