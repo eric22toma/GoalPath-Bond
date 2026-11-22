@@ -29,6 +29,7 @@ def build_horizon_panel(panel, h):
     """Use exact calendar matches, not row shifts; dy is cumulative in pp.
     next_return is the realized ONE-month return ending at t+h,
     not the compounded return over h months. """
+
     if h == 1:
         return panel
     base = panel.drop(columns=['next_yield', 'next_return', 'target_month', 'dy'])
@@ -45,6 +46,7 @@ def tune_horizon(known, h):
     """Tune elastic-net hyperparameters for each forecasting horizon using
     chronological cross-validation, excluding training targets not yet
     observable at the validation date. Retain the 500 bp training filter."""
+
     if h == 1:
         mixing, penalty, _, _, _ = tune_elastic_net(known, FEATURES, CV_MIXING_GRID, CV_PENALTY_GRID)
         return mixing, penalty
@@ -78,8 +80,7 @@ def tune_horizon(known, h):
         for penalty in CV_PENALTY_GRID:
             scores = []
             for train, valid in folds:
-                model = estimator(penalty, mixing).fit(
-                    sampled.loc[train, FEATURES], sampled.loc[train, 'dy'])
+                model = estimator(penalty, mixing).fit(sampled.loc[train, FEATURES], sampled.loc[train, 'dy'])
                 pred = model.predict(sampled.loc[valid, FEATURES])
                 error = sampled.loc[valid, 'dy'].to_numpy() - pred
                 scores.append(float(np.sqrt(np.mean(error**2)) * 100))
@@ -91,28 +92,20 @@ def tune_horizon(known, h):
 
 def rolling_horizon(panel, h, final_asof, start_origin=None):
     """Expanding-window forecasts; retune at the first origin of each year.
-
     Forecasts are retained even when realized targets are missing. The
-    last origin may be forecast without any subsequent observations.
-    """
+    last origin may be forecast without any subsequent observations."""
+
     known = training_rows(panel, final_asof, FEATURES)
     months = sorted(known.target_month.unique())
     # Additional history for purged early validation folds at longer horizons.
     minimum = MIN_INITIAL_TRAIN_MONTHS + h - 1
-    if len(months) < minimum:
-        raise ValueError(f'Insufficient observed targets for h={h}')
     first = months[minimum - 1]
     if start_origin is not None:
         first = max(first, start_origin)
-    if first > final_asof:
-        raise ValueError(f'No eligible forecast origins for h={h}')
 
     results = []
     params, tuned_year = None, None
-    forecast_cols = KEYS + [
-        'target_month', 'YIELD', 'DURATION', 'RATING_NUM', 'time_to_maturity',
-        'predicted_dy_pp', 'dy', 'next_return'
-    ]
+    forecast_cols = KEYS + ['target_month', 'YIELD', 'DURATION', 'RATING_NUM', 'time_to_maturity','predicted_dy_pp', 'dy', 'next_return']
     for asof in pd.period_range(first, final_asof, freq='M'):
         if not panel.loc[panel.month.eq(asof), FEATURES].notna().all(axis=1).any():
             continue
