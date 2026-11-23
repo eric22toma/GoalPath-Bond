@@ -15,7 +15,7 @@ from Stage_2_prepare_inputs import (
     prepare_inputs, add_forecast_uncertainty,
 )
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
-from backtest_stage1 import evaluate_month
+from backtest_stage1 import evaluate_month, show_core_summary
 
 # Common initial comparison with Stage 1; extend K_VALUES after validating K=10.
 START_MONTH = '2023-12'
@@ -26,7 +26,7 @@ OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest'
 
 def load_forecast_history():
     """Read the large saved forecast history once for both planning and past errors."""
-    cols = ['cusip', 'month', 'target_month', 'horizon', 'predicted_dy_pp',
+    cols = ['cusip', 'month', 'target_month', 'horizon', 'dy', 'predicted_dy_pp',
             'predicted_return', 'constant_predicted_return',
             'return_error', 'constant_return_error']
     origins, errors = [], []
@@ -34,7 +34,7 @@ def load_forecast_history():
                             chunksize=150_000):
         part = part.loc[part.horizon.between(1, HORIZON)]
         current = part.loc[part.month.between(START_MONTH, END_MONTH),
-                           ['cusip', 'month', 'horizon', 'predicted_dy_pp',
+                           ['cusip', 'month', 'horizon', 'dy', 'predicted_dy_pp',
                             'predicted_return', 'constant_predicted_return']]
         past = part.loc[part.target_month.le(END_MONTH),
                         ['cusip', 'horizon', 'target_month',
@@ -118,6 +118,12 @@ def summarize(monthly):
 
 def main():
     forecasts, errors = load_forecast_history()
+    # Match Stage 1: pooled out-of-sample one-month-ahead yield errors (bp).
+    first = forecasts.loc[forecasts.horizon.eq(1)]
+    forecast_error_bp = (first.dy - first.predicted_dy_pp) * 100
+    forecast_error_bp = forecast_error_bp[np.isfinite(forecast_error_bp)]
+    forecast_rmse_bp = float(np.sqrt(np.mean(forecast_error_bp ** 2))) if len(forecast_error_bp) else np.nan
+    forecast_mae_bp = float(np.mean(np.abs(forecast_error_bp))) if len(forecast_error_bp) else np.nan
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
 
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -135,8 +141,6 @@ def main():
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
     print(f'Decisions: {START_MONTH} through {END_MONTH}; H={HORIZON}, '
           f'forecast={FORECAST_MODEL}, K={K_VALUES}, candidates={CANDIDATE_COUNT}')
-    print('Execute only the FIRST planned trades; all later planned trades are discarded.')
-    print('Fees are funded from portfolio cash (unlike the Stage 1 fee convention).')
 
     for asof in months:
         label = str(asof)
@@ -254,23 +258,22 @@ def main():
                 'return_source', 'return_note',
             ]])
             successes += 1
-            print(f'{label} -> {asof + 1} | K={k}: '
-                  f'portfolio {gross_return:+.2%}, net {net_return:+.2%}, '
-                  f'benchmark {benchmark_return:+.2%}, '
-                  f'cash {solution["cash_weight"]:.2%}, '
-                  f'coverage {coverage:.2%}', flush=True)
-        if not successes:
-            print(f'{label}: no strategies completed this month.', flush=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = pd.DataFrame(monthly)
     failures = pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason'])
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
-    summary = summarize(completed) if not completed.empty else pd.DataFrame(
-        columns=['strategy', 'forecast', 'H', 'K', 'months',
-                 'annualized_tracking_error', 'annualized_mean_active_return',
-                 'cumulative_net_return', 'average_monthly_one_way_turnover'])
+    summary = summarize(completed) if not completed.empty else pd.DataFrame()
+    if not summary.empty:
+        summary['forecast_rmse_bp'] = forecast_rmse_bp
+        summary['forecast_mae_bp'] = forecast_mae_bp
+        summary['ending_portfolio_value_dollars'] = summary.cumulative_net_return.add(1) * INITIAL_CAPITAL
+        summary = summary.rename(columns={'total_transaction_fees_dollars': 'total_transaction_costs_dollars'})
+    summary = summary.reindex(columns=[
+        'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
+        'forecast_mae_bp', 'cumulative_net_return',
+        'ending_portfolio_value_dollars', 'total_transaction_costs_dollars'])
     results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
@@ -279,15 +282,9 @@ def main():
     pd.DataFrame(plans).to_csv(
         OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
-    print('\nSTAGE 2 | FULL-BACKTEST STRATEGY SUMMARY')
-    if summary.empty:
-        print('No strategy completed the entire backtest; inspect Stage_2_failed_strategies.csv.')
-    else:
-        view = summary.sort_values('annualized_tracking_error')[
-            ['forecast', 'H', 'K', 'months', 'annualized_tracking_error',
-             'annualized_mean_active_return', 'cumulative_net_return',
-             'average_monthly_one_way_turnover', 'total_transaction_fees_dollars']]
-        print(view.to_string(index=False, float_format=lambda x: f'{x:,.5f}'))
+    show_core_summary(summary, 'STAGE 2 | FINAL RESULTS')
+    if not failures.empty:
+        print(f'{len(failures)} unsuccessful decisions; see Stage_2_failed_strategies.csv.')
     print(f'\nSaved monthly performance, summary, holdings, planned paths and failures to {OUTPUT_DIR}')
 
 
