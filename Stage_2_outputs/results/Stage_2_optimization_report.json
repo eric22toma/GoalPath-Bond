@@ -1,0 +1,48 @@
+{
+  "asof": "2025-09",
+  "H": 3,
+  "K": 10,
+  "forecast_model": "direct",
+  "candidate_count": 150,
+  "gamma": 1.0,
+  "uncertainty_scale": 1.0,
+  "first_trade_cost_dollars": 86.70000208549067,
+  "first_trade_cash_dollars": 13213.29791274774,
+  "terminal_tracking_error": 0.006820210049802063,
+  "terminal_te_cap": 0.025,
+  "solver_status": 2,
+  "optimal": true,
+  "objective_value": 0.016544459515518473,
+  "monthly_plan": [
+    {
+      "month": "2025-10",
+      "holdings": 10,
+      "cash_weight": 0.1321329791274774,
+      "duration_gap": -0.49999955508822147,
+      "expected_return": 0.0026425269688752947,
+      "benchmark_expected_return": 0.0032666151536572493,
+      "expected_tracking_error": 0.006820209913498185,
+      "transaction_cost_fraction": 0.0008670000208549067
+    },
+    {
+      "month": "2025-11",
+      "holdings": 10,
+      "cash_weight": 0.1321329412046303,
+      "duration_gap": -0.4999992989833011,
+      "expected_return": 0.007036934935502286,
+      "benchmark_expected_return": 0.008372870713230715,
+      "expected_tracking_error": 0.006820210291762694,
+      "transaction_cost_fraction": 4.1873313714940205e-09
+    },
+    {
+      "month": "2025-12",
+      "holdings": 10,
+      "cash_weight": 0.13213298165323814,
+      "duration_gap": -0.4999996889839986,
+      "expected_return": 0.001165470419860502,
+      "benchmark_expected_return": 0.0016981236629539968,
+      "expected_tracking_error": 0.006820210049802063,
+      "transaction_cost_fraction": 4.283187178010785e-09
+    }
+  ]
+}
