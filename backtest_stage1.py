@@ -362,7 +362,9 @@ def main():
                                    for name in averages.index],
                 'Average monthly ' + metric.upper() + ' (bp)': averages.to_numpy(),
             })
-            print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp), H=1')
+            print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp), H=1 | '
+                  f'realized {pd.Period(START_MONTH, freq="M") + 1} through '
+                  f'{pd.Period(END_MONTH, freq="M") + 1} ({len(scores)} months)')
             print(table.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
     if failures:
         print(f'{len(failures)} strategies did not complete; see failed_strategies.csv.')
