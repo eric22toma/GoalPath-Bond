@@ -10,21 +10,35 @@ from elastic_net_one_period import (
     PROJECT_ROOT, BOND_COLUMNS, process_all_data, history_for_features,
     macro_features, load_panel,
 )
-from Stage_2_prepare_inputs import (
-    FORECAST_FILE, HORIZON, FORECAST_MODEL, CANDIDATE_COUNT, INITIAL_CAPITAL,
-    prepare_inputs, add_forecast_uncertainty,
-)
+import Stage_2_prepare_inputs as stage2_inputs
+from Stage_2_prepare_inputs import FORECAST_FILE, CANDIDATE_COUNT, INITIAL_CAPITAL
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
 from backtest_stage1 import evaluate_month, show_core_summary
 
-# Common initial comparison with Stage 1; extend K_VALUES after validating K=10.
+# Match Stage 1's K grid. Test all K at H=1,3; hold K=25 for H=6,12.
 START_MONTH = '2023-12'
-END_MONTH = '2025-09'      # H=3 plans through December 2025.
-K_VALUES = (10,)
+END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
+K_VALUES = (10, 25, 50, 100)
+HORIZONS = (1, 3, 6, 12)
+LONG_HORIZON_K = 25
 OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest'
 
 
-def load_forecast_history():
+def comparisons():
+    """16 nonredundant strategies; at H=1 direct and constant are identical."""
+    return [
+        (model, h, k)
+        for h in HORIZONS
+        for model in (('direct',) if h == 1 else ('direct', 'constant'))
+        for k in (K_VALUES if h in (1, 3) else (LONG_HORIZON_K,))
+    ]
+
+
+def strategy_name(model, horizon, k):
+    return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}'
+
+
+def load_forecast_history(max_horizon):
     """Read the large saved forecast history once for both planning and past errors."""
     cols = ['cusip', 'month', 'target_month', 'horizon', 'dy', 'predicted_dy_pp',
             'predicted_return', 'constant_predicted_return',
@@ -32,7 +46,7 @@ def load_forecast_history():
     origins, errors = [], []
     for part in pd.read_csv(FORECAST_FILE, usecols=cols, dtype={'cusip': str},
                             chunksize=150_000):
-        part = part.loc[part.horizon.between(1, HORIZON)]
+        part = part.loc[part.horizon.between(1, max_horizon)]
         current = part.loc[part.month.between(START_MONTH, END_MONTH),
                            ['cusip', 'month', 'horizon', 'dy', 'predicted_dy_pp',
                             'predicted_return', 'constant_predicted_return']]
@@ -45,7 +59,44 @@ def load_forecast_history():
             errors.append(past.copy())
     if not origins or not errors:
         raise ValueError('Missing Stage 2 forecast origins or historical errors.')
-    return pd.concat(origins, ignore_index=True), pd.concat(errors, ignore_index=True)
+    forecasts = pd.concat(origins, ignore_index=True)
+    available = set(forecasts.horizon.unique())
+    missing = sorted(set(range(1, max_horizon + 1)) - available)
+    if missing:
+        raise ValueError(
+            f'Forecast history is missing horizons {missing}. '
+            f'Regenerate Stage_2_bond_forecast_history.csv.gz through H={max_horizon} '
+            'before running the 16-strategy backtest.')
+    # Ensure every decision has forecasts through the longest horizon before any solving.
+    for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
+        present = set(forecasts.loc[forecasts.month.eq(str(asof)), 'horizon'])
+        if not set(range(1, max_horizon + 1)).issubset(present):
+            raise ValueError(f'Incomplete H={max_horizon} forecasts at decision {asof}')
+    if forecasts.duplicated(['cusip', 'month', 'horizon']).any():
+        raise ValueError('Duplicate CUSIP/origin/horizon forecasts in saved history.')
+    return forecasts, pd.concat(errors, ignore_index=True)
+
+
+def prepare_strategy_inputs(bundle, latest, errors, pretrade_state, capital, model, horizon):
+    """Reuse Stage 2's input builders with per-strategy settings, then restore defaults."""
+    previous_h, previous_model = stage2_inputs.HORIZON, stage2_inputs.FORECAST_MODEL
+    try:
+        # These two settings are read by prepare_inputs and add_forecast_uncertainty.
+        # Calls are sequential: no settings leak into the next strategy.
+        stage2_inputs.HORIZON = horizon
+        stage2_inputs.FORECAST_MODEL = model
+        stage = stage2_inputs.prepare_inputs(bundle, latest, pretrade_state=pretrade_state)
+        stage['initial_capital'] = capital
+        historical = errors.loc[
+            errors.target_month.le(bundle['asof']) &
+            errors.cusip.isin(stage['candidates'].cusip)]
+        stage2_inputs.add_forecast_uncertainty(stage, historical)
+    finally:
+        stage2_inputs.HORIZON = previous_h
+        stage2_inputs.FORECAST_MODEL = previous_model
+    if any(not np.isfinite(p['rho']).all() for p in stage['periods']):
+        raise ValueError(f'Not enough historical forecast errors for {model} H={horizon}')
+    return stage
 
 
 def forecast_accuracy_by_horizon(forecasts):
@@ -152,10 +203,14 @@ def settle_with_cash(held, solution, stage, bond_return, fee_fraction):
 
 
 def main():
-    forecasts, errors = load_forecast_history()
+    configs = comparisons()
+    longest_horizon = max(h for _, h, _ in configs)
+    forecasts, errors = load_forecast_history(longest_horizon)
     accuracy = forecast_accuracy_by_horizon(forecasts)
+    # H=1 forecast accuracy is common to direct and constant; longer-horizon
+    # accuracy is displayed separately in the RMSE/MAE tables below.
     first_scores = accuracy.loc[
-        accuracy.horizon.eq(1) & accuracy.model.eq(FORECAST_MODEL)]
+        accuracy.horizon.eq(1) & accuracy.model.eq('direct')]
     forecast_rmse_bp = first_scores.avg_monthly_rmse_bp.iloc[0]
     forecast_mae_bp = first_scores.avg_monthly_mae_bp.iloc[0]
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
@@ -167,19 +222,19 @@ def main():
     del data
 
     months = pd.period_range(START_MONTH, END_MONTH, freq='M')
-    states = {k: {'pretrade_state': None, 'capital': INITIAL_CAPITAL,
+    states = {strategy_name(model, h, k): {
+                  'pretrade_state': None, 'capital': INITIAL_CAPITAL,
                   'gross_capital': INITIAL_CAPITAL, 'failed': False}
-              for k in K_VALUES}
+              for model, h, k in configs}
     monthly, positions, plans, failures = [], [], [], []
 
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
-    print(f'Strategies: {len(K_VALUES)}; initial capital: ${INITIAL_CAPITAL:,.2f}; '
-          f'H={HORIZON}, forecast={FORECAST_MODEL}')
-    print(f'\nSTRATEGY GRID ({len(K_VALUES)} independent portfolios):')
-    grid = [(FORECAST_MODEL, HORIZON, k, 'heuristic', CANDIDATE_COUNT) for k in K_VALUES]
+    print(f'Strategies: {len(configs)}; initial capital: ${INITIAL_CAPITAL:,.2f}')
+    print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
+    grid = [(model, h, k, 'heuristic', CANDIDATE_COUNT) for model, h, k in configs]
     print(pd.DataFrame(grid, columns=['forecast', 'H', 'K', 'solver', 'candidates'])
           .to_string(index=False))
     print('Execute only the FIRST planned trades; all later planned trades are discarded.')
@@ -189,7 +244,7 @@ def main():
         label = str(asof)
         latest = by_origin.get(label)
         if latest is None:
-            raise ValueError(f'No precomputed H={HORIZON} forecasts for {label}.')
+            raise ValueError(f'No precomputed H={longest_horizon} forecasts for {label}.')
         snapshot = panel.loc[panel.month.eq(asof)].copy()
         history = panel.loc[
             panel.month.between(asof - 35, asof),
@@ -203,22 +258,16 @@ def main():
 
         successes = 0
         coverages = []
-        for k, state in states.items():
+        for model, horizon, k in configs:
+            strategy = strategy_name(model, horizon, k)
+            state = states[strategy]
             if state['failed']:
                 continue
-            strategy = f'{FORECAST_MODEL}_heuristic_H{HORIZON}_K{k}_N{CANDIDATE_COUNT}'
             capital_before = float(state['capital'])
             try:
-                stage = prepare_inputs(bundle, latest, pretrade_state=state['pretrade_state'])
-                stage['initial_capital'] = capital_before
-                # Only historical errors already observed by this decision month.
-                eligible_errors = errors.loc[
-                    errors.target_month.le(label) &
-                    errors.cusip.isin(stage['candidates'].cusip)
-                ]
-                stage = add_forecast_uncertainty(stage, eligible_errors)
-                if any(not np.isfinite(p['rho']).all() for p in stage['periods']):
-                    raise ValueError(f'Not enough historical forecast errors at {label}.')
+                stage = prepare_strategy_inputs(
+                    bundle, latest, errors, state['pretrade_state'],
+                    capital_before, model, horizon)
 
                 solution, metrics = run_solver(stage, k=k)
                 held, bond_return, benchmark_return, coverage, benchmark = evaluate_month(stage, solution)
@@ -254,7 +303,7 @@ def main():
                     'planned_duration_gap': planned['duration_gap'],
                 })
             monthly.append({
-                'strategy': strategy, 'forecast': FORECAST_MODEL, 'H': HORIZON,
+                'strategy': strategy, 'forecast': model, 'H': horizon,
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
                 'candidate_count': len(stage['candidates']),
                 'holdings_count': len(held),
@@ -303,14 +352,14 @@ def main():
             ]])
             successes += 1
             coverages.append(coverage)
-            print(f'{label} -> {asof + 1} | K={k}: '
+            print(f'{label} -> {asof + 1} | {model} H={horizon} K={k}: '
                   f'portfolio {gross_return:+.2%}, net {net_return:+.2%}, '
                   f'benchmark {benchmark_return:+.2%}, '
                   f'cash {solution["cash_weight"]:.2%}, '
                   f'coverage {coverage:.2%}', flush=True)
         coverage_text = (f'{min(coverages):.1%}–{max(coverages):.1%}'
                          if coverages else 'n/a')
-        print(f'{label} -> {asof + 1} | {successes}/{len(K_VALUES)} strategies evaluated; '
+        print(f'{label} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
               f'benchmark coverage {coverage_text}', flush=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -327,11 +376,14 @@ def main():
     pd.DataFrame(plans).to_csv(
         OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
+    print('\nHeadline RMSE/MAE refer to H=1 yield-change forecasts for every strategy; '
+          'longer-horizon forecast accuracy is shown below.')
     show_core_summary(summary, 'STAGE 2 | FINAL STRATEGY RESULTS', START_MONTH, END_MONTH,
                       forecast_rmse_bp, forecast_mae_bp, initial_capital=INITIAL_CAPITAL)
     for metric in ('rmse', 'mae'):
         comparison = accuracy.pivot(index='model', columns='horizon',
                                     values='avg_monthly_' + metric + '_bp')
+        comparison = comparison.loc[:, list(HORIZONS)]
         comparison = comparison.rename(columns=lambda h: f'H={h}').rename_axis('Forecast model')
         print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp) by horizon | '
               f'origins {START_MONTH} through {END_MONTH}')
