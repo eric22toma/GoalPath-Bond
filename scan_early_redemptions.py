@@ -196,6 +196,46 @@ EARLY_REDEMPTIONS = {
     '88579YBF7': ('2021-03-31', 100),  # 3M Co; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
     '437076BL5': ('2021-03-31', 100.15),  # Home Depot Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
 
+    '15189XAP3': ('2021-05-31', 100),  # CenterPoint Energy Houston Electric LLC; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
+    '38141GWC4': ('2021-04-30', 100),  # Goldman Sachs Group Inc; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '05531FBD4': ('2021-08-31', 100),  # BB&T Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '21036PAR9': ('2021-08-31', 100),  # Constellation Brands Inc; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '21036PAW8': ('2021-08-31', 100),  # Constellation Brands Inc; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '478375AF5': ('2021-09-30', 100),  # Johnson Controls International PLC; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '7591EPAP5': ('2021-08-31', 100),  # Regions Financial Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '294429AK1': ('2021-05-31', 100),  # Equifax Inc; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
+    '842587CS4': ('2021-06-30', 100),  # Southern Co; user-confirmed redemption, 2021-06 month-end proxy (exact day not supplied)
+    '037833CC2': ('2021-07-31', 100),  # Apple Inc; user-confirmed redemption, 2021-07 month-end proxy (exact day not supplied)
+    '14042RBT7': ('2021-08-31', 100),  # Capital One NA; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '50077LAS5': ('2021-05-31', 100),  # Kraft Heinz Foods Co; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
+    '50077LAK2': ('2021-07-31', 100),  # Kraft Heinz Foods Co; user-confirmed redemption, 2021-07 month-end proxy (exact day not supplied)
+    '233331BA4': ('2023-07-31', 100),  # DTE Energy Co; user-confirmed redemption, 2023-07 month-end proxy (exact day not supplied); dataset last observed 2021-06, earlier exit remains unexplained
+    '233331AV9': ('2022-04-30', 100),  # DTE Energy Co; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied); dataset last observed 2021-06, earlier exit remains unexplained
+    '075887BT5': ('2021-09-30', 100),  # Becton Dickinson & Co; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '724479AL4': ('2021-09-30', 100),  # Pitney Bowes Inc; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '05565QDP0': ('2021-07-31', 100.125),  # BP Capital Markets PLC; user-confirmed redemption, 2021-07 month-end proxy (exact day not supplied)
+    '10373QBA7': ('2021-07-31', 100.125),  # BP Capital Markets America Inc; user-confirmed redemption, 2021-07 month-end proxy (exact day not supplied)
+    '774341AH4': ('2021-08-31', 100),  # Rockwell Collins Inc; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '03523TBX5': ('2021-06-30', 100),  # Anheuser-Busch InBev Worldwide Inc; user-confirmed redemption, 2021-06 month-end proxy (exact day not supplied)
+    '95040QAE4': ('2021-04-30', 100),  # Welltower Inc; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '31428XBM7': ('2021-05-31', 100.15),  # FedEx Corp; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
+    '20030NBX8': ('2021-06-30', 100),  # Comcast Corp; user-confirmed redemption, 2021-06 month-end proxy (exact day not supplied)
+    '29444UAR7': ('2021-06-30', 107.256),  # Equinix Inc; user-confirmed redemption, 2021-06 month-end proxy (exact day not supplied)
+    '44701QBD3': ('2021-06-30', 100),  # Huntsman International LLC; user-confirmed redemption, 2021-06 month-end proxy (exact day not supplied)
+    '26441CAR6': ('2021-08-31', 100),  # Duke Energy Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '26969PAA6': ('2021-07-31', 100),  # Eagle Materials Inc; user-confirmed redemption, 2021-07 month-end proxy (exact day not supplied)
+    '14149YBF4': ('2021-09-30', 100),  # Cardinal Health Inc; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '278865AU4': ('2021-09-30', 100),  # Ecolab Inc; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '278865AY6': ('2021-09-30', 100),  # Ecolab Inc; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '80007RAB1': ('2021-09-30', 100),  # Sands China Ltd; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '824348BB1': ('2021-10-31', 100),  # Sherwin-Williams Co; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '032654AL9': ('2021-10-31', 100),  # Analog Devices Inc; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '032654AM7': ('2021-10-31', 100.1),  # Analog Devices Inc; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '42824CBF5': ('2021-10-31', 100),  # Hewlett Packard Enterprise Co; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '69362BBC5': ('2021-10-31', 100),  # PSEG Power LLC; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '03349MAC9': ('2021-12-31', 100),  # Andeavor; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '256746AF5': ('2021-12-31', 104.38),  # Dollar Tree Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -315,6 +355,18 @@ NOT_REDEEMED_EARLY = {
     '125523BR0': 'Cigna Corp - ineligible per manual audit',
     '44932HAH6': 'IBM Credit LLC - ineligible per manual audit',
     '44932HAM5': 'IBM Credit LLC - ineligible per manual audit',
+
+    '23355LAA4': 'DXC Technology Co - ineligible per manual audit',
+    '754730AE9': 'Raymond James Financial Inc - ineligible per manual audit',
+    '15189TAT4': 'CenterPoint Energy Inc - ineligible per manual audit',
+    '939648AE1': 'Washington Prime Group LP - ineligible per manual audit',
+    '191216BW9': 'Coca-Cola Co - ineligible per manual audit',
+    '191216BZ2': 'Coca-Cola Co - ineligible per manual audit',
+    '92343VDQ4': 'Verizon Communications Inc - ineligible per manual audit',
+    '233331BB2': 'DTE Energy Co - ineligible per manual audit',
+    '10373QAJ9': 'BP Capital Markets America Inc - ineligible per manual audit',
+    '26614NAA0': 'DuPont de Nemours Inc - ineligible per manual audit',
+    '37045XCW4': 'General Motors Financial Co Inc - ineligible per manual audit',
 
 }
 
