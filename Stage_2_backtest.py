@@ -198,8 +198,7 @@ def main():
     accuracy = forecast_accuracy_by_horizon(forecasts)
     # H=1 forecast accuracy is common to direct and constant; longer-horizon
     # accuracy is displayed separately in the RMSE/MAE tables below.
-    first_scores = accuracy.loc[
-        accuracy.horizon.eq(1) & accuracy.model.eq('direct')]
+    first_scores = accuracy.loc[accuracy.horizon.eq(1) & accuracy.model.eq('direct')]
     forecast_rmse_bp = first_scores.avg_monthly_rmse_bp.iloc[0]
     forecast_mae_bp = first_scores.avg_monthly_mae_bp.iloc[0]
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
@@ -211,10 +210,7 @@ def main():
     del data
 
     months = pd.period_range(START_MONTH, END_MONTH, freq='M')
-    states = {strategy_name(model, h, k): {
-                  'pretrade_state': None, 'capital': INITIAL_CAPITAL,
-                  'gross_capital': INITIAL_CAPITAL, 'failed': False}
-              for model, h, k in configs}
+    states = {strategy_name(model, h, k): {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'gross_capital': INITIAL_CAPITAL, 'failed': False}for model, h, k in configs}
     monthly, positions, plans, failures = [], [], [], []
 
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
@@ -235,10 +231,7 @@ def main():
         if latest is None:
             raise ValueError(f'No precomputed H={longest_horizon} forecasts for {label}.')
         snapshot = panel.loc[panel.month.eq(asof)].copy()
-        history = panel.loc[
-            panel.month.between(asof - 35, asof),
-            ['cusip', 'month', 'RET_EOM', 'DURATION', 'time_to_maturity', 'RATING_NUM']
-        ].copy()
+        history = panel.loc[panel.month.between(asof - 35, asof),['cusip', 'month', 'RET_EOM', 'DURATION', 'time_to_maturity', 'RATING_NUM']].copy()
         bundle = {
             'asof': label, 'snapshot': snapshot,
             'benchmark_snapshot': snapshot.copy(),
@@ -275,8 +268,7 @@ def main():
             state['capital'] = capital_before * (1.0 + net_return)
             state['gross_capital'] *= 1.0 + gross_return
             state['pretrade_state'] = next_state
-            gross_traded = float(solution['buys'].sum() + solution['sells'].sum()
-                                 + stage['outside_pretrade_weight'])
+            gross_traded = float(solution['buys'].sum() + solution['sells'].sum() + stage['outside_pretrade_weight'])
             first_plan = metrics['monthly_plan'][0]
             # Preserve the full H-period plan for audit; only h=1 executes.
             for h, planned in enumerate(metrics['monthly_plan'], start=1):
