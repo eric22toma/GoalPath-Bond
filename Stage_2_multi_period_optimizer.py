@@ -51,13 +51,10 @@ def solve_quadratic(stage, k=K, allowed=None):
         if h:
             already_matured |= maturity[h - 1]
         prior_bonds = previous if h == 0 else (1.0 - maturity[h - 1]) * w[h - 1]
-        prior_cash = cash_start if h == 0 else (
-            cash[h - 1] + (maturity[h - 1] * principal_ratio) @ w[h - 1]
-        )
+        prior_cash = cash_start if h == 0 else (cash[h - 1] + (maturity[h - 1] * principal_ratio) @ w[h - 1])
         m.addConstr(w[h] - prior_bonds == buy[h] - sell[h], name=f'trade_balance_{h}')
         trades = buy[h].sum() + sell[h].sum()
-        m.addConstr(cash[h] == prior_cash + sell[h].sum() - buy[h].sum()
-                    - TRANSACTION_COST * trades, name=f'cash_balance_{h}')
+        m.addConstr(cash[h] == prior_cash + sell[h].sum() - buy[h].sum() - TRANSACTION_COST * trades, name=f'cash_balance_{h}')
         m.addConstr(duration @ w[h] <= stage['benchmark_duration'] + DURATION_TOLERANCE)
         m.addConstr(duration @ w[h] >= stage['benchmark_duration'] - DURATION_TOLERANCE)
         if excluded:
@@ -70,13 +67,8 @@ def solve_quadratic(stage, k=K, allowed=None):
         m.addConstr(active[h] >= b - w[h], name=f'active_negative_{h}')
         mu = np.asarray(period['mu'], float)
         rho = np.asarray(period['rho'], float)
-        if not np.isfinite(mu).all() or not np.isfinite(rho).all() or (rho < 0).any():
-            raise ValueError(f'Invalid forecasts or uncertainty for {period["month"]}')
         risk = w[h] @ Q @ w[h] + g @ w[h] + constant
-        objective += (GAMMA * risk - mu @ w[h]
-                      - stage['cash_monthly_return'] * cash[h]
-                      + UNCERTAINTY_SCALE * (rho @ active[h])
-                      + TRANSACTION_COST * trades)
+        objective += (GAMMA * risk - mu @ w[h] - stage['cash_monthly_return'] * cash[h] + UNCERTAINTY_SCALE * (rho @ active[h]) + TRANSACTION_COST * trades)
 
     # The terminal position is the final post-trade portfolio after any H-th-month maturities.
     survive = (~maturity[-1]).astype(float)
@@ -87,8 +79,7 @@ def solve_quadratic(stage, k=K, allowed=None):
     m.setObjective(objective, GRB.MINIMIZE)
     m.optimize()
     if m.SolCount == 0:
-        raise RuntimeError(f'No feasible Stage 2 solution (Gurobi status {m.Status}); '
-                           'check K, the duration band and terminal tracking cap.')
+        raise RuntimeError(f'No feasible Stage 2 solution (Gurobi status {m.Status})')
 
     weights = np.vstack([x.X for x in w])
     buys = np.vstack([x.X for x in buy])
@@ -100,8 +91,7 @@ def solve_quadratic(stage, k=K, allowed=None):
         'planned_weights': weights, 'planned_buys': buys,
         'planned_sells': sells, 'planned_cash': cash_weights,
         'solver_status': int(m.Status), 'optimal': m.Status == GRB.OPTIMAL,
-        'objective_value': float(m.ObjVal),
-    }
+        'objective_value': float(m.ObjVal),}
 
 
 def report_solution(stage, solution, k=K):
