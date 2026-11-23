@@ -195,7 +195,6 @@ EARLY_REDEMPTIONS = {
     '0258M0EB1': ('2021-04-30', 100),  # American Express Credit Corp; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
     '88579YBF7': ('2021-03-31', 100),  # 3M Co; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
     '437076BL5': ('2021-03-31', 100.15),  # Home Depot Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
-
     '15189XAP3': ('2021-05-31', 100),  # CenterPoint Energy Houston Electric LLC; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
     '38141GWC4': ('2021-04-30', 100),  # Goldman Sachs Group Inc; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
     '05531FBD4': ('2021-08-31', 100),  # BB&T Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
@@ -355,7 +354,6 @@ NOT_REDEEMED_EARLY = {
     '125523BR0': 'Cigna Corp - ineligible per manual audit',
     '44932HAH6': 'IBM Credit LLC - ineligible per manual audit',
     '44932HAM5': 'IBM Credit LLC - ineligible per manual audit',
-
     '23355LAA4': 'DXC Technology Co - ineligible per manual audit',
     '754730AE9': 'Raymond James Financial Inc - ineligible per manual audit',
     '15189TAT4': 'CenterPoint Energy Inc - ineligible per manual audit',
