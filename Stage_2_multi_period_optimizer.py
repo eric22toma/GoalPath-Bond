@@ -17,6 +17,7 @@ K = 10
 GAMMA = 1.0                    # Weight on benchmark tracking-error variance
 UNCERTAINTY_SCALE = 1.0        # Weight on rho.T @ |x - benchmark|
 TERMINAL_TE_CAP = 0.025        # Maximum terminal expected MONTHLY tracking error
+MAX_CASH_WEIGHT = 0.01         # At most 1% cash after each planned rebalance
 RESULTS_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'results'
 
 
@@ -55,6 +56,7 @@ def solve_quadratic(stage, k=K, allowed=None):
         m.addConstr(w[h] - prior_bonds == buy[h] - sell[h], name=f'trade_balance_{h}')
         trades = buy[h].sum() + sell[h].sum()
         m.addConstr(cash[h] == prior_cash + sell[h].sum() - buy[h].sum() - TRANSACTION_COST * trades, name=f'cash_balance_{h}')
+        m.addConstr(cash[h] <= MAX_CASH_WEIGHT, name=f'cash_limit_{h}')
         m.addConstr(duration @ w[h] <= stage['benchmark_duration'] + DURATION_TOLERANCE)
         m.addConstr(duration @ w[h] >= stage['benchmark_duration'] - DURATION_TOLERANCE)
         if excluded:
