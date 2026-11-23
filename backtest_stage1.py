@@ -186,6 +186,32 @@ def summarize(monthly):
     return pd.DataFrame(results)
 
 
+def show_core_summary(summary, title):
+    """Display the same six interpretable results for both backtest stages."""
+    print(f'\n{title}')
+    if summary.empty:
+        print('No complete strategies to report; inspect failed_strategies.csv.')
+        return
+    display = summary.sort_values('annualized_tracking_error').copy()
+    display = display.rename(columns={
+        'strategy': 'Strategy',
+        'annualized_tracking_error': 'TE (annual)',
+        'forecast_rmse_bp': 'RMSE (bp)',
+        'forecast_mae_bp': 'MAE (bp)',
+        'cumulative_net_return': 'Net return',
+        'ending_portfolio_value_dollars': 'Ending value ($)',
+        'total_transaction_costs_dollars': 'Transaction costs ($)',
+    })
+    for name in ('TE (annual)', 'Net return'):
+        display[name] = display[name].map(lambda x: f'{x:.2%}')
+    for name in ('RMSE (bp)', 'MAE (bp)'):
+        display[name] = display[name].map(
+            lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+    for name in ('Ending value ($)', 'Transaction costs ($)'):
+        display[name] = display[name].map(lambda x: f'{x:,.2f}')
+    print(display.to_string(index=False))
+
+
 def main():
     """Compare monthly Stage 1 tracking strategies"""
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -197,19 +223,10 @@ def main():
     print('\nSTAGE 1 | OUT-OF-SAMPLE BENCHMARK TRACKING COMPARISON')
     print(f'\nDecision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through {pd.Period(END_MONTH, freq="M") + 1}')
-    print('\nEVALUATION FORMULAS (realized monthly returns):')
-    print('  Active return: A_t = R_P,t - R_B,t')
-    print('  Annualized tracking error: TE = sqrt(12) * std(A_t, ddof=1)')
-    print('  Annualized mean active return: AR = 12 * mean(A_t)')
-    print('  Monthly one-way turnover: TO_t = (sum(buys_t) + sum(sells_t) + outside_t) / 2')
-    print('  Transaction fees ($): F_t = capital_t * fee_rate * (sum(buys_t) + sum(sells_t) + outside_t)')
-    print('  Holdings: N_t = sum_i 1(weight_i,t > 1e-6)')
-    print('  Cumulative net return: R_net = (gross_capital_T - cumulative_fees_T) / initial_capital - 1')
-    print('  R_P,t / R_B,t: portfolio / benchmark return; outside_t: forced sales outside candidates')
-    print(f'\nProposed backtest comparisons grid ({len(configs)} independent portfolios):')
-    print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
+    print(f'Strategies: {len(configs)}; initial capital: ${INITIAL_CAPITAL:,.2f}')
     states = {f'{model}_{method}_K{k}_N{n}': {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0} for model, k, method, n in configs}
     monthly, positions, forecasting, failures = [], [], [], []
+    forecast_sse_bp2, forecast_abs_bp, forecast_count = 0.0, 0.0, 0
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
@@ -222,6 +239,10 @@ def main():
         valid = now.loc[now.dy.notna()].copy()
         if not valid.empty:
             error = (valid.dy - valid.predicted_dy_pp) * 100
+            finite_error = error[np.isfinite(error)]
+            forecast_sse_bp2 += float((finite_error ** 2).sum())
+            forecast_abs_bp += float(finite_error.abs().sum())
+            forecast_count += len(finite_error)
             row = {'target_month': str(asof + 1),
                 'forecast_bonds': len(valid),
                 'elastic_net_rmse_bp': float(np.sqrt(np.mean(error ** 2))),
@@ -310,20 +331,25 @@ def main():
             held['target_month'] = str(asof + 1)
             held['capital_allocated'] = held.weight * float(stage['initial_capital'])
             positions.append(held[['strategy', 'decision_month', 'target_month', 'cusip', 'weight', 'capital_allocated', 'mu', 'duration', 'next_return', 'was_redeemed', 'redemption_date', 'return_source', 'return_note']])
-        coverage_text = f'{min(coverages):.1%}–{max(coverages):.1%}' if coverages else 'n/a'
-        print(f'{asof} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
-              f'benchmark coverage {coverage_text}')
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
     target_months = len(pd.period_range(START_MONTH, END_MONTH, freq='M'))
     completed = (monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
                  if not monthly.empty else monthly)
-    summary = (summarize(completed) if not completed.empty else
-               pd.DataFrame(columns=['forecast', 'solver', 'K', 'candidate_count',
-                                     'annualized_tracking_error', 'annualized_mean_active_return',
-                                     'cumulative_net_return', 'average_monthly_one_way_turnover',
-                                     'total_transaction_fees_dollars']))
+    summary = summarize(completed) if not completed.empty else pd.DataFrame()
+    # Pooled out-of-sample one-month-ahead yield forecast errors, in basis points.
+    rmse = np.sqrt(forecast_sse_bp2 / forecast_count) if forecast_count else np.nan
+    mae = forecast_abs_bp / forecast_count if forecast_count else np.nan
+    if not summary.empty:
+        summary['forecast_rmse_bp'] = np.where(summary.forecast.eq('elastic_net'), rmse, np.nan)
+        summary['forecast_mae_bp'] = np.where(summary.forecast.eq('elastic_net'), mae, np.nan)
+        summary['ending_portfolio_value_dollars'] = summary.cumulative_net_return.add(1) * INITIAL_CAPITAL
+        summary = summary.rename(columns={'total_transaction_fees_dollars': 'total_transaction_costs_dollars'})
+    summary = summary.reindex(columns=[
+        'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
+        'forecast_mae_bp', 'cumulative_net_return',
+        'ending_portfolio_value_dollars', 'total_transaction_costs_dollars'])
     files = [OUTPUT_DIR / name for name in ('monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv', 'failed_strategies.csv')]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
@@ -331,28 +357,9 @@ def main():
     pd.DataFrame(forecasting).to_csv(files[3], index=False)
     pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason']).to_csv(files[4], index=False)
 
-    print('\nFINAL STRATEGY COMPARISON (complete backtests only; sorted by tracking error)')
-    summary = summary.sort_values('annualized_tracking_error')
-    display = summary[['forecast', 'solver', 'K', 'candidate_count',
-                       'annualized_tracking_error', 'annualized_mean_active_return',
-                       'cumulative_net_return', 'average_monthly_one_way_turnover',
-                       'total_transaction_fees_dollars']].copy()
-    for col in ('annualized_tracking_error', 'annualized_mean_active_return',
-                'cumulative_net_return', 'average_monthly_one_way_turnover'):
-        display[col] = display[col].map(lambda x: f'{x:.2%}')
-    print(display.to_string(index=False))
+    show_core_summary(summary, 'STAGE 1 | FINAL RESULTS')
     if failures:
-        print(f'\n{len(failures)} strategies could not complete the full backtest; '
-              'details saved in failed_strategies.csv.')
-
-    if forecasting:
-        scores = pd.DataFrame(forecasting)
-        score_columns = [col for col in scores if col.endswith('_rmse_bp')]
-        print('\nFORECAST ACCURACY COMPARISON (average monthly RMSE, basis points)')
-        print(scores[score_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
-        mae_columns = [col for col in scores if col.endswith('_mae_bp')]
-        print('\nFORECAST ACCURACY COMPARISON (average monthly MAE, basis points)')
-        print(scores[mae_columns].mean().sort_values().to_string(float_format=lambda x: f'{x:.2f}'))
+        print(f'{len(failures)} strategies did not complete; see failed_strategies.csv.')
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
 
 if __name__ == '__main__':
