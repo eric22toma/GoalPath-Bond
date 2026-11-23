@@ -6,43 +6,43 @@
   "candidate_count": 150,
   "gamma": 1.0,
   "uncertainty_scale": 1.0,
-  "first_trade_cost_dollars": 86.70000208549067,
-  "first_trade_cash_dollars": 13213.29791274774,
-  "terminal_tracking_error": 0.006820210049802063,
+  "first_trade_cost_dollars": 98.90111742288448,
+  "first_trade_cash_dollars": 999.9955715471802,
+  "terminal_tracking_error": 0.006659691176667011,
   "terminal_te_cap": 0.025,
   "solver_status": 2,
   "optimal": true,
-  "objective_value": 0.016544459515518473,
+  "objective_value": 0.017523066431372025,
   "monthly_plan": [
     {
       "month": "2025-10",
       "holdings": 10,
-      "cash_weight": 0.1321329791274774,
-      "duration_gap": -0.49999955508822147,
-      "expected_return": 0.0026425269688752947,
+      "cash_weight": 0.009999955715471803,
+      "duration_gap": -0.4999992908187947,
+      "expected_return": 0.0030295096891194183,
       "benchmark_expected_return": 0.0032666151536572493,
-      "expected_tracking_error": 0.006820209913498185,
-      "transaction_cost_fraction": 0.0008670000208549067
+      "expected_tracking_error": 0.00665969053251443,
+      "transaction_cost_fraction": 0.0009890111742288448
     },
     {
       "month": "2025-11",
       "holdings": 10,
-      "cash_weight": 0.1321329412046303,
-      "duration_gap": -0.4999992989833011,
-      "expected_return": 0.007036934935502286,
+      "cash_weight": 0.00999987396432099,
+      "duration_gap": -0.4999980084959157,
+      "expected_return": 0.007405043018099105,
       "benchmark_expected_return": 0.008372870713230715,
-      "expected_tracking_error": 0.006820210291762694,
-      "transaction_cost_fraction": 4.1873313714940205e-09
+      "expected_tracking_error": 0.006659690712578749,
+      "transaction_cost_fraction": 3.0021250528678653e-09
     },
     {
       "month": "2025-12",
       "holdings": 10,
-      "cash_weight": 0.13213298165323814,
-      "duration_gap": -0.4999996889839986,
-      "expected_return": 0.001165470419860502,
+      "cash_weight": 0.009999939982638754,
+      "duration_gap": -0.49999978133132217,
+      "expected_return": 0.0015501177180645175,
       "benchmark_expected_return": 0.0016981236629539968,
-      "expected_tracking_error": 0.006820210049802063,
-      "transaction_cost_fraction": 4.283187178010785e-09
+      "expected_tracking_error": 0.006659691176667011,
+      "transaction_cost_fraction": 2.977605549549066e-09
     }
   ]
 }
