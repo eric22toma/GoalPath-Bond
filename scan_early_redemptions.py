@@ -290,6 +290,58 @@ EARLY_REDEMPTIONS = {
     '81180WAV3': ('2022-02-28', 100),  # Seagate HDD Cayman; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
     '44644AAH0': ('2022-03-31', 100),  # Huntington National Bank; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
     '120568BA7': ('2022-03-31', 100),  # Bunge Ltd Finance Corp; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '56585ABG6': ('2021-12-31', 100),  # Marathon Petroleum Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '15189TAU1': ('2022-03-31', 100),  # CenterPoint Energy Inc; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '377373AJ4': ('2022-05-31', 100),  # GlaxoSmithKline Capital PLC; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '025932AK0': ('2022-06-30', 100),  # American Financial Group Inc; user-confirmed redemption, 2022-06 month-end proxy (exact day not supplied)
+    '615369AK1': ('2022-09-30', 100),  # Moody's Corp; user-confirmed redemption, 2022-09 month-end proxy (exact day not supplied)
+    '177376AG5': ('2022-09-30', 100),  # Citrix Systems Inc; user-confirmed redemption, 2022-09 month-end proxy (exact day not supplied)
+    '57772KAD3': ('2023-04-30', 100),  # Maxim Integrated Products Inc; user-confirmed redemption, 2023-04 month-end proxy (exact day not supplied)
+    '25470DAQ2': ('2022-12-31', 100),  # Discovery Communications LLC; user-confirmed redemption, 2022-12 month-end proxy (exact day not supplied)
+    '26884LAE9': ('2022-03-31', 100),  # EQT Corp; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '166764BK5': ('2022-05-31', 100),  # Chevron Corp; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '11135FAZ4': ('2022-04-30', 100),  # Broadcom Inc; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '11135FBC4': ('2022-04-30', 100),  # Broadcom Inc; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '05565QDF2': ('2022-06-30', 100),  # BP Capital Markets PLC; user-confirmed redemption, 2022-06 month-end proxy (exact day not supplied)
+    '14042RHC8': ('2022-07-31', 100),  # Capital One NA; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '21036PAX6': ('2023-01-31', 100),  # Constellation Brands Inc; user-confirmed redemption, 2023-01 month-end proxy (exact day not supplied)
+    '458140BB5': ('2022-04-30', 100),  # Intel Corp; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '07177MAL7': ('2022-04-30', 100),  # Baxalta Inc; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '025816BM0': ('2022-07-31', 100),  # American Express Co; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '345397YQ0': ('2022-07-31', 100),  # Ford Motor Credit Co LLC; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '44644AAB3': ('2022-07-31', 100),  # Huntington National Bank; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '55336VAQ3': ('2022-09-30', 100),  # MPLX LP; user-confirmed redemption, 2022-09 month-end proxy (exact day not supplied)
+    '42824CAN9': ('2022-08-31', 100),  # Hewlett Packard Enterprise Co; user-confirmed redemption, 2022-08 month-end proxy (exact day not supplied)
+    '24703TAA4': ('2023-04-30', 100),  # Dell International LLC / EMC Corp; user-confirmed redemption, 2023-04 month-end proxy (exact day not supplied)
+    '025816BW8': ('2023-07-31', 100),  # American Express Co; user-confirmed redemption, 2023-07 month-end proxy (exact day not supplied)
+    '25278XAL3': ('2022-03-31', 100),  # Diamondback Energy Inc; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '370334CE2': ('2022-05-31', 100),  # General Mills Inc; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '00108WAD2': ('2022-07-31', 100),  # American Electric Power Co Inc; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '45866FAG9': ('2022-06-30', 100),  # Intercontinental Exchange Inc; user-confirmed redemption, 2022-06 month-end proxy (exact day not supplied)
+    '26078JAB6': ('2022-11-30', 100),  # DuPont de Nemours Inc; user-confirmed redemption, 2022-11 month-end proxy (exact day not supplied)
+    '00774MAF2': ('2023-02-28', 100),  # AerCap Ireland Capital DAC / AerCap Global Aviation Trust; user-confirmed redemption, 2023-02 month-end proxy (exact day not supplied)
+    '55336VAE0': ('2023-04-30', 100),  # MPLX LP; user-confirmed redemption, 2023-04 month-end proxy (exact day not supplied)
+    '024836AD0': ('2022-08-31', 100),  # American Campus Communities Operating Partnership LP; user-confirmed redemption, 2022-08 month-end proxy (exact day not supplied)
+    '024836AE8': ('2022-08-31', 100),  # American Campus Communities Operating Partnership LP; user-confirmed redemption, 2022-08 month-end proxy (exact day not supplied)
+    '00206RHR6': ('2022-04-30', 100),  # AT&T Inc; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '00206RHS4': ('2022-04-30', 100),  # AT&T Inc; user-confirmed redemption, 2022-04 month-end proxy (exact day not supplied)
+    '00206RCT7': ('2022-05-31', 100),  # AT&T Inc; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '00206RDC3': ('2022-05-31', 100),  # AT&T Inc; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '00206RDD1': ('2022-05-31', 100),  # AT&T Inc; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '00206RDP4': ('2022-05-31', 100),  # AT&T Inc; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '20826FAQ9': ('2022-05-31', 100),  # ConocoPhillips Co; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '00287YCT4': ('2022-07-31', 100),  # AbbVie Inc; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '05565QDB1': ('2022-06-30', 100),  # BP Capital Markets PLC; user-confirmed redemption, 2022-06 month-end proxy (exact day not supplied)
+    '10373QAD2': ('2022-08-31', 100),  # BP Capital Markets America Inc; user-confirmed redemption, 2022-08 month-end proxy (exact day not supplied)
+    '171340AK8': ('2022-07-31', 100),  # Church & Dwight Co Inc; user-confirmed redemption, 2022-07 month-end proxy (exact day not supplied)
+    '45866FAE4': ('2022-06-30', 100),  # Intercontinental Exchange Inc; user-confirmed redemption, 2022-06 month-end proxy (exact day not supplied)
+    '126650CQ1': ('2022-09-30', 100),  # CVS Health Corp; user-confirmed redemption, 2022-09 month-end proxy (exact day not supplied)
+    '465685AM7': ('2022-09-30', 100),  # ITC Holdings Corp; user-confirmed redemption, 2022-09 month-end proxy (exact day not supplied)
+    '62957HAC9': ('2022-11-30', 100),  # Nabors Industries Inc; user-confirmed redemption, 2022-11 month-end proxy (exact day not supplied)
+    '651229AV8': ('2022-10-31', 100.002),  # Newell Rubbermaid Inc; user-confirmed redemption, 2022-10 month-end proxy (exact day not supplied)
+    '571748BA9': ('2022-11-30', 100),  # Marsh & McLennan Cos Inc; user-confirmed redemption, 2022-11 month-end proxy (exact day not supplied)
+    '85205TAJ9': ('2022-11-30', 100),  # Sprint Corp; user-confirmed redemption, 2022-11 month-end proxy (exact day not supplied)
+    '16412XAD7': ('2023-01-31', 100),  # Cheniere Energy Inc; user-confirmed redemption, 2023-01 month-end proxy (exact day not supplied)
 
 }
 
@@ -426,6 +478,15 @@ NOT_REDEEMED_EARLY = {
     '05531FAX1': 'BB&T Corp - ineligible per manual audit',
     '65339KBF6': 'NextEra Energy Capital Holdings Inc - ineligible per manual audit',
     '91913YAX8': 'Valero Energy Corp - ineligible per manual audit',
+    '377372AL1': 'GlaxoSmithKline Capital Inc - ineligible per manual audit',
+    '78486QAE1': 'SVB Financial Group - ineligible per manual audit',
+    '78486QAF8': 'SVB Financial Group - ineligible per manual audit',
+    '78486QAH4': 'SVB Financial Group - ineligible per manual audit',
+    '78486QAL5': 'SVB Financial Group - ineligible per manual audit',
+    '00206RHP0': 'AT&T Inc - ineligible per manual audit',
+    '10373QAL4': 'BP Capital Markets America Inc - ineligible per manual audit',
+    '867224AC1': 'Suncor Energy Inc - ineligible per manual audit',
+    '37045VAW0': 'General Motors Corp - ineligible per manual audit',
 
 }
 
