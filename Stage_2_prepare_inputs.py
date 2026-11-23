@@ -11,7 +11,7 @@ from elastic_net_one_period import PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE
 from prepare_stage1_inputs import build_inputs, FACTOR_NAMES
 
 # Settings for one decision month; the Stage 2 backtest can call the functions below.
-ASOF = '2025-09'
+ASOF = '2025-10'
 HORIZON = 3
 FORECAST_MODEL = 'direct'  # 'constant' (H=1 forecast repeated) or 'direct' as alternative model
 CANDIDATE_COUNT = 150
