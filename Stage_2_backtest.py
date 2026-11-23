@@ -130,7 +130,7 @@ def main():
     states = {k: {'pretrade_state': None, 'capital': INITIAL_CAPITAL,
                   'gross_capital': INITIAL_CAPITAL, 'failed': False}
               for k in K_VALUES}
-    monthly, positions, failures = [], [], []
+    monthly, positions, plans, failures = [], [], [], []
 
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
     print(f'Decisions: {START_MONTH} through {END_MONTH}; H={HORIZON}, '
@@ -192,6 +192,19 @@ def main():
             gross_traded = float(solution['buys'].sum() + solution['sells'].sum()
                                  + stage['outside_pretrade_weight'])
             first_plan = metrics['monthly_plan'][0]
+            # Preserve the full H-period plan for audit; only h=1 executes.
+            for h, planned in enumerate(metrics['monthly_plan'], start=1):
+                plans.append({
+                    'strategy': strategy, 'decision_month': label,
+                    'horizon_step': h, 'planned_month': planned['month'],
+                    'executed': h == 1,
+                    'planned_holdings': planned['holdings'],
+                    'planned_cash_weight': planned['cash_weight'],
+                    'planned_tracking_error': planned['expected_tracking_error'],
+                    'planned_expected_return': planned['expected_return'],
+                    'benchmark_expected_return': planned['benchmark_expected_return'],
+                    'planned_duration_gap': planned['duration_gap'],
+                })
             monthly.append({
                 'strategy': strategy, 'forecast': FORECAST_MODEL, 'H': HORIZON,
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
@@ -263,6 +276,8 @@ def main():
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
         OUTPUT_DIR / 'Stage_2_holdings.csv', index=False)
     failures.to_csv(OUTPUT_DIR / 'Stage_2_failed_strategies.csv', index=False)
+    pd.DataFrame(plans).to_csv(
+        OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
     print('\nSTAGE 2 | FULL-BACKTEST STRATEGY SUMMARY')
     if summary.empty:
@@ -273,7 +288,7 @@ def main():
              'annualized_mean_active_return', 'cumulative_net_return',
              'average_monthly_one_way_turnover', 'total_transaction_fees_dollars']]
         print(view.to_string(index=False, float_format=lambda x: f'{x:,.5f}'))
-    print(f'\nSaved monthly performance, summary, holdings and failures to {OUTPUT_DIR}')
+    print(f'\nSaved monthly performance, summary, holdings, planned paths and failures to {OUTPUT_DIR}')
 
 
 if __name__ == '__main__':
