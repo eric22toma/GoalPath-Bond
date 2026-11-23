@@ -1,15 +1,11 @@
 """Stage 2 monthly receding-horizon backtest.
 Reuse Stage 1's data/realized-return handling and Stage 2's input builder/solver.
-Plan H months at each decision date, but execute ONLY the first month's trades.
-"""
+Plan H months at each decision date, but execute ONLY the first month's trades."""
 
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import (
-    PROJECT_ROOT, BOND_COLUMNS, process_all_data, history_for_features,
-    macro_features, load_panel,
-)
+from elastic_net_one_period import (PROJECT_ROOT, BOND_COLUMNS, process_all_data, history_for_features,macro_features, load_panel)
 import Stage_2_prepare_inputs as stage2_inputs
 from Stage_2_prepare_inputs import FORECAST_FILE, CANDIDATE_COUNT, INITIAL_CAPITAL
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
@@ -26,12 +22,7 @@ OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest'
 
 def comparisons():
     """16 nonredundant strategies; at H=1 direct and constant are identical."""
-    return [
-        (model, h, k)
-        for h in HORIZONS
-        for model in (('direct',) if h == 1 else ('direct', 'constant'))
-        for k in (K_VALUES if h in (1, 3) else (LONG_HORIZON_K,))
-    ]
+    return [(model, h, k) for h in HORIZONS for model in (('direct',) if h == 1 else ('direct', 'constant')) for k in (K_VALUES if h in (1, 3) else (LONG_HORIZON_K,))]
 
 
 def strategy_name(model, horizon, k):
