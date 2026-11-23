@@ -129,25 +129,19 @@ def main():
     print(f'Initial cash: {stage["cash_weight"]:.2%}; forced sales: {stage["forced_sale_weight"]:.2%}')
     print('\nADDITIONAL REQUIRED INPUTS FOR STAGE 2')
     print('1. H-PERIOD EXPECTED RETURNS mu[h]: one monthly return forecast per candidate and planned month.')
-    print('   Each forecast combines yield-based carry with the duration effect of predicted yield changes.')
     print(f'   Forecast method: {FORECAST_MODEL}; H={HORIZON} monthly return vectors, '
           f'each with {len(stage["candidates"])} candidates.')
-    print('   These vectors let the optimizer compare planned holdings across future months.')
     print('2. FORECAST UNCERTAINTY rho[h]: standard deviation of past out-of-sample '
           'monthly return errors for each candidate and horizon.')
-    print('   Measures historical prediction instability, distinct from bond-return covariance Q.')
     print(f'   At least {MIN_ERROR_OBSERVATIONS} errors per bond; otherwise use the '
           f'horizon-pooled estimate. Only errors realized by {ASOF} are used.')
     print('3. TRACKING-RISK TERMS: active variance = x.T Q x + risk_linear.T x + risk_constant.')
-    print('   Q measures candidate return covariance; linear and constant terms retain')
-    print('   the tracking contribution of the full benchmark, including bonds not traded.')
     print(f'   Q shape: {stage["candidate_covariance"].shape}; '
           f'linear shape: {stage["risk_linear"].shape}; '
           f'constant: {stage["risk_constant"]:.8f}.')
     print('   Q and full benchmark exposures are reused from Stage 1 and held fixed in the plan.')
     print('4. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
           f'{stage["cash_monthly_return"]:.2%} per month.')
-    print('   Cash is available for purchases; sales release funds, while transaction fees consume cash.')
     print('   The optimizer will enforce self-financing and deduct transaction costs.')
 
     # Preview the first five tradable candidates; each has a matching rho value.
