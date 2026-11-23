@@ -162,29 +162,35 @@ def evaluate_month(stage, solution):
     return held, portfolio_return, benchmark_return, coverage, benchmark
 
 
-def summarize(monthly):
-    """Summarize realized tracking, turnover, fees, and portfolio performance."""
+# One identical headline schema for Stage 1 and Stage 2. Detailed diagnostics remain in the monthly CSVs.
+SUMMARY_COLUMNS = [
+    'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
+    'forecast_mae_bp', 'cumulative_net_return',
+    'ending_portfolio_value_dollars', 'total_transaction_costs_dollars',
+]
+
+
+def summarize(monthly, forecast_rmse_bp=np.nan, forecast_mae_bp=np.nan,
+              forecast_model=None, initial_capital=INITIAL_CAPITAL):
+    """Six comparable results: tracking, one-month yield forecasts, and net wealth/costs."""
     results = []
     for name, rows in monthly.groupby('strategy', sort=False):
         active = rows.active_return.to_numpy(float)
-        annual_te = float(np.std(active, ddof=1) * np.sqrt(12)) if len(active) > 1 else np.nan
+        ending_value = float(rows.net_capital.iloc[-1])
+        # A no-forecast control has no forecast accuracy to report.
+        has_forecast = forecast_model is None or rows.forecast.iloc[0] == forecast_model
         results.append({
             'strategy': name,
-            'forecast': rows.forecast.iloc[0],
-            'solver': rows.solver.iloc[0],
-            'K': int(rows.K.iloc[0]),
-            'candidate_count': int(rows.candidate_count.iloc[0]),
-            'months': len(rows),
-            'annualized_tracking_error': annual_te,
-            'annualized_mean_active_return': float(active.mean() * 12),
-            'cumulative_gross_return': float(rows.gross_capital.iloc[-1] / INITIAL_CAPITAL - 1),
-            'cumulative_net_return': float(rows.net_capital.iloc[-1] / INITIAL_CAPITAL - 1),
-            'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
-            'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
-            'average_holdings': float(rows.holdings_count.mean()),
-            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),})
-    return pd.DataFrame(results)
-
+            'annualized_tracking_error': (
+                float(np.std(active, ddof=1) * np.sqrt(12))
+                if len(active) > 1 else np.nan),
+            'forecast_rmse_bp': float(forecast_rmse_bp) if has_forecast else np.nan,
+            'forecast_mae_bp': float(forecast_mae_bp) if has_forecast else np.nan,
+            'cumulative_net_return': ending_value / initial_capital - 1.0,
+            'ending_portfolio_value_dollars': ending_value,
+            'total_transaction_costs_dollars': float(rows.transaction_cost_dollars.sum()),
+        })
+    return pd.DataFrame(results, columns=SUMMARY_COLUMNS)
 
 def show_core_summary(summary, title):
     """Display the same six interpretable results for both backtest stages."""
@@ -337,19 +343,11 @@ def main():
     target_months = len(pd.period_range(START_MONTH, END_MONTH, freq='M'))
     completed = (monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
                  if not monthly.empty else monthly)
-    summary = summarize(completed) if not completed.empty else pd.DataFrame()
-    # Pooled out-of-sample one-month-ahead yield forecast errors, in basis points.
+    # Pooled out-of-sample one-month-ahead yield errors (bp), as in Stage 2.
     rmse = np.sqrt(forecast_sse_bp2 / forecast_count) if forecast_count else np.nan
     mae = forecast_abs_bp / forecast_count if forecast_count else np.nan
-    if not summary.empty:
-        summary['forecast_rmse_bp'] = np.where(summary.forecast.eq('elastic_net'), rmse, np.nan)
-        summary['forecast_mae_bp'] = np.where(summary.forecast.eq('elastic_net'), mae, np.nan)
-        summary['ending_portfolio_value_dollars'] = summary.cumulative_net_return.add(1) * INITIAL_CAPITAL
-        summary = summary.rename(columns={'total_transaction_fees_dollars': 'total_transaction_costs_dollars'})
-    summary = summary.reindex(columns=[
-        'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
-        'forecast_mae_bp', 'cumulative_net_return',
-        'ending_portfolio_value_dollars', 'total_transaction_costs_dollars'])
+    summary = (summarize(completed, rmse, mae, forecast_model='elastic_net')
+               if not completed.empty else pd.DataFrame(columns=SUMMARY_COLUMNS))
     files = [OUTPUT_DIR / name for name in ('monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv', 'failed_strategies.csv')]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
