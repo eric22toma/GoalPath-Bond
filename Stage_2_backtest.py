@@ -238,8 +238,7 @@ def main():
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
     # Use exactly the same six metric definitions and column names as Stage 1.
-    summary = (summarize(completed, forecast_rmse_bp, forecast_mae_bp,
-                         initial_capital=INITIAL_CAPITAL)
+    summary = (summarize(completed, forecast_rmse_bp, forecast_mae_bp, initial_capital=INITIAL_CAPITAL)
                if not completed.empty else pd.DataFrame(columns=SUMMARY_COLUMNS))
     results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
