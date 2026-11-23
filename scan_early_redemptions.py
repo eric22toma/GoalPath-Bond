@@ -155,6 +155,47 @@ EARLY_REDEMPTIONS = {
     '68268NAP8': ('2024-12-15', 100),  # ONEOK Partners LP; date confirmed via official FINRA site (supplied by user)
     '898813AP5': ('2024-12-16', 100),  # Tucson Electric Power Co; date confirmed via official FINRA site (supplied by user)
     '025816BK4': ('2024-11-04', 100),  # American Express Co; date confirmed via official FINRA site (supplied by user)
+    '00037BAE2': ('2020-12-31', 100),  # ABB Finance USA Inc; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '035242AL0': ('2020-12-31', 100),  # Anheuser-Busch InBev Finance Inc; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '05531FAZ6': ('2020-12-31', 100),  # BB&T Corp; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '78355HKC2': ('2020-12-31', 100),  # Ryder System Inc; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '026874DG9': ('2021-02-28', 100),  # American International Group Inc; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '151020BA1': ('2021-03-31', 100.15),  # Celgene Corp; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '460146CP6': ('2021-10-31', 100),  # International Paper Co; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '31620MAT3': ('2021-04-30', 100),  # Fidelity National Information Services Inc; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '58507LAC3': ('2022-05-31', 100.15),  # Medtronic Global Holdings SCA; user-confirmed redemption, 2022-05 month-end proxy (exact day not supplied)
+    '035240AJ9': ('2020-12-31', 100),  # Anheuser-Busch InBev Worldwide Inc; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '44106MAU6': ('2020-12-31', 100),  # Hospitality Properties Trust; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '7591EPAM2': ('2020-12-31', 100),  # Regions Financial Corp; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '88579YAU5': ('2020-12-31', 100),  # 3M Co; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '88579YBA8': ('2020-12-31', 100),  # 3M Co; user-confirmed redemption, 2020-12 month-end proxy (exact day not supplied)
+    '285512AC3': ('2021-02-28', 100),  # Electronic Arts Inc; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '37045XBF2': ('2021-02-28', 100),  # General Motors Financial Co Inc; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '82481LAB5': ('2021-01-31', 100),  # Shire Acquisitions Investments Ireland DAC; user-confirmed redemption, 2021-01 month-end proxy (exact day not supplied)
+    '828807CX3': ('2021-01-31', 100),  # Simon Property Group LP; user-confirmed redemption, 2021-01 month-end proxy (exact day not supplied)
+    '88160QAN3': ('2021-01-31', 100),  # Tesoro Logistics LP / Tesoro Logistics Finance Corp; user-confirmed redemption, 2021-01 month-end proxy (exact day not supplied)
+    '883556BN1': ('2021-01-31', 100),  # Thermo Fisher Scientific Inc; user-confirmed redemption, 2021-01 month-end proxy (exact day not supplied)
+    '12673PAH8': ('2021-02-28', 100),  # CA Inc; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '25389JAS5': ('2021-02-28', 104.71),  # Digital Realty Trust LP; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '373334KF7': ('2021-03-31', 100),  # Georgia Power Co; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '651229AU0': ('2021-03-31', 100),  # Newell Rubbermaid Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '724479AK6': ('2021-02-28', 100),  # Pitney Bowes Inc; user-confirmed redemption, 2021-02 month-end proxy (exact day not supplied)
+    '891906AD1': ('2021-03-31', 100),  # Total System Services Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '015271AM1': ('2021-03-31', 100),  # Alexandria Real Estate Equities Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '124857AS2': ('2021-03-31', 100),  # CBS Corp; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '26138EAV1': ('2021-03-31', 100),  # Dr Pepper Snapple Group Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '29736RAH3': ('2021-04-30', 100),  # Estée Lauder Companies Inc; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '574599BL9': ('2021-03-31', 100),  # Masco Corp; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '666807BQ4': ('2021-03-31', 100),  # Northrop Grumman Corp; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '87854XAD3': ('2021-03-31', 100),  # TechnipFMC PLC; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '92277GAK3': ('2021-03-31', 104.88),  # Ventas Realty LP; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '959802AU3': ('2021-04-30', 100),  # Western Union Co; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '053807AT0': ('2021-05-31', 101.67),  # Avnet Inc; user-confirmed redemption, 2021-05 month-end proxy (exact day not supplied)
+    '06406FAB9': ('2021-04-30', 100),  # Bank of New York Mellon Corp; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '0258M0EB1': ('2021-04-30', 100),  # American Express Credit Corp; user-confirmed redemption, 2021-04 month-end proxy (exact day not supplied)
+    '88579YBF7': ('2021-03-31', 100),  # 3M Co; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+    '437076BL5': ('2021-03-31', 100.15),  # Home Depot Inc; user-confirmed redemption, 2021-03 month-end proxy (exact day not supplied)
+
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -258,6 +299,23 @@ NOT_REDEEMED_EARLY = {
     '29082HAB8': 'Embraer Netherlands Finance BV - ineligible per manual audit',
     '636180BM2': 'National Fuel Gas Company - ineligible per manual audit',
     '92343VAF1': 'Verizon Communications Inc - ineligible per manual audit',
+    '110122DA3': 'Bristol Myers Squibb Co - ineligible per manual audit',
+    '44932HAC7': 'IBM Credit LLC - ineligible per manual audit',
+    '25470DAS8': 'Discovery Communications LLC - ineligible per manual audit',
+    '78409VBL7': 'S&P Global Inc - ineligible per manual audit',
+    '78409VBM5': 'S&P Global Inc - ineligible per manual audit',
+    '655044AN5': 'Noble Energy Inc - ineligible per manual audit',
+    '20605PAL5': 'Concho Resources Inc - ineligible per manual audit',
+    '907818EX2': 'Union Pacific Corp - ineligible per manual audit',
+    '74435KAB1': 'Prudential PLC - ineligible per manual audit',
+    '487836BV9': 'Kellogg Co - ineligible per manual audit',
+    '02209SBA0': 'Altria Group Inc - ineligible per manual audit',
+    '11135FAX9': 'Broadcom Inc - ineligible per manual audit',
+    '125523AE0': 'Cigna Corp - ineligible per manual audit',
+    '125523BR0': 'Cigna Corp - ineligible per manual audit',
+    '44932HAH6': 'IBM Credit LLC - ineligible per manual audit',
+    '44932HAM5': 'IBM Credit LLC - ineligible per manual audit',
+
 }
 
 
