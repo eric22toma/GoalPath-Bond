@@ -7,10 +7,7 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import (
-    PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE, BOND_COLUMNS,
-    process_all_data, history_for_features, macro_features, load_panel,
-)
+from elastic_net_one_period import (PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE, BOND_COLUMNS, process_all_data, history_for_features, macro_features, load_panel)
 from prepare_stage1_inputs import build_inputs, FACTOR_NAMES
 
 # Settings for one decision month; the Stage 2 backtest can call the functions below.
