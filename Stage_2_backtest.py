@@ -92,11 +92,9 @@ def prepare_strategy_inputs(bundle, latest, errors, pretrade_state, capital, mod
 
 def forecast_accuracy_by_horizon(forecasts):
     """Average monthly yield-change RMSE/MAE (bp) by horizon and forecast model."""
-    first = forecasts.loc[forecasts.horizon.eq(1),
-                          ['cusip', 'month', 'predicted_dy_pp']].rename(
+    first = forecasts.loc[forecasts.horizon.eq(1),['cusip', 'month', 'predicted_dy_pp']].rename(
         columns={'predicted_dy_pp': 'h1_dy_pp'})
-    scored = forecasts.merge(first, on=['cusip', 'month'],
-                             how='left', validate='many_to_one')
+    scored = forecasts.merge(first, on=['cusip', 'month'], how='left', validate='many_to_one')
     rows = []
     for h, group in scored.groupby('horizon', sort=True):
         actual = group.dy.to_numpy(float)
