@@ -15,7 +15,7 @@ from Stage_2_prepare_inputs import (
     prepare_inputs, add_forecast_uncertainty,
 )
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
-from backtest_stage1 import evaluate_month, show_core_summary
+from backtest_stage1 import evaluate_month, summarize, show_core_summary, SUMMARY_COLUMNS
 
 # Common initial comparison with Stage 1; extend K_VALUES after validating K=10.
 START_MONTH = '2023-12'
@@ -87,33 +87,6 @@ def settle_with_cash(held, solution, stage, bond_return, fee_fraction):
                       + next_state['cash_weight'], 1.0, atol=1e-5):
         raise ValueError('Settled bond and cash weights do not sum to one.')
     return next_state, gross_return, net_growth - 1, redeemed_cash
-
-
-def summarize(monthly):
-    """Same realized performance definitions as Stage 1; fees included in net capital."""
-    results = []
-    for name, rows in monthly.groupby('strategy', sort=False):
-        active = rows.active_return.to_numpy(float)
-        results.append({
-            'strategy': name,
-            'forecast': rows.forecast.iloc[0],
-            'solver': 'relax_and_fix',
-            'H': int(rows.H.iloc[0]),
-            'K': int(rows.K.iloc[0]),
-            'candidate_count': int(rows.candidate_count.iloc[0]),
-            'months': len(rows),
-            'annualized_tracking_error': float(np.std(active, ddof=1) * np.sqrt(12))
-                                         if len(active) > 1 else np.nan,
-            'annualized_mean_active_return': float(active.mean() * 12),
-            'cumulative_gross_return': float(rows.gross_capital.iloc[-1] / INITIAL_CAPITAL - 1),
-            'cumulative_net_return': float(rows.net_capital.iloc[-1] / INITIAL_CAPITAL - 1),
-            'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
-            'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
-            'average_holdings': float(rows.holdings_count.mean()),
-            'average_cash_weight': float(rows.cash_weight_after_trade.mean()),
-            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
-        })
-    return pd.DataFrame(results)
 
 
 def main():
@@ -264,16 +237,10 @@ def main():
     failures = pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason'])
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
-    summary = summarize(completed) if not completed.empty else pd.DataFrame()
-    if not summary.empty:
-        summary['forecast_rmse_bp'] = forecast_rmse_bp
-        summary['forecast_mae_bp'] = forecast_mae_bp
-        summary['ending_portfolio_value_dollars'] = summary.cumulative_net_return.add(1) * INITIAL_CAPITAL
-        summary = summary.rename(columns={'total_transaction_fees_dollars': 'total_transaction_costs_dollars'})
-    summary = summary.reindex(columns=[
-        'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
-        'forecast_mae_bp', 'cumulative_net_return',
-        'ending_portfolio_value_dollars', 'total_transaction_costs_dollars'])
+    # Use exactly the same six metric definitions and column names as Stage 1.
+    summary = (summarize(completed, forecast_rmse_bp, forecast_mae_bp,
+                         initial_capital=INITIAL_CAPITAL)
+               if not completed.empty else pd.DataFrame(columns=SUMMARY_COLUMNS))
     results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
