@@ -7,11 +7,14 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE
+from elastic_net_one_period import (
+    PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE, BOND_COLUMNS,
+    process_all_data, history_for_features, macro_features, load_panel,
+)
 from prepare_stage1_inputs import build_inputs, FACTOR_NAMES
 
 # Settings for one decision month; the Stage 2 backtest can call the functions below.
-ASOF = '2025-10'
+ASOF = '2025-09'  # Three planned months: October–December 2025.
 HORIZON = 3
 FORECAST_MODEL = 'direct'  # 'constant' (H=1 forecast repeated) or 'direct' as alternative model
 CANDIDATE_COUNT = 150
@@ -96,7 +99,25 @@ def main():
     with gzip.open(DEFAULT_FORECAST_BUNDLE, 'rb') as file:
         bundle = pickle.load(file)
     if str(bundle['asof']) != ASOF:
-        raise ValueError(f'Regenerate the Stage 1 bundle for {ASOF}; found {bundle["asof"]}')
+        # Recreate the as-of snapshot using the same Stage 1 data functions.
+        # The saved Stage 1 bundle may still correspond to October; do not
+        # overwrite it or modify Stage 1 just to prepare September inputs.
+        print(f'Stage 1 bundle is dated {bundle["asof"]}; rebuilding the {ASOF} snapshot.')
+        data = process_all_data(bond_columns=BOND_COLUMNS)
+        macro, curve = macro_features(
+            history_for_features(data, 'curve'), history_for_features(data, 'fred'))
+        panel = load_panel(data['bonds'][1], macro, curve)
+        asof = pd.Period(ASOF, freq='M')
+        snapshot = panel.loc[panel.month.eq(asof)].copy()
+        if snapshot.empty:
+            raise ValueError(f'No bond snapshot available for {ASOF}')
+        history = panel.loc[panel.month.between(asof - 35, asof),
+                            ['cusip', 'month', 'RET_EOM', 'DURATION',
+                             'time_to_maturity', 'RATING_NUM']].copy()
+        bundle = {'asof': ASOF, 'snapshot': snapshot,
+                  'benchmark_snapshot': snapshot.copy(),
+                  'history': history, 'curve_params': curve}
+        del data, panel
 
     # Read only the requested origin from the large saved forecast history.
     latest = []
