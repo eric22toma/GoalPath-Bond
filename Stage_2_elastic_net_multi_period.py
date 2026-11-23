@@ -15,7 +15,7 @@ from elastic_net_one_period import (
 )
 
 HORIZON = 3
-FINAL_ASOF = '2025-10'
+FINAL_ASOF = '2025-09'  # H=3 forecasts October–December 2025.
 START_ORIGIN = None  # None uses the earliest feasible historical origin.
 SAVE_OUTPUTS = True
 PORTFOLIO_START = '2023-12'
