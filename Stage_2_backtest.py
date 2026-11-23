@@ -11,17 +11,17 @@ from Stage_2_prepare_inputs import FORECAST_FILE, CANDIDATE_COUNT, INITIAL_CAPIT
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
 from backtest_stage1 import evaluate_month, show_core_summary
 
-# Match Stage 1's K grid. Test all K at H=1,3; hold K=25 for H=6,12.
+# Focused validation of the 1% cash cap against the archived 16-strategy run.
 START_MONTH = '2023-12'
 END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
-K_VALUES = (10, 25, 50, 100)
-HORIZONS = (1, 3, 6, 12)
+K_VALUES = (10, 25)
+HORIZONS = (3,)
 LONG_HORIZON_K = 25
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest'
+OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_cashcap_1pct'
 
 
 def comparisons():
-    """16 nonredundant strategies; at H=1 direct and constant are identical."""
+    """Independent forecast/horizon/K strategies without redundant H=1 cases."""
     return [(model, h, k) for h in HORIZONS for model in (('direct',) if h == 1 else ('direct', 'constant')) for k in (K_VALUES if h in (1, 3) else (LONG_HORIZON_K,))]
 
 
