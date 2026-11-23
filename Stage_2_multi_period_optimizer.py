@@ -157,15 +157,32 @@ def main():
     bonds['buy'] = answer['buys']
     bonds['sell'] = answer['sells']
     bonds['capital_allocated'] = bonds.optimized_weight * stage['initial_capital']
+    # Match the bond-level percentage/basis-point columns in Stage 1.
+    bonds['current_yield_pct'] = bonds.YIELD * 100
+    bonds['expected_return_pct'] = np.asarray(stage['periods'][0]['mu'], float) * 100
+    bonds['forecast_yield_change_bp'] = bonds.predicted_dy_pp * 100
     bonds.to_csv(RESULTS_DIR / 'Stage_2_portfolio.csv', index=False)
 
     planned = []
+    # Direct forecasts use the predicted yield at the start of each planned month;
+    # constant forecasts repeat the as-of H=1 change each month.
+    forecast_start_yield = bonds.YIELD.to_numpy(float).copy()
+    duration = bonds.duration.to_numpy(float)
+    h1_change_bp = bonds.predicted_dy_pp.to_numpy(float) * 100
     for h, period in enumerate(stage['periods']):
+        if stage['forecast_model'] == 'direct':
+            period_change_bp = (forecast_start_yield / 12 - np.asarray(period['mu'], float)) * 10000 / duration
+            forecast_start_yield += period_change_bp / 10000
+        else:
+            period_change_bp = h1_change_bp
         rows = pd.DataFrame({
             'month': period['month'], 'cusip': bonds.cusip,
             'weight': answer['planned_weights'][h],
             'buy': answer['planned_buys'][h], 'sell': answer['planned_sells'][h],
             'expected_return': period['mu'], 'uncertainty': period['rho'],
+            'current_yield_pct': bonds['current_yield_pct'],
+            'expected_return_pct': np.asarray(period['mu'], float) * 100,
+            'forecast_yield_change_bp': period_change_bp,
         })
         planned.append(rows)
     pd.concat(planned, ignore_index=True).to_csv(
@@ -185,7 +202,8 @@ def main():
     print(f'First-month fees (USD): {metrics["first_trade_cost_dollars"]:,.2f}; '
           f'remaining cash (USD): {metrics["first_trade_cash_dollars"]:,.2f}')
     selected = bonds.loc[bonds.optimized_weight > 1e-6,
-                         ['cusip', 'optimized_weight', 'buy', 'sell', 'duration', 'capital_allocated']]
+                         ['cusip', 'optimized_weight', 'buy', 'sell', 'duration', 'capital_allocated',
+                          'current_yield_pct', 'expected_return_pct', 'forecast_yield_change_bp']]
     print('\nFIRST-MONTH TRADES (only these execute in a backtest):')
     print(selected.to_string(index=False, float_format=lambda x: f'{x:,.6f}'))
     print(f'\nResults saved to {RESULTS_DIR}')
