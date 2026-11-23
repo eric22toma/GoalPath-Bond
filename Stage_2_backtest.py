@@ -173,8 +173,15 @@ def main():
     monthly, positions, plans, failures = [], [], [], []
 
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
-    print(f'Decisions: {START_MONTH} through {END_MONTH}; H={HORIZON}, '
-          f'forecast={FORECAST_MODEL}, K={K_VALUES}, candidates={CANDIDATE_COUNT}')
+    print(f'Decision months: {START_MONTH} through {END_MONTH}; '
+          f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
+          f'{pd.Period(END_MONTH, freq="M") + 1}')
+    print(f'Strategies: {len(K_VALUES)}; initial capital: ${INITIAL_CAPITAL:,.2f}; '
+          f'H={HORIZON}, forecast={FORECAST_MODEL}')
+    print(f'\nSTRATEGY GRID ({len(K_VALUES)} independent portfolios):')
+    grid = [(FORECAST_MODEL, HORIZON, k, 'heuristic', CANDIDATE_COUNT) for k in K_VALUES]
+    print(pd.DataFrame(grid, columns=['forecast', 'H', 'K', 'solver', 'candidates'])
+          .to_string(index=False))
     print('Execute only the FIRST planned trades; all later planned trades are discarded.')
     print('Fees are funded from portfolio cash (unlike the Stage 1 fee convention).')
 
@@ -325,8 +332,9 @@ def main():
     for metric in ('rmse', 'mae'):
         comparison = accuracy.pivot(index='model', columns='horizon',
                                     values='avg_monthly_' + metric + '_bp')
-        comparison = comparison.rename(columns=lambda h: f'H={h}')
-        print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp) by horizon')
+        comparison = comparison.rename(columns=lambda h: f'H={h}').rename_axis('Forecast model')
+        print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp) by horizon | '
+              f'origins {START_MONTH} through {END_MONTH}')
         print(comparison.to_string(float_format=lambda x: f'{x:.2f}', na_rep='N/A'))
     if not failures.empty:
         print(f'{len(failures)} unsuccessful decisions; see Stage_2_failed_strategies.csv.')
