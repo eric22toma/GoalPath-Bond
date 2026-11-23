@@ -234,7 +234,6 @@ EARLY_REDEMPTIONS = {
     '69362BBC5': ('2021-10-31', 100),  # PSEG Power LLC; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
     '03349MAC9': ('2021-12-31', 100),  # Andeavor; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
     '256746AF5': ('2021-12-31', 104.38),  # Dollar Tree Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
-
     '75513EBW0': ('2021-08-31', 100),  # Raytheon Technologies Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
     '78355HKB4': ('2021-08-31', 100),  # Ryder System Inc; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
     '828807DA2': ('2021-08-31', 100),  # Simon Property Group LP; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
@@ -422,7 +421,6 @@ NOT_REDEEMED_EARLY = {
     '10373QAJ9': 'BP Capital Markets America Inc - ineligible per manual audit',
     '26614NAA0': 'DuPont de Nemours Inc - ineligible per manual audit',
     '37045XCW4': 'General Motors Financial Co Inc - ineligible per manual audit',
-
     '31428XBU9': 'FedEx Corp - ineligible per manual audit',
     '23355LAF3': 'DXC Technology Co - ineligible per manual audit',
     '05531FAX1': 'BB&T Corp - ineligible per manual audit',
