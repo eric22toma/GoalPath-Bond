@@ -235,6 +235,63 @@ EARLY_REDEMPTIONS = {
     '03349MAC9': ('2021-12-31', 100),  # Andeavor; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
     '256746AF5': ('2021-12-31', 104.38),  # Dollar Tree Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
 
+    '75513EBW0': ('2021-08-31', 100),  # Raytheon Technologies Corp; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '78355HKB4': ('2021-08-31', 100),  # Ryder System Inc; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '828807DA2': ('2021-08-31', 100),  # Simon Property Group LP; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '828807DB0': ('2021-08-31', 100),  # Simon Property Group LP; user-confirmed redemption, 2021-08 month-end proxy (exact day not supplied)
+    '23355LAC0': ('2021-09-30', 100),  # DXC Technology Co; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '23355LAD8': ('2021-09-30', 100.35),  # DXC Technology Co; user-confirmed redemption, 2021-09 month-end proxy (exact day not supplied)
+    '78572XAF8': ('2021-10-31', 100),  # Sabra Health Care LP / Sabra Capital Corp; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '878237AG1': ('2021-10-31', 100),  # Tech Data Corp; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '878237AH9': ('2021-10-31', 100),  # Tech Data Corp; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '06051GFZ7': ('2021-10-31', 100),  # Bank of America Corp; user-confirmed redemption, 2021-10 month-end proxy (exact day not supplied)
+    '56585ABA9': ('2021-12-31', 100),  # Marathon Petroleum Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '595112BL6': ('2021-11-30', 100),  # Micron Technology Inc; user-confirmed redemption, 2021-11 month-end proxy (exact day not supplied)
+    '883556CG5': ('2021-12-31', 100.50),  # Thermo Fisher Scientific Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '00772BAR2': ('2021-12-31', 100),  # AerCap Ireland Capital Ltd / AerCap Global Aviation Trust; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '06738EAS4': ('2022-01-31', 100),  # Barclays PLC; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '17401QAS0': ('2022-01-31', 100),  # Citizens Bank NA; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '883556BR2': ('2021-12-31', 100),  # Thermo Fisher Scientific Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '883556BX9': ('2021-12-31', 100),  # Thermo Fisher Scientific Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '80281LAF2': ('2022-01-31', 100),  # Santander UK Group Holdings PLC; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '559079AK4': ('2022-01-31', 100),  # Magellan Health Inc; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '22160KAK1': ('2021-12-31', 100),  # Costco Wholesale Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '78355HKD0': ('2022-02-28', 100),  # Ryder System Inc; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
+    '928563AB1': ('2022-01-31', 100),  # VMware Inc; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '949746SK8': ('2022-01-31', 100),  # Wells Fargo & Co; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '03350WAA7': ('2022-08-31', 100),  # Andeavor Logistics LP / Tesoro Logistics Finance Corp; user-confirmed redemption, 2022-08 month-end proxy (exact day not supplied)
+    '00774MAA3': ('2022-03-31', 100),  # AerCap Ireland Capital DAC / AerCap Global Aviation Trust; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '035242AP1': ('2022-02-28', 107.054),  # Anheuser-Busch InBev Finance Inc; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
+    '651639AT3': ('2022-01-31', 100),  # Newmont Goldcorp Corp; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '05723KAD2': ('2022-01-31', 100),  # Baker Hughes Co; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '0258M0EG0': ('2022-01-31', 100),  # American Express Credit Corp; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '00287YCS6': ('2022-01-31', 100),  # AbbVie Inc; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '375558BH5': ('2022-02-28', 100),  # Gilead Sciences Inc; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
+    '674599CK9': ('2022-01-31', 100),  # Occidental Petroleum Corp; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '25746UCR8': ('2021-12-31', 100.15),  # Dominion Energy Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '67078AAC7': ('2021-12-31', 100),  # nVent Finance Sarl; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '929089AD2': ('2021-11-30', 100),  # Voya Financial Inc; user-confirmed redemption, 2021-11 month-end proxy (exact day not supplied)
+    '031162CP3': ('2021-12-31', 100),  # Amgen Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '05565QDG0': ('2021-12-31', 100.20),  # BP Capital Markets PLC; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '05565QDL9': ('2021-12-31', 100),  # BP Capital Markets PLC; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '10373QAW0': ('2021-12-31', 100),  # BP Capital Markets America Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '10373QAY6': ('2021-12-31', 100),  # BP Capital Markets America Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '126650CV0': ('2021-12-31', 100),  # CVS Health Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '15189TAR8': ('2021-12-31', 100.125),  # CenterPoint Energy Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '15189WAK6': ('2021-12-31', 100),  # CenterPoint Energy Resources Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '65339KAW0': ('2021-12-31', 100),  # NextEra Energy Capital Holdings Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '65339KBG4': ('2021-12-31', 100),  # NextEra Energy Capital Holdings Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '65339KBH2': ('2021-12-31', 100),  # NextEra Energy Capital Holdings Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '65339KBQ2': ('2021-12-31', 100),  # NextEra Energy Capital Holdings Inc; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '816851BF5': ('2021-12-31', 100),  # Sempra Energy; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '871829BG1': ('2021-12-31', 100),  # Sysco Corp; user-confirmed redemption, 2021-12 month-end proxy (exact day not supplied)
+    '19828JAB4': ('2022-01-31', 100),  # Columbia Property Trust Operating Partnership; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '25389JAQ9': ('2022-02-28', 100),  # Digital Realty Trust LP; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
+    '48128BAB7': ('2022-01-31', 100),  # JPMorgan Chase & Co; user-confirmed redemption, 2022-01 month-end proxy (exact day not supplied)
+    '81180WAV3': ('2022-02-28', 100),  # Seagate HDD Cayman; user-confirmed redemption, 2022-02 month-end proxy (exact day not supplied)
+    '44644AAH0': ('2022-03-31', 100),  # Huntington National Bank; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+    '120568BA7': ('2022-03-31', 100),  # Bunge Ltd Finance Corp; user-confirmed redemption, 2022-03 month-end proxy (exact day not supplied)
+
 }
 
 # Other reviewed bonds not confirmed as early redemptions.
@@ -365,6 +422,12 @@ NOT_REDEEMED_EARLY = {
     '10373QAJ9': 'BP Capital Markets America Inc - ineligible per manual audit',
     '26614NAA0': 'DuPont de Nemours Inc - ineligible per manual audit',
     '37045XCW4': 'General Motors Financial Co Inc - ineligible per manual audit',
+
+    '31428XBU9': 'FedEx Corp - ineligible per manual audit',
+    '23355LAF3': 'DXC Technology Co - ineligible per manual audit',
+    '05531FAX1': 'BB&T Corp - ineligible per manual audit',
+    '65339KBF6': 'NextEra Energy Capital Holdings Inc - ineligible per manual audit',
+    '91913YAX8': 'Valero Energy Corp - ineligible per manual audit',
 
 }
 
