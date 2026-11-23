@@ -15,7 +15,7 @@ from Stage_2_prepare_inputs import (
     prepare_inputs, add_forecast_uncertainty,
 )
 from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
-from backtest_stage1 import evaluate_month, summarize, show_core_summary, SUMMARY_COLUMNS
+from backtest_stage1 import evaluate_month, show_core_summary
 
 # Common initial comparison with Stage 1; extend K_VALUES after validating K=10.
 START_MONTH = '2023-12'
@@ -46,6 +46,68 @@ def load_forecast_history():
     if not origins or not errors:
         raise ValueError('Missing Stage 2 forecast origins or historical errors.')
     return pd.concat(origins, ignore_index=True), pd.concat(errors, ignore_index=True)
+
+
+def forecast_accuracy_by_horizon(forecasts):
+    """Average monthly yield-change RMSE/MAE (bp) by horizon and forecast model."""
+    first = forecasts.loc[forecasts.horizon.eq(1),
+                          ['cusip', 'month', 'predicted_dy_pp']].rename(
+        columns={'predicted_dy_pp': 'h1_dy_pp'})
+    scored = forecasts.merge(first, on=['cusip', 'month'],
+                             how='left', validate='many_to_one')
+    rows = []
+    for h, group in scored.groupby('horizon', sort=True):
+        actual = group.dy.to_numpy(float)
+        forecasts_h = {
+            'direct': group.predicted_dy_pp.to_numpy(float),
+            'constant': h * group.h1_dy_pp.to_numpy(float),
+            'random_walk': np.zeros(len(group)),
+        }
+        # All three methods are compared on exactly the same realized targets.
+        valid = np.isfinite(actual)
+        for predicted in forecasts_h.values():
+            valid &= np.isfinite(predicted)
+        for model, predicted in forecasts_h.items():
+            errors = pd.DataFrame({
+                'origin': group.loc[valid, 'month'].to_numpy(),
+                'error_bp': (actual[valid] - predicted[valid]) * 100,
+            })
+            by_month = errors.groupby('origin').error_bp.agg(
+                rmse=lambda e: float(np.sqrt(np.mean(e ** 2))),
+                mae=lambda e: float(np.mean(np.abs(e))))
+            rows.append({
+                'horizon': int(h), 'model': model,
+                'avg_monthly_rmse_bp': float(by_month.rmse.mean()),
+                'avg_monthly_mae_bp': float(by_month.mae.mean()),
+            })
+    return pd.DataFrame(rows)
+
+
+def summarize(monthly):
+    """Preserve the original detailed Stage 2 summary CSV."""
+    results = []
+    for name, rows in monthly.groupby('strategy', sort=False):
+        active = rows.active_return.to_numpy(float)
+        results.append({
+            'strategy': name,
+            'forecast': rows.forecast.iloc[0],
+            'solver': 'relax_and_fix',
+            'H': int(rows.H.iloc[0]),
+            'K': int(rows.K.iloc[0]),
+            'candidate_count': int(rows.candidate_count.iloc[0]),
+            'months': len(rows),
+            'annualized_tracking_error': float(np.std(active, ddof=1) * np.sqrt(12))
+                                         if len(active) > 1 else np.nan,
+            'annualized_mean_active_return': float(active.mean() * 12),
+            'cumulative_gross_return': float(rows.gross_capital.iloc[-1] / INITIAL_CAPITAL - 1),
+            'cumulative_net_return': float(rows.net_capital.iloc[-1] / INITIAL_CAPITAL - 1),
+            'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
+            'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
+            'average_holdings': float(rows.holdings_count.mean()),
+            'average_cash_weight': float(rows.cash_weight_after_trade.mean()),
+            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
+        })
+    return pd.DataFrame(results)
 
 
 def settle_with_cash(held, solution, stage, bond_return, fee_fraction):
@@ -91,12 +153,11 @@ def settle_with_cash(held, solution, stage, bond_return, fee_fraction):
 
 def main():
     forecasts, errors = load_forecast_history()
-    # Match Stage 1: pooled out-of-sample one-month-ahead yield errors (bp).
-    first = forecasts.loc[forecasts.horizon.eq(1)]
-    forecast_error_bp = (first.dy - first.predicted_dy_pp) * 100
-    forecast_error_bp = forecast_error_bp[np.isfinite(forecast_error_bp)]
-    forecast_rmse_bp = float(np.sqrt(np.mean(forecast_error_bp ** 2))) if len(forecast_error_bp) else np.nan
-    forecast_mae_bp = float(np.mean(np.abs(forecast_error_bp))) if len(forecast_error_bp) else np.nan
+    accuracy = forecast_accuracy_by_horizon(forecasts)
+    first_scores = accuracy.loc[
+        accuracy.horizon.eq(1) & accuracy.model.eq(FORECAST_MODEL)]
+    forecast_rmse_bp = first_scores.avg_monthly_rmse_bp.iloc[0]
+    forecast_mae_bp = first_scores.avg_monthly_mae_bp.iloc[0]
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
 
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -114,6 +175,8 @@ def main():
     print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
     print(f'Decisions: {START_MONTH} through {END_MONTH}; H={HORIZON}, '
           f'forecast={FORECAST_MODEL}, K={K_VALUES}, candidates={CANDIDATE_COUNT}')
+    print('Execute only the FIRST planned trades; all later planned trades are discarded.')
+    print('Fees are funded from portfolio cash (unlike the Stage 1 fee convention).')
 
     for asof in months:
         label = str(asof)
@@ -132,6 +195,7 @@ def main():
         }
 
         successes = 0
+        coverages = []
         for k, state in states.items():
             if state['failed']:
                 continue
@@ -231,15 +295,23 @@ def main():
                 'return_source', 'return_note',
             ]])
             successes += 1
+            coverages.append(coverage)
+            print(f'{label} -> {asof + 1} | K={k}: '
+                  f'portfolio {gross_return:+.2%}, net {net_return:+.2%}, '
+                  f'benchmark {benchmark_return:+.2%}, '
+                  f'cash {solution["cash_weight"]:.2%}, '
+                  f'coverage {coverage:.2%}', flush=True)
+        coverage_text = (f'{min(coverages):.1%}–{max(coverages):.1%}'
+                         if coverages else 'n/a')
+        print(f'{label} -> {asof + 1} | {successes}/{len(K_VALUES)} strategies evaluated; '
+              f'benchmark coverage {coverage_text}', flush=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = pd.DataFrame(monthly)
     failures = pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason'])
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
-    # Use exactly the same six metric definitions and column names as Stage 1.
-    summary = (summarize(completed, forecast_rmse_bp, forecast_mae_bp, initial_capital=INITIAL_CAPITAL)
-               if not completed.empty else pd.DataFrame(columns=SUMMARY_COLUMNS))
+    summary = summarize(completed) if not completed.empty else pd.DataFrame()
     results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
@@ -248,7 +320,14 @@ def main():
     pd.DataFrame(plans).to_csv(
         OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
-    show_core_summary(summary, 'STAGE 2 | FINAL RESULTS')
+    show_core_summary(summary, 'STAGE 2 | FINAL STRATEGY RESULTS', START_MONTH, END_MONTH,
+                      forecast_rmse_bp, forecast_mae_bp, initial_capital=INITIAL_CAPITAL)
+    for metric in ('rmse', 'mae'):
+        comparison = accuracy.pivot(index='model', columns='horizon',
+                                    values='avg_monthly_' + metric + '_bp')
+        comparison = comparison.rename(columns=lambda h: f'H={h}')
+        print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp) by horizon')
+        print(comparison.to_string(float_format=lambda x: f'{x:.2f}', na_rep='N/A'))
     if not failures.empty:
         print(f'{len(failures)} unsuccessful decisions; see Stage_2_failed_strategies.csv.')
     print(f'\nSaved monthly performance, summary, holdings, planned paths and failures to {OUTPUT_DIR}')
