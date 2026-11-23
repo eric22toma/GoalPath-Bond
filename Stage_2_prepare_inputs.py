@@ -129,19 +129,30 @@ def main():
     print(f'Initial cash: {stage["cash_weight"]:.2%}; forced sales: {stage["forced_sale_weight"]:.2%}')
     print('\nADDITIONAL REQUIRED INPUTS FOR STAGE 2')
     print('1. H-PERIOD EXPECTED RETURNS mu[h]: one monthly return forecast per candidate and planned month.')
+    print('   - Direct: mu_i[h] = forecast_start_yield_i[h]/12 - D_i,t * forecast_monthly_dy_i[h]/100.')
+    print('   - Monthly dy[h] = cumulative forecast dy[h] - cumulative forecast dy[h-1] (percentage points).')
+    print('   - Constant alternative: repeat the H=1 return forecast at each planned month.')
     print(f'   Forecast method: {FORECAST_MODEL}; H={HORIZON} monthly return vectors, '
           f'each with {len(stage["candidates"])} candidates.')
     print('2. FORECAST UNCERTAINTY rho[h]: standard deviation of past out-of-sample '
           'monthly return errors for each candidate and horizon.')
+    print('   - Error e_i,s,h = realized monthly return_i,s+h - forecast monthly return_i,s+h|s.')
+    print('   - rho_i[h] = sample_std(e_i,s,h), computed separately for each bond and horizon.')
     print(f'   At least {MIN_ERROR_OBSERVATIONS} errors per bond; otherwise use the '
           f'horizon-pooled estimate. Only errors realized by {ASOF} are used.')
     print('3. TRACKING-RISK TERMS: active variance = x.T Q x + risk_linear.T x + risk_constant.')
+    print('   - Candidate covariance: Q = B * Sigma_f * B.T + diag(psi).')
+    print('   - risk_linear = -2 * (B * Sigma_f * benchmark_factor + psi * candidate_benchmark_weight).')
+    print('   - risk_constant = benchmark_factor.T * Sigma_f * benchmark_factor + sum(psi_B * b_B^2).')
     print(f'   Q shape: {stage["candidate_covariance"].shape}; '
           f'linear shape: {stage["risk_linear"].shape}; '
           f'constant: {stage["risk_constant"]:.8f}.')
     print('   Q and full benchmark exposures are reused from Stage 1 and held fixed in the plan.')
     print('4. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
           f'{stage["cash_monthly_return"]:.2%} per month.')
+    print('   - Starting weights: candidate holdings + cash + forced outside sales = 1.')
+    print('   - Planned self-financing: cash_after = cash_before + sales - buys - transaction_costs.')
+    print('   - Maturity repayments will flow into cash in the optimizer (not applied by this script).')
     print('   The optimizer will enforce self-financing and deduct transaction costs.')
 
     # Preview the first five tradable candidates; each has a matching rho value.
