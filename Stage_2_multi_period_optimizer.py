@@ -75,7 +75,7 @@ def solve_quadratic(stage, k=K, allowed=None):
     terminal_q = Q * survive[:, None] * survive[None, :]
     terminal_g = g * survive
     terminal_risk = w[-1] @ terminal_q @ w[-1] + terminal_g @ w[-1] + constant
-    m.addQConstr(terminal_risk <= TERMINAL_TE_CAP**2, name='terminal_tracking_cap')
+    m.addConstr(terminal_risk <= TERMINAL_TE_CAP**2, name='terminal_tracking_cap')
     m.setObjective(objective, GRB.MINIMIZE)
     m.optimize()
     if m.SolCount == 0:
