@@ -162,62 +162,57 @@ def evaluate_month(stage, solution):
     return held, portfolio_return, benchmark_return, coverage, benchmark
 
 
-# One identical headline schema for Stage 1 and Stage 2. Detailed diagnostics remain in the monthly CSVs.
-SUMMARY_COLUMNS = [
-    'strategy', 'annualized_tracking_error', 'forecast_rmse_bp',
-    'forecast_mae_bp', 'cumulative_net_return',
-    'ending_portfolio_value_dollars', 'total_transaction_costs_dollars',
-]
-
-
-def summarize(monthly, forecast_rmse_bp=np.nan, forecast_mae_bp=np.nan,
-              forecast_model=None, initial_capital=INITIAL_CAPITAL):
-    """Six comparable results: tracking, one-month yield forecasts, and net wealth/costs."""
+def summarize(monthly):
+    """Preserve the full Stage 1 diagnostic summary in summary.csv."""
     results = []
     for name, rows in monthly.groupby('strategy', sort=False):
         active = rows.active_return.to_numpy(float)
-        ending_value = float(rows.net_capital.iloc[-1])
-        # A no-forecast control has no forecast accuracy to report.
-        has_forecast = forecast_model is None or rows.forecast.iloc[0] == forecast_model
+        annual_te = float(np.std(active, ddof=1) * np.sqrt(12)) if len(active) > 1 else np.nan
         results.append({
             'strategy': name,
-            'annualized_tracking_error': (
-                float(np.std(active, ddof=1) * np.sqrt(12))
-                if len(active) > 1 else np.nan),
-            'forecast_rmse_bp': float(forecast_rmse_bp) if has_forecast else np.nan,
-            'forecast_mae_bp': float(forecast_mae_bp) if has_forecast else np.nan,
-            'cumulative_net_return': ending_value / initial_capital - 1.0,
-            'ending_portfolio_value_dollars': ending_value,
-            'total_transaction_costs_dollars': float(rows.transaction_cost_dollars.sum()),
+            'forecast': rows.forecast.iloc[0],
+            'solver': rows.solver.iloc[0],
+            'K': int(rows.K.iloc[0]),
+            'candidate_count': int(rows.candidate_count.iloc[0]),
+            'months': len(rows),
+            'annualized_tracking_error': annual_te,
+            'annualized_mean_active_return': float(active.mean() * 12),
+            'cumulative_gross_return': float(rows.gross_capital.iloc[-1] / INITIAL_CAPITAL - 1),
+            'cumulative_net_return': float(rows.net_capital.iloc[-1] / INITIAL_CAPITAL - 1),
+            'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
+            'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
+            'average_holdings': float(rows.holdings_count.mean()),
+            'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
         })
-    return pd.DataFrame(results, columns=SUMMARY_COLUMNS)
+    return pd.DataFrame(results)
 
-def show_core_summary(summary, title):
-    """Display the same six interpretable results for both backtest stages."""
-    print(f'\n{title}')
+
+def show_core_summary(summary, title, start_month, end_month,
+                      forecast_rmse_bp=np.nan, forecast_mae_bp=np.nan,
+                      forecast_model=None, initial_capital=INITIAL_CAPITAL):
+    """Print only six interpretable metrics, without discarding stored diagnostics."""
+    start = pd.Period(start_month, freq='M') + 1
+    end = pd.Period(end_month, freq='M') + 1
+    months = len(pd.period_range(start_month, end_month, freq='M'))
+    print(f'\n{title} | realized {start} through {end} ({months} months)')
     if summary.empty:
-        print('No complete strategies to report; inspect failed_strategies.csv.')
+        print('No complete strategies to report; inspect the failures CSV.')
         return
-    display = summary.sort_values('annualized_tracking_error').copy()
-    display = display.rename(columns={
-        'strategy': 'Strategy',
-        'annualized_tracking_error': 'TE (annual)',
-        'forecast_rmse_bp': 'RMSE (bp)',
-        'forecast_mae_bp': 'MAE (bp)',
-        'cumulative_net_return': 'Net return',
-        'ending_portfolio_value_dollars': 'Ending value ($)',
-        'total_transaction_costs_dollars': 'Transaction costs ($)',
+    rows = summary.sort_values('annualized_tracking_error').copy()
+    has_forecast = (rows.forecast.eq(forecast_model) if forecast_model
+                    else pd.Series(True, index=rows.index))
+    display = pd.DataFrame({
+        'Strategy': rows.strategy,
+        'TE (annual)': rows.annualized_tracking_error.map(lambda x: f'{x:.2%}'),
+        'RMSE (bp)': ['{:.2f}'.format(forecast_rmse_bp) if yes and pd.notna(forecast_rmse_bp) else 'N/A'
+                      for yes in has_forecast],
+        'MAE (bp)': ['{:.2f}'.format(forecast_mae_bp) if yes and pd.notna(forecast_mae_bp) else 'N/A'
+                     for yes in has_forecast],
+        'Net return (period)': rows.cumulative_net_return.map(lambda x: f'{x:.2%}'),
+        'Ending value ($)': ((1 + rows.cumulative_net_return) * initial_capital).map(lambda x: f'{x:,.2f}'),
+        'Transaction costs ($)': rows.total_transaction_fees_dollars.map(lambda x: f'{x:,.2f}'),
     })
-    for name in ('TE (annual)', 'Net return'):
-        display[name] = display[name].map(lambda x: f'{x:.2%}')
-    for name in ('RMSE (bp)', 'MAE (bp)'):
-        display[name] = display[name].map(
-            lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-    for name in ('Ending value ($)', 'Transaction costs ($)'):
-        display[name] = display[name].map(lambda x: f'{x:,.2f}')
     print(display.to_string(index=False))
-
-
 def main():
     """Compare monthly Stage 1 tracking strategies"""
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -230,9 +225,11 @@ def main():
     print(f'\nDecision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through {pd.Period(END_MONTH, freq="M") + 1}')
     print(f'Strategies: {len(configs)}; initial capital: ${INITIAL_CAPITAL:,.2f}')
+    print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
+    print(pd.DataFrame(configs, columns=['forecast', 'K', 'solver', 'candidates']).to_string(index=False))
+    print('\nYield forecast accuracy: elastic net, ridge, lasso, random walk')
     states = {f'{model}_{method}_K{k}_N{n}': {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'fees': 0.0} for model, k, method, n in configs}
     monthly, positions, forecasting, failures = [], [], [], []
-    forecast_sse_bp2, forecast_abs_bp, forecast_count = 0.0, 0.0, 0
     elastic_params, baseline_penalties, tuned_year = None, None, None
 
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
@@ -245,10 +242,6 @@ def main():
         valid = now.loc[now.dy.notna()].copy()
         if not valid.empty:
             error = (valid.dy - valid.predicted_dy_pp) * 100
-            finite_error = error[np.isfinite(error)]
-            forecast_sse_bp2 += float((finite_error ** 2).sum())
-            forecast_abs_bp += float(finite_error.abs().sum())
-            forecast_count += len(finite_error)
             row = {'target_month': str(asof + 1),
                 'forecast_bonds': len(valid),
                 'elastic_net_rmse_bp': float(np.sqrt(np.mean(error ** 2))),
@@ -337,17 +330,20 @@ def main():
             held['target_month'] = str(asof + 1)
             held['capital_allocated'] = held.weight * float(stage['initial_capital'])
             positions.append(held[['strategy', 'decision_month', 'target_month', 'cusip', 'weight', 'capital_allocated', 'mu', 'duration', 'next_return', 'was_redeemed', 'redemption_date', 'return_source', 'return_note']])
+        coverage_text = f'{min(coverages):.1%}–{max(coverages):.1%}' if coverages else 'n/a'
+        print(f'{asof} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
+              f'benchmark coverage {coverage_text}', flush=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monthly = pd.DataFrame(monthly)
     target_months = len(pd.period_range(START_MONTH, END_MONTH, freq='M'))
     completed = (monthly.groupby('strategy').filter(lambda rows: len(rows) == target_months)
                  if not monthly.empty else monthly)
-    # Pooled out-of-sample one-month-ahead yield errors (bp), as in Stage 2.
-    rmse = np.sqrt(forecast_sse_bp2 / forecast_count) if forecast_count else np.nan
-    mae = forecast_abs_bp / forecast_count if forecast_count else np.nan
-    summary = (summarize(completed, rmse, mae, forecast_model='elastic_net')
-               if not completed.empty else pd.DataFrame(columns=SUMMARY_COLUMNS))
+    summary = summarize(completed) if not completed.empty else pd.DataFrame()
+    # Average monthly forecast accuracy, keeping every model's existing calculations.
+    scores = pd.DataFrame(forecasting)
+    rmse = float(scores.elastic_net_rmse_bp.mean()) if not scores.empty else np.nan
+    mae = float(scores.elastic_net_mae_bp.mean()) if not scores.empty else np.nan
     files = [OUTPUT_DIR / name for name in ('monthly_results.csv', 'summary.csv', 'holdings.csv', 'forecast_accuracy.csv', 'failed_strategies.csv')]
     monthly.to_csv(files[0], index=False)
     summary.to_csv(files[1], index=False)
@@ -355,7 +351,19 @@ def main():
     pd.DataFrame(forecasting).to_csv(files[3], index=False)
     pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason']).to_csv(files[4], index=False)
 
-    show_core_summary(summary, 'STAGE 1 | FINAL RESULTS')
+    show_core_summary(summary, 'STAGE 1 | FINAL STRATEGY RESULTS', START_MONTH, END_MONTH,
+                      rmse, mae, forecast_model='elastic_net')
+    if not scores.empty:
+        for metric in ('rmse', 'mae'):
+            columns = [col for col in scores if col.endswith('_' + metric + '_bp')]
+            averages = scores[columns].mean().sort_values()
+            table = pd.DataFrame({
+                'Forecast model': [name.removesuffix('_' + metric + '_bp').replace('_', ' ')
+                                   for name in averages.index],
+                'Average monthly ' + metric.upper() + ' (bp)': averages.to_numpy(),
+            })
+            print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp), H=1')
+            print(table.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
     if failures:
         print(f'{len(failures)} strategies did not complete; see failed_strategies.csv.')
     print(f'\nFive comparison files saved to {OUTPUT_DIR}')
