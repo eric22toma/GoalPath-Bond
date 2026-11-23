@@ -1,1 +1,3 @@
 strategy,decision_month,reason
+direct_heuristic_H3_K100_N150,2024-01,"Invalid period 3: holdings=100, duration gap=-0.5034862531547635"
+constant_heuristic_H3_K100_N150,2024-02,"Invalid period 1: holdings=100, duration gap=-0.501872102296554"

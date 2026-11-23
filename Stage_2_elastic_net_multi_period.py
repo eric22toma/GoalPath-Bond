@@ -14,7 +14,7 @@ from elastic_net_one_period import (
     training_rows, limit_tuning_rows, estimator, tune_elastic_net, fit_forecast,
 )
 
-HORIZON = 3
+HORIZON = 12
 FINAL_ASOF = '2025-09'  # H=3 forecasts October–December 2025.
 START_ORIGIN = None  # None uses the earliest feasible historical origin.
 SAVE_OUTPUTS = True
