@@ -1,7 +1,6 @@
 """Stage 2 multi-period benchmark tracking (Deliverable 3, Section 5.5).
 Reuse Stage 1 candidate/risk inputs and its Gurobi relax-and-fix structure.
-Plan H months; only the FIRST trade is executed in a future rolling backtest.
-"""
+Plan H months; only the FIRST trade is executed in a future rolling backtest."""
 
 import json
 import numpy as np
@@ -11,9 +10,7 @@ from gurobipy import GRB
 
 from elastic_net_one_period import PROJECT_ROOT
 from Stage_2_prepare_inputs import OUTPUT_FILE
-from robust_mvo_one_period import (
-    TRANSACTION_COST, DURATION_TOLERANCE, TIME_LIMIT, MAX_WEIGHT,
-)
+from robust_mvo_one_period import (TRANSACTION_COST, DURATION_TOLERANCE, TIME_LIMIT, MAX_WEIGHT,)
 
 # Initial H=3 demonstration; refine preference parameters after testing.
 K = 10
@@ -38,15 +35,6 @@ def solve_quadratic(stage, k=K, allowed=None):
     maturity = [np.asarray(p['matures_in_month'], bool) for p in stage['periods']]
     # Market-value weights become principal cash at maturity (par = $100).
     principal_ratio = 100.0 / c.PRICE_EOM.to_numpy(float)
-
-    if H != int(stage['horizon']) or any(len(p['mu']) != n or len(p['rho']) != n for p in stage['periods']):
-        raise ValueError('Invalid Stage 2 horizon or candidate input lengths')
-    if not np.isclose(previous.sum() + stage['cash_weight'] + outside, 1.0, atol=1e-5):
-        raise ValueError('Pre-trade bond weights, cash and forced sales must sum to one')
-    if not (np.isfinite(Q).all() and np.isfinite(g).all() and
-            np.isfinite(principal_ratio).all() and np.isfinite(constant)):
-        raise ValueError('Nonfinite Stage 2 risk or principal inputs')
-
     m = gp.Model('GoalPath_Bond_Multi_Period')
     m.Params.OutputFlag = 0
     m.Params.TimeLimit = TIME_LIMIT
