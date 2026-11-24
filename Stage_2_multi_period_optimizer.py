@@ -18,6 +18,8 @@ GAMMA = 1.0                    # Weight on benchmark tracking-error variance
 UNCERTAINTY_SCALE = 1.0        # Weight on rho.T @ |x - benchmark|
 TERMINAL_TE_CAP = 0.025        # Maximum terminal expected MONTHLY tracking error
 MAX_CASH_WEIGHT = 0.01         # At most 1% cash after each planned rebalance
+CONVEXITY_TOLERANCE = 25.0      # Initial portfolio-minus-benchmark convexity band (years^2)
+KRD_TOLERANCE = 2.0            # Initial absolute KRD gap per key tenor (years)
 RESULTS_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'results'
 
 
@@ -59,6 +61,21 @@ def solve_quadratic(stage, k=K, allowed=None):
         m.addConstr(cash[h] <= MAX_CASH_WEIGHT, name=f'cash_limit_{h}')
         m.addConstr(duration @ w[h] <= stage['benchmark_duration'] + DURATION_TOLERANCE)
         m.addConstr(duration @ w[h] >= stage['benchmark_duration'] - DURATION_TOLERANCE)
+        # Bond-risk coefficients are fixed as-of information, so these remain
+        # linear constraints and do not change the return/risk objective.
+        convexity = np.asarray(period['convexity'], float)
+        benchmark_convexity = float(period['benchmark_convexity'])
+        m.addConstr(convexity @ w[h] <= benchmark_convexity + CONVEXITY_TOLERANCE,
+                    name=f'convexity_upper_{h}')
+        m.addConstr(convexity @ w[h] >= benchmark_convexity - CONVEXITY_TOLERANCE,
+                    name=f'convexity_lower_{h}')
+        krd = np.asarray(period['krd'], float)
+        benchmark_krd = np.asarray(period['benchmark_krd'], float)
+        for j in range(krd.shape[1]):
+            m.addConstr(krd[:, j] @ w[h] <= benchmark_krd[j] + KRD_TOLERANCE,
+                        name=f'krd_upper_{h}_{j}')
+            m.addConstr(krd[:, j] @ w[h] >= benchmark_krd[j] - KRD_TOLERANCE,
+                        name=f'krd_lower_{h}_{j}')
         if excluded:
             m.addConstr(w[h][excluded] == 0, name=f'fixed_universe_{h}')
         expired = np.flatnonzero(already_matured)
@@ -108,12 +125,24 @@ def report_solution(stage, solution, k=K):
         x = w[h]
         holdings = int((x > 1e-6).sum())
         duration_gap = float(duration @ x - stage['benchmark_duration'])
-        if holdings > k or abs(duration_gap) > DURATION_TOLERANCE + 1e-5 or cash[h] < -1e-6:
-            raise ValueError(f'Invalid period {h+1}: holdings={holdings}, duration gap={duration_gap}')
+        convexity_gap = float(np.asarray(period['convexity']) @ x - period['benchmark_convexity'])
+        krd_gap = np.asarray(period['krd']).T @ x - np.asarray(period['benchmark_krd'])
+        if (holdings > k or abs(duration_gap) > DURATION_TOLERANCE + 1e-5 or
+                cash[h] < -1e-6 or cash[h] > MAX_CASH_WEIGHT + 1e-5 or
+                abs(convexity_gap) > CONVEXITY_TOLERANCE + 1e-5 or
+                np.max(np.abs(krd_gap)) > KRD_TOLERANCE + 1e-5):
+            raise ValueError(f'Invalid period {h+1}: holdings={holdings}, '
+                             f'duration gap={duration_gap:.6f}, '
+                             f'convexity gap={convexity_gap:.6f}, '
+                             f'max KRD gap={np.max(np.abs(krd_gap)):.6f}')
         variance = max(0.0, float(x @ Q @ x + g @ x + offset))
         monthly.append({
             'month': period['month'], 'holdings': holdings,
             'cash_weight': float(cash[h]), 'duration_gap': duration_gap,
+            'convexity_gap': convexity_gap, 'krd_gaps': krd_gap.tolist(),
+            'benchmark_convexity': float(period['benchmark_convexity']),
+            'benchmark_krd': np.asarray(period['benchmark_krd']).tolist(),
+            'cashflow_risk_coverage': float(period['cashflow_risk_coverage']),
             'expected_return': float(np.asarray(period['mu']) @ x),
             'benchmark_expected_return': float(period['benchmark_mu']),
             'expected_tracking_error': float(np.sqrt(variance)),
@@ -129,6 +158,9 @@ def report_solution(stage, solution, k=K):
         'K': k, 'forecast_model': stage['forecast_model'],
         'candidate_count': len(c), 'gamma': GAMMA,
         'uncertainty_scale': UNCERTAINTY_SCALE,
+        'convexity_tolerance': CONVEXITY_TOLERANCE,
+        'krd_tolerance': KRD_TOLERANCE,
+        'key_rate_tenors': np.asarray(stage['key_rate_tenors']).tolist(),
         'first_trade_cost_dollars': first_cost * stage['initial_capital'],
         'first_trade_cash_dollars': float(cash[0] * stage['initial_capital']),
         'terminal_tracking_error': float(np.sqrt(terminal_var)),
@@ -198,7 +230,9 @@ def main():
     for row in metrics['monthly_plan']:
         print(f'{row["month"]} | bonds={row["holdings"]} | cash={row["cash_weight"]:.2%} '
               f'| expected TE={row["expected_tracking_error"]:.3%} '
-              f'| duration gap={row["duration_gap"]:+.3f} years')
+              f'| duration gap={row["duration_gap"]:+.3f} years '
+           f'| convexity gap={row["convexity_gap"]:+.2f} '
+           f'| max KRD gap={max(abs(x) for x in row["krd_gaps"]):.2f} years')
     print(f'Terminal TE: {metrics["terminal_tracking_error"]:.3%} '
           f'(cap={TERMINAL_TE_CAP:.3%})')
     print(f'First-month fees (USD): {metrics["first_trade_cost_dollars"]:,.2f}; '
