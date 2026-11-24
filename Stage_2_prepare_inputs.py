@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from elastic_net_one_period import (PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE, BOND_COLUMNS, process_all_data, history_for_features, macro_features, load_panel)
+from elastic_net_one_period import (PROJECT_ROOT, DEFAULT_FORECAST_BUNDLE, BOND_COLUMNS, process_all_data, history_for_features, macro_features, load_panel, sven_yield)
 from prepare_stage1_inputs import build_inputs, FACTOR_NAMES
 
 # Settings for one decision month; the Stage 2 backtest can call the functions below.
@@ -17,9 +17,155 @@ FORECAST_MODEL = 'direct'  # 'constant' (H=1 forecast repeated) or 'direct' as a
 CANDIDATE_COUNT = 150
 INITIAL_CAPITAL = 100_000.0
 MIN_ERROR_OBSERVATIONS = 6
+KEY_RATE_TENORS = np.array([2.0, 5.0, 10.0, 30.0])  # Years
+KEY_RATE_BUMP = 0.0001  # One basis point in decimal yield units
 
 FORECAST_FILE = PROJECT_ROOT / 'Stage_2_outputs' / 'forecasts' / 'Stage_2_bond_forecast_history.csv.gz'
 OUTPUT_FILE = PROJECT_ROOT / 'Stage_2_outputs' / 'inputs' / 'Stage_2_inputs.pkl'
+
+
+
+def _key_rate_basis(times):
+    """Piecewise-linear Treasury-curve shocks; endpoint shocks extend outward."""
+    eye = np.eye(len(KEY_RATE_TENORS))
+    return np.stack([
+        np.interp(times, KEY_RATE_TENORS, eye[:, j],
+                  left=eye[0, j], right=eye[-1, j])
+        for j in range(len(KEY_RATE_TENORS))
+    ], axis=-1)
+
+
+def _bond_convexity_krd(bonds, valuation_date, curve_parameters):
+    """Cash-flow convexity (RSM430 Lecture 5) and spread-held key-rate bumps.
+
+    Standard fixed-coupon/zero-coupon cash flows are reconstructed from existing
+    fields. Other issues retain their full benchmark weight via an explicitly
+    labeled duration-based approximation. All outputs are on annual-yield units.
+    """
+    n = len(bonds)
+    convexity = np.zeros(n, dtype=float)
+    krd = np.zeros((n, len(KEY_RATE_TENORS)), dtype=float)
+    method = np.full(n, 'duration_proxy', dtype=object)
+    maturity = pd.to_datetime(bonds.MATURITY, errors='coerce')
+    next_coupon = pd.to_datetime(bonds.nextcoup, errors='coerce')
+    ttm = ((maturity - valuation_date).dt.total_seconds() / 86400 / 365.25).to_numpy()
+    first = ((next_coupon - valuation_date).dt.total_seconds() / 86400 / 365.25).to_numpy()
+    duration = pd.to_numeric(bonds.duration, errors='coerce').to_numpy(float)
+    coupon = pd.to_numeric(bonds.COUPON, errors='coerce').to_numpy(float)
+    frequency = pd.to_numeric(bonds.NCOUPS, errors='coerce').to_numpy(float)
+    ytm = pd.to_numeric(bonds.yield_for_risk, errors='coerce').to_numpy(float)
+    clean = pd.to_numeric(bonds.PRICE_EOM, errors='coerce').to_numpy(float)
+    accrued = pd.to_numeric(bonds.COUPACC, errors='coerce').to_numpy(float)
+    # When accrued interest is absent, use clean price and flag the approximation.
+    dirty = clean + np.where(np.isfinite(accrued), accrued, 0.0)
+
+    alive = np.isfinite(ttm) & (ttm > 0)
+    method[~alive] = 'matured_or_invalid_maturity'
+    safe_duration = np.where(np.isfinite(duration), np.maximum(duration, 0.0), 0.0)
+    safe_yield = np.where(np.isfinite(ytm), ytm, 0.0)
+    proxy_denom = np.maximum(1.0 + safe_yield / 2.0, 0.1)
+    # An option-free zero-coupon surrogate is a documented fallback, NOT a
+    # claim that unsupported bonds have known fixed cash flows.
+    convexity[alive] = (
+        safe_duration[alive] ** 2 +
+        safe_duration[alive] / (2.0 * proxy_denom[alive])
+    )
+    krd[alive] = safe_duration[alive, None] * _key_rate_basis(ttm[alive])
+
+    freq = np.where(np.isfinite(frequency), np.rint(frequency), 0).astype(int)
+    freq = np.where(coupon == 0.0, 2, freq)  # Zero-coupon bonds need no coupon schedule.
+    supported = (
+        alive & np.isfinite(duration) & (duration > 0) &
+        np.isfinite(ytm) & np.isfinite(coupon) & (coupon >= 0) &
+        np.isfinite(dirty) & (dirty > 0) &
+        np.isin(freq, [1, 2, 4, 12]) &
+        ((coupon == 0) | (np.isfinite(first) & (first > 0) &
+                          (first <= ttm + 7.0 / 365.25)))
+    )
+    params = np.asarray(curve_parameters, float)
+    if params.shape != (6,) or not np.isfinite(params).all():
+        raise ValueError('Missing as-of Svensson zero-curve parameters for Stage 2 risk.')
+
+    for m in (1, 2, 4, 12):
+        ids = np.flatnonzero(supported & (freq == m) & (1 + ytm / m > 0.05))
+        if not len(ids):
+            continue
+        years = ttm[ids]
+        start = np.where(coupon[ids] == 0, 1.0 / m, first[ids])
+        # Actual first coupon date anchors the schedule; remaining periods
+        # use standard coupon frequency. Principal is paid at exact maturity.
+        nperiods = max(1, int(np.ceil(np.max(years) * m)) + 2)
+        times = start[:, None] + np.arange(nperiods)[None, :] / m
+        flows = (coupon[ids, None] / m) * (
+            times <= years[:, None] + 14.0 / 365.25
+        )
+        q = m * times
+        y_per = (1.0 + ytm[ids] / m)
+        with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
+            disc = y_per[:, None] ** (-q)
+            pv_coupon = flows * disc
+            pv_principal = 100.0 * y_per ** (-m * years)
+            ytm_price = pv_coupon.sum(axis=1) + pv_principal
+            c_num = (
+                (pv_coupon * q * (q + 1)).sum(axis=1) +
+                pv_principal * (m * years) * (m * years + 1)
+            )
+            cv = c_num / (ytm_price * m ** 2 * y_per ** 2)
+
+        # Use continuously compounded Svensson ZERO rates (percentage-point
+        # input converted to decimal). Calibrate a constant spread to the
+        # observed dirty price, then freeze that spread under each key bump.
+        zc = sven_yield(np.maximum(times, 1e-6), params) / 100.0
+        zp = sven_yield(np.maximum(years, 1e-6), params) / 100.0
+        cp0 = flows * np.exp(-zc * times)
+        pp0 = 100.0 * np.exp(-zp * years)
+        spread = np.clip(ytm[ids] - zp, -0.5, 0.5)
+        for _ in range(15):
+            cp = cp0 * np.exp(-spread[:, None] * times)
+            pp = pp0 * np.exp(-spread * years)
+            modeled = cp.sum(axis=1) + pp
+            d_dollar = (times * cp).sum(axis=1) + years * pp
+            spread = np.clip(
+                spread + (modeled - dirty[ids]) / np.maximum(d_dollar, 1e-8),
+                -0.5, 0.5
+            )
+        cp = cp0 * np.exp(-spread[:, None] * times)
+        pp = pp0 * np.exp(-spread * years)
+        modeled = cp.sum(axis=1) + pp
+        k_raw = np.empty((len(ids), len(KEY_RATE_TENORS)))
+        for j in range(len(KEY_RATE_TENORS)):
+            eye = np.eye(len(KEY_RATE_TENORS))[:, j]
+            basis_cash = np.interp(
+                times, KEY_RATE_TENORS, eye, left=eye[0], right=eye[-1]
+            )
+            basis_principal = np.interp(
+                years, KEY_RATE_TENORS, eye, left=eye[0], right=eye[-1]
+            )
+            # Equivalent to (P_- - P_+) / (2 P * one_basis_point).
+            k_raw[:, j] = (
+                (cp * np.sinh(KEY_RATE_BUMP * times * basis_cash)).sum(axis=1) +
+                pp * np.sinh(KEY_RATE_BUMP * years * basis_principal)
+            ) / (modeled * KEY_RATE_BUMP)
+        k_sum = k_raw.sum(axis=1)
+        scale = duration[ids] / np.maximum(k_sum, 1e-12)
+        # Calibrate the KRDs to observed WRDS modified duration so their sum
+        # matches the existing duration constraint. Bad fits use the proxy.
+        good = (
+            np.isfinite(cv) & (cv > 0) & np.isfinite(k_raw).all(axis=1) &
+            np.isfinite(modeled) & (np.abs(modeled - dirty[ids]) /
+                                    dirty[ids] < 1e-3) &
+            np.isfinite(scale) & (scale >= 0.5) & (scale <= 2.0)
+        )
+        chosen = ids[good]
+        convexity[chosen] = cv[good]
+        krd[chosen] = k_raw[good] * scale[good, None]
+        method[chosen] = np.where(
+            np.isfinite(accrued[chosen]), 'cash_flows', 'cash_flows_no_accrued'
+        )
+
+    if not np.isfinite(convexity).all() or not np.isfinite(krd).all():
+        raise ValueError('Non-finite convexity/KRD values in Stage 2 inputs.')
+    return convexity, krd, method
 
 
 def prepare_inputs(bundle, forecasts, pretrade_state=None):
@@ -43,6 +189,17 @@ def prepare_inputs(bundle, forecasts, pretrade_state=None):
         pretrade_state=pretrade_state,)
     candidates, benchmark = stage['candidates'], stage['benchmark']
 
+    # Full benchmark risk, cached on the shared decision-month bundle so all
+    # forecast/K strategies reuse the same ~8,000-bond calculations.
+    risk_cache = bundle.setdefault('_stage2_benchmark_risk_cache', {})
+    benchmark_index = pd.Index(benchmark.cusip)
+    candidate_indices = benchmark_index.get_indexer(candidates.cusip)
+    if (candidate_indices < 0).any():
+        raise ValueError('Stage 2 candidates must be constituents of the benchmark.')
+    curve_columns = ['BETA0', 'BETA1', 'BETA2', 'BETA3', 'TAU1', 'TAU2']
+    curve_parameters = bundle['curve_params'].loc[asof, curve_columns].to_numpy(float)
+    benchmark_weights = benchmark.benchmark_weight.to_numpy(float)
+
     # Stage 2 tracks benchmark RETURN VARIANCE, not Stage 1's forecast-augmented squared-active-return quadratic.
     B = candidates[[f'B_{factor}' for factor in FACTOR_NAMES]].to_numpy(float)
     psi = candidates.psi.to_numpy(float)
@@ -59,18 +216,50 @@ def prepare_inputs(bundle, forecasts, pretrade_state=None):
     stage['forced_sale_weight'] = float(stage['outside_pretrade_weight'])
     stage['cash_monthly_return'] = 0.0  # Preliminary cash-rate assumption.
     stage['periods'] = []
+    stage['key_rate_tenors'] = KEY_RATE_TENORS.copy()
     maturity_month = pd.to_datetime(candidates.MATURITY).dt.to_period('M')
 
     for h in required_horizons:
         fh = forecasts.loc[forecasts.horizon.eq(h)].set_index('cusip')
-        mu = candidates.cusip.map(fh[return_col]).to_numpy(float)
+        if h not in risk_cache:
+            # Period h is planned at asof + h - 1, not with future realized rates.
+            valuation_date = (asof + h - 1).to_timestamp(how='end').normalize()
+            risk_cache[h] = _bond_convexity_krd(
+                benchmark, valuation_date, curve_parameters)
+        full_convexity, full_krd, methods = risk_cache[h]
+        candidate_convexity = full_convexity[candidate_indices]
+        candidate_krd = full_krd[candidate_indices]
+        # Cumulative direct horizon forecasts imply an incremental monthly
+        # yield change; constant forecasts repeat the H=1 monthly change.
+        if FORECAST_MODEL == 'direct':
+            prev = (forecasts.loc[forecasts.horizon.eq(h - 1)]
+                    .set_index('cusip').predicted_dy_pp if h > 1 else None)
+            dy = fh.predicted_dy_pp if prev is None else fh.predicted_dy_pp.sub(prev)
+        else:
+            dy = h1.predicted_dy_pp
+        candidate_dy = candidates.cusip.map(dy).to_numpy(float) / 100.0
+        benchmark_dy = benchmark.cusip.map(dy).fillna(0.0).to_numpy(float) / 100.0
+        # RSM430: Delta P/P = -D Delta y + 1/2 C (Delta y)^2.
+        # Only the second-order correction is added here; the saved bond
+        # forecast already includes carry and the first-order duration term.
+        mu = (candidates.cusip.map(fh[return_col]).to_numpy(float) +
+              0.5 * candidate_convexity * candidate_dy ** 2)
         benchmark_returns = benchmark.cusip.map(fh[return_col])
-        # Preserve all benchmark weights; use current yield carry when a constituent has no horizon forecast.
+        # Keep every benchmark constituent even without a horizon forecast.
         benchmark_returns = benchmark_returns.fillna(benchmark.yield_for_risk / 12)
+        benchmark_mu = (benchmark_returns.to_numpy(float) +
+                        0.5 * full_convexity * benchmark_dy ** 2)
+        cashflow_mask = np.isin(methods, ['cash_flows', 'cash_flows_no_accrued'])
+        coverage = float(benchmark_weights @ cashflow_mask.astype(float))
         stage['periods'].append({
             'month': str(asof + h),
             'mu': mu,
-            'benchmark_mu': float(benchmark.benchmark_weight @ benchmark_returns),
+            'benchmark_mu': float(benchmark_weights @ benchmark_mu),
+            'convexity': candidate_convexity,
+            'benchmark_convexity': float(benchmark_weights @ full_convexity),
+            'krd': candidate_krd,
+            'benchmark_krd': benchmark_weights @ full_krd,
+            'cashflow_risk_coverage': coverage,
             'rho': None,  # Filled using past out-of-sample errors below.
             'matures_in_month': maturity_month.eq(asof + h).to_numpy(bool)})
 
@@ -166,7 +355,13 @@ def main():
           f'linear shape: {stage["risk_linear"].shape}; '
           f'constant: {stage["risk_constant"]:.8f}.')
     print('   Q and full benchmark exposures are reused from Stage 1 and held fixed in the plan.')
-    print('4. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
+    print('4. BOND RISK: cash-flow convexity and calibrated 2/5/10/30Y key-rate durations.')
+    print('   Full benchmark exposures are market-value weighted; unsupported bonds use a duration-based proxy.')
+    for period in stage['periods']:
+        print(f'   {period["month"]}: convexity={period["benchmark_convexity"]:.3f}, '
+              f'KRD={np.round(period["benchmark_krd"], 3)}, '
+              f'cash-flow coverage={period["cashflow_risk_coverage"]:.1%}')
+    print('5. CASH / FUNDING: pre-trade cash plus forced sales; cash earns '
           f'{stage["cash_monthly_return"]:.2%} per month.')
     print('   - Starting weights: candidate holdings + cash + forced outside sales = 1.')
     print('   - Planned self-financing: cash_after = cash_before + sales - buys - transaction_costs.')
