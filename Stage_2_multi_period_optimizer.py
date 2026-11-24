@@ -191,6 +191,10 @@ def main():
     bonds['buy'] = answer['buys']
     bonds['sell'] = answer['sells']
     bonds['capital_allocated'] = bonds.optimized_weight * stage['initial_capital']
+    # Include bond-level risk coefficients in the existing portfolio CSV for audit.
+    bonds['convexity'] = np.asarray(stage['periods'][0]['convexity'], float)
+    for j, tenor in enumerate(stage['key_rate_tenors']):
+        bonds[f'krd_{int(tenor)}y'] = np.asarray(stage['periods'][0]['krd'])[:, j]
     # Match the bond-level percentage/basis-point columns in Stage 1.
     bonds['current_yield_pct'] = bonds.YIELD * 100
     bonds['expected_return_pct'] = np.asarray(stage['periods'][0]['mu'], float) * 100
