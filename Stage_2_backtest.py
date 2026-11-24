@@ -10,30 +10,68 @@ import pandas as pd
 from elastic_net_one_period import (PROJECT_ROOT, BOND_COLUMNS, process_all_data, history_for_features,macro_features, load_panel)
 import Stage_2_prepare_inputs as stage2_inputs
 from Stage_2_prepare_inputs import FORECAST_FILE, CANDIDATE_COUNT, INITIAL_CAPITAL
-from Stage_2_multi_period_optimizer import (run_solver, TRANSACTION_COST, GAMMA,
+import Stage_2_multi_period_optimizer as optimizer
+from Stage_2_multi_period_optimizer import (TRANSACTION_COST, GAMMA,
     UNCERTAINTY_SCALE, DURATION_TOLERANCE, CONVEXITY_TOLERANCE, KRD_TOLERANCE,
-    TERMINAL_TE_CAP, MAX_CASH_WEIGHT, MAX_WEIGHT)
+    TURNOVER_MULTIPLIER, TERMINAL_TE_CAP, MAX_CASH_WEIGHT, MAX_WEIGHT)
 from backtest_stage1 import evaluate_month
 
-# Final calibration Part A: horizon and forecasting baselines.
+# Final calibration Part B: one-parameter-at-a-time sensitivity.
 START_MONTH = '2023-12'
 END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
 CALIBRATION_END = '2024-12'  # Realized month; 2025 is retrospective validation.
 K_VALUES = (25,)            # Reference investor; vary K and gamma in Part D.
 HORIZONS = (1, 3)
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'A_horizon_and_forecasting'
+OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'B_parameter_sensitivity'
+
+BASE_PARAMETERS = {
+    'duration_tolerance': DURATION_TOLERANCE,
+    'convexity_tolerance': CONVEXITY_TOLERANCE,
+    'krd_tolerance': KRD_TOLERANCE,
+    'turnover_multiplier': TURNOVER_MULTIPLIER,
+    'uncertainty_scale': UNCERTAINTY_SCALE,
+    'terminal_te_cap': TERMINAL_TE_CAP,
+}
+PARAMETER_GRID = {
+    'duration_tolerance': (0.25, 0.5, 1.0),
+    'convexity_tolerance': (10, 25, 50, np.inf),
+    'krd_tolerance': (0.5, 1, 2, np.inf),
+    'turnover_multiplier': (1, 2, 5, 10),
+    'uncertainty_scale': (0, 0.5, 1, 2),
+    'terminal_te_cap': (0.01, 0.025, np.inf),
+}
 
 
 def comparisons():
-    """Independent forecast/horizon/K strategies without redundant H=1 cases."""
-    return [(model, h, k) for h in HORIZONS
+    """Vary one parameter at a time for each Part A baseline (80 new paths)."""
+    return [(model, h, k, parameter, value)
+            for h in HORIZONS
             for model in (('direct', 'random_walk') if h == 1
                           else ('direct', 'constant', 'random_walk'))
-            for k in K_VALUES]
+            for k in K_VALUES
+            for parameter, values in PARAMETER_GRID.items()
+            for value in values if value != BASE_PARAMETERS[parameter]]
 
 
-def strategy_name(model, horizon, k):
-    return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}'
+def strategy_name(model, horizon, k, parameter, value):
+    label = 'unrestricted' if np.isinf(value) else f'{value:g}'
+    return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}_{parameter}_{label}'
+
+
+def strategy_parameters(parameter, value):
+    return {**BASE_PARAMETERS, parameter: value}
+
+
+def run_configured_solver(stage, k, settings):
+    """Apply temporary settings to both solves and solution validation."""
+    previous = {key: getattr(optimizer, key.upper()) for key in settings}
+    try:
+        for key, value in settings.items():
+            setattr(optimizer, key.upper(), value)
+        return optimizer.run_solver(stage, k=k)
+    finally:
+        for key, value in previous.items():
+            setattr(optimizer, key.upper(), value)
 
 
 def load_forecast_history(max_horizon):
@@ -66,7 +104,7 @@ def load_forecast_history(max_horizon):
         raise ValueError(
             f'Forecast history is missing horizons {missing}. '
             f'Regenerate Stage_2_bond_forecast_history.csv.gz through H={max_horizon} '
-            'before running the Part A backtest.')
+            'before running the Part B backtest.')
     # Ensure every decision has forecasts through the longest horizon before any solving.
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
         present = set(forecasts.loc[forecasts.month.eq(str(asof)), 'horizon'])
@@ -176,10 +214,10 @@ def summarize(monthly):
             'average_effective_holdings': float(rows.effective_holdings.mean()),
             'total_runtime_seconds': float(rows.runtime_seconds.sum()),
             'optimal_months': int(rows.optimal.sum()),
-            'gamma': GAMMA, 'uncertainty_scale': UNCERTAINTY_SCALE,
-            'turnover_multiplier': 1.0, 'duration_tolerance': DURATION_TOLERANCE,
-            'convexity_tolerance': CONVEXITY_TOLERANCE, 'krd_tolerance': KRD_TOLERANCE,
-            'terminal_te_cap': TERMINAL_TE_CAP, 'max_cash_weight': MAX_CASH_WEIGHT,
+            'gamma': GAMMA, 'varied_parameter': rows.varied_parameter.iloc[0],
+            'parameter_value': rows.parameter_value.iloc[0],
+            **{key: rows[key].iloc[0] for key in BASE_PARAMETERS},
+            'max_cash_weight': MAX_CASH_WEIGHT,
             'max_bond_weight': MAX_WEIGHT, 'transaction_cost_rate': TRANSACTION_COST,
             'initial_capital': INITIAL_CAPITAL, 'solver_time_limit_seconds': 120,
         })
@@ -227,9 +265,36 @@ def settle_with_cash(held, solution, stage, bond_return, fee_fraction):
     return next_state, gross_return, net_growth - 1, redeemed_cash
 
 
+def save_progress(monthly, positions, plans, failures):
+    """Save completed monthly work after each decision month (not a resume checkpoint)."""
+    frames = {
+        'Stage_2_monthly_results.csv': pd.DataFrame(monthly),
+        'Stage_2_holdings.csv': pd.concat(positions, ignore_index=True) if positions else pd.DataFrame(),
+        'Stage_2_planned_monthly.csv': pd.DataFrame(plans),
+        'Stage_2_failed_strategies.csv': pd.DataFrame(failures, columns=[
+            'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value']),
+    }
+    for filename, frame in frames.items():
+        path = OUTPUT_DIR / filename
+        temporary = path.with_suffix('.tmp')
+        frame.to_csv(temporary, index=False)
+        temporary.replace(path)
+
+
 def main():
     configs = comparisons()
-    longest_horizon = max(h for _, h, _ in configs)
+    longest_horizon = max(h for _, h, _, _, _ in configs)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = pd.DataFrame([
+        {'strategy': strategy_name(model, h, k, parameter, value),
+         'forecast': model, 'H': h, 'K': k, 'candidate_count': CANDIDATE_COUNT,
+         'varied_parameter': parameter, 'parameter_value': value,
+         **strategy_parameters(parameter, value)}
+        for model, h, k, parameter, value in configs])
+    manifest.to_csv(OUTPUT_DIR / 'Stage_2_configurations.csv', index=False)
+    # Clear final summaries so an interrupted rerun cannot leave a stale ranking.
+    for filename in ('Stage_2_summary.csv', 'Stage_2_split_summary.csv'):
+        (OUTPUT_DIR / filename).unlink(missing_ok=True)
     forecasts, errors = load_forecast_history(longest_horizon)
     accuracy = forecast_accuracy_by_horizon(forecasts)
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
@@ -241,17 +306,17 @@ def main():
     del data
 
     months = pd.period_range(START_MONTH, END_MONTH, freq='M')
-    states = {strategy_name(model, h, k): {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'gross_capital': INITIAL_CAPITAL, 'failed': False}for model, h, k in configs}
+    states = {strategy_name(*config): {'pretrade_state': None, 'capital': INITIAL_CAPITAL,
+              'gross_capital': INITIAL_CAPITAL, 'failed': False} for config in configs}
     monthly, positions, plans, failures = [], [], [], []
 
-    print('\nSTAGE 2 | FINAL CALIBRATION PART A: HORIZON AND FORECASTING')
+    print('\nSTAGE 2 | FINAL CALIBRATION PART B: PARAMETER SENSITIVITY')
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
     print(f'Strategies: {len(configs)}; initial capital: ${INITIAL_CAPITAL:,.2f}')
     print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
-    grid = [(model, h, k, 'heuristic', CANDIDATE_COUNT) for model, h, k in configs]
-    print(pd.DataFrame(grid, columns=['forecast', 'H', 'K', 'solver', 'candidates'])
+    print(manifest[['forecast', 'H', 'K', 'varied_parameter', 'parameter_value']]
           .to_string(index=False))
     print('Execute only the FIRST planned trades; all later planned trades are discarded.')
     print('Fees are funded from portfolio cash (unlike the Stage 1 fee convention).')
@@ -271,8 +336,9 @@ def main():
 
         successes = 0
         coverages = []
-        for model, horizon, k in configs:
-            strategy = strategy_name(model, horizon, k)
+        for model, horizon, k, parameter, value in configs:
+            strategy = strategy_name(model, horizon, k, parameter, value)
+            settings = strategy_parameters(parameter, value)
             state = states[strategy]
             if state['failed']:
                 continue
@@ -283,7 +349,7 @@ def main():
                     bundle, latest, errors, state['pretrade_state'],
                     capital_before, model, horizon)
 
-                solution, metrics = run_solver(stage, k=k)
+                solution, metrics = run_configured_solver(stage, k, settings)
                 held, bond_return, benchmark_return, coverage, benchmark = evaluate_month(stage, solution)
                 fee = float(metrics['first_trade_cost_dollars'])
                 fee_fraction = fee / capital_before
@@ -291,7 +357,8 @@ def main():
                     held, solution, stage, bond_return, fee_fraction)
             except (RuntimeError, ValueError, KeyError, IndexError) as exc:
                 failures.append({'strategy': strategy, 'decision_month': label,
-                                 'reason': str(exc)})
+                                 'reason': str(exc), 'varied_parameter': parameter,
+                                 'parameter_value': value})
                 state['failed'] = True
                 print(f'{label} | {strategy}: not evaluable ({exc})', flush=True)
                 continue
@@ -306,6 +373,8 @@ def main():
             for h, planned in enumerate(metrics['monthly_plan'], start=1):
                 plans.append({
                     'strategy': strategy, 'decision_month': label,
+                    'varied_parameter': parameter, 'parameter_value': value,
+                    **settings,
                     'horizon_step': h, 'planned_month': planned['month'],
                     'executed': h == 1,
                     'planned_holdings': planned['holdings'],
@@ -325,6 +394,8 @@ def main():
             monthly.append({
                 'strategy': strategy, 'forecast': model, 'H': horizon,
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
+                'varied_parameter': parameter, 'parameter_value': value,
+                **settings,
                 'candidate_count': len(stage['candidates']),
                 'holdings_count': len(held),
                 'max_individual_bond_weight': float(held.weight.max()),
@@ -375,7 +446,7 @@ def main():
             ]])
             successes += 1
             coverages.append(coverage)
-            print(f'{label} -> {asof + 1} | {model} H={horizon} K={k}: '
+            print(f'{label} -> {asof + 1} | {strategy}: '
                   f'portfolio {gross_return:+.2%}, net {net_return:+.2%}, '
                   f'benchmark {benchmark_return:+.2%}, '
                   f'cash {solution["cash_weight"]:.2%}, '
@@ -384,10 +455,11 @@ def main():
                          if coverages else 'n/a')
         print(f'{label} -> {asof + 1} | {successes}/{len(configs)} strategies evaluated; '
               f'benchmark coverage {coverage_text}', flush=True)
+        save_progress(monthly, positions, plans, failures)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = pd.DataFrame(monthly)
-    failures = pd.DataFrame(failures, columns=['strategy', 'decision_month', 'reason'])
+    failures = pd.DataFrame(failures, columns=[
+        'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value'])
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
     summary = summarize(completed) if not completed.empty else pd.DataFrame()
@@ -407,15 +479,9 @@ def main():
     split_summary = pd.concat(split_rows, ignore_index=True) if split_rows else pd.DataFrame()
     accuracy.to_csv(OUTPUT_DIR / 'Stage_2_forecast_accuracy.csv', index=False)
     split_summary.to_csv(OUTPUT_DIR / 'Stage_2_split_summary.csv', index=False)
-    results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
-    (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
-        OUTPUT_DIR / 'Stage_2_holdings.csv', index=False)
-    failures.to_csv(OUTPUT_DIR / 'Stage_2_failed_strategies.csv', index=False)
-    pd.DataFrame(plans).to_csv(
-        OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
-    print('\nSTAGE 2 | PART A BASELINE RESULTS (complete strategies only)')
+    print('\nSTAGE 2 | PART B SENSITIVITY RESULTS (complete strategies only)')
     if summary.empty:
         print('No complete strategies; inspect Stage_2_failed_strategies.csv.')
     else:
