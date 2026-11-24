@@ -1,2 +1,0 @@
-strategy,forecast,solver,H,K,candidate_count,months,annualized_tracking_error,annualized_mean_active_return,cumulative_gross_return,cumulative_net_return,total_transaction_fees_dollars,average_monthly_one_way_turnover,average_holdings,average_cash_weight,min_benchmark_return_coverage
-direct_heuristic_H3_K25_N150,direct,relax_and_fix,3,25,150,22,0.019584279186073538,0.0013790388078963544,0.09412364046091914,0.08006838938786398,1321.7557299226346,0.2948338677180397,25.0,0.001366077750274711,0.9951112684145434
