@@ -61,21 +61,16 @@ def solve_quadratic(stage, k=K, allowed=None):
         m.addConstr(cash[h] <= MAX_CASH_WEIGHT, name=f'cash_limit_{h}')
         m.addConstr(duration @ w[h] <= stage['benchmark_duration'] + DURATION_TOLERANCE)
         m.addConstr(duration @ w[h] >= stage['benchmark_duration'] - DURATION_TOLERANCE)
-        # Bond-risk coefficients are fixed as-of information, so these remain
-        # linear constraints and do not change the return/risk objective.
+        # Bond-risk coefficients are fixed as-of information, so these remain linear constraints and do not change the return/risk objective.
         convexity = np.asarray(period['convexity'], float)
         benchmark_convexity = float(period['benchmark_convexity'])
-        m.addConstr(convexity @ w[h] <= benchmark_convexity + CONVEXITY_TOLERANCE,
-                    name=f'convexity_upper_{h}')
-        m.addConstr(convexity @ w[h] >= benchmark_convexity - CONVEXITY_TOLERANCE,
-                    name=f'convexity_lower_{h}')
+        m.addConstr(convexity @ w[h] <= benchmark_convexity + CONVEXITY_TOLERANCE, name=f'convexity_upper_{h}')
+        m.addConstr(convexity @ w[h] >= benchmark_convexity - CONVEXITY_TOLERANCE, name=f'convexity_lower_{h}')
         krd = np.asarray(period['krd'], float)
         benchmark_krd = np.asarray(period['benchmark_krd'], float)
         for j in range(krd.shape[1]):
-            m.addConstr(krd[:, j] @ w[h] <= benchmark_krd[j] + KRD_TOLERANCE,
-                        name=f'krd_upper_{h}_{j}')
-            m.addConstr(krd[:, j] @ w[h] >= benchmark_krd[j] - KRD_TOLERANCE,
-                        name=f'krd_lower_{h}_{j}')
+            m.addConstr(krd[:, j] @ w[h] <= benchmark_krd[j] + KRD_TOLERANCE,name=f'krd_upper_{h}_{j}')
+            m.addConstr(krd[:, j] @ w[h] >= benchmark_krd[j] - KRD_TOLERANCE,name=f'krd_lower_{h}_{j}')
         if excluded:
             m.addConstr(w[h][excluded] == 0, name=f'fixed_universe_{h}')
         expired = np.flatnonzero(already_matured)
