@@ -63,19 +63,21 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters, spread_referenc
     method[~alive] = 'matured_or_invalid_maturity'
     method[missing_maturity & alive] = 'duration_proxy_missing_maturity'
     ttm = np.where(missing_maturity, safe_duration, ttm)
+    # Fallback convexity and KRD for bonds that do not have fully constructable cash flows
     safe_yield = np.where(np.isfinite(ytm), ytm, 0.0)
     proxy_denom = np.maximum(1.0 + safe_yield / 2.0, 0.1)
     # An option-free zero-coupon surrogate is a documented fallback, NOT a claim that unsupported bonds have known fixed cash flows.
     convexity[alive] = (safe_duration[alive] ** 2 +safe_duration[alive] / (2.0 * proxy_denom[alive]))
     krd[alive] = safe_duration[alive, None] * _key_rate_basis(ttm[alive])
 
+    # Establish coupon frequency
     freq = np.where(np.isfinite(frequency), np.rint(frequency), 0).astype(int)
     freq = np.where(coupon == 0.0, 2, freq)  # Zero-coupon bonds need no coupon schedule.
-    # Roll an observed next-coupon date forward using the contractual frequency
-    # when planning future months. Never consult future coupon observations.
+    # Roll an observed next-coupon date forward using the contractual frequency when planning future months, sicne we are doing multi-period optimization
     for m in (1, 2, 4, 12):
         expired_coupon = (coupon > 0) & (freq == m) & np.isfinite(first) & (first <= 0)
         first[expired_coupon] += (np.floor(-first[expired_coupon] * m) + 1) / m
+    # Boolean check to see which bonds can have cash flows reconstructed, otherwise retain their previously calculated fallback exposures.
     supported = (
         alive & ~missing_maturity & np.isfinite(duration) & (duration > 0) &
         np.isfinite(ytm) & np.isfinite(coupon) & (coupon >= 0) &
@@ -85,20 +87,22 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters, spread_referenc
     params = np.asarray(curve_parameters, float)
     if params.shape != (6,) or not np.isfinite(params).all():
         raise ValueError('Missing as-of Svensson zero-curve parameters for Stage 2 risk.')
-
+    
+    # Begin to reconstruct the bond cash flows
     for m in (1, 2, 4, 12):
         ids = np.flatnonzero(supported & (freq == m) & (1 + ytm / m > 0.05))
         if not len(ids):
             continue
+        # Generate payment times
         years = ttm[ids]
         start = np.where(coupon[ids] == 0, 1.0 / m, first[ids])
-        # Actual first coupon date anchors the schedule; remaining periods
-        # use standard coupon frequency. Principal is paid at exact maturity.
+        # Actual first coupon date anchors the schedule; remaining periods  use standard coupon frequency. Principal is paid at exact maturity.
         nperiods = max(1, int(np.ceil(np.max(years) * m)) + 2)
         times = start[:, None] + np.arange(nperiods)[None, :] / m
         flows = (coupon[ids, None] / m) * (times <= years[:, None] + 14.0 / 365.25)
         q = m * times
         y_per = (1.0 + ytm[ids] / m)
+        # Discount Cash Flows
         with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
             disc = y_per[:, None] ** (-q)
             pv_coupon = flows * disc
@@ -116,6 +120,7 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters, spread_referenc
         pp0 = 100.0 * np.exp(-zp * years)
         if spread_reference is None:
             spread = np.clip(ytm[ids] - zp, -0.5, 0.5)
+            # Newton's method
             for _ in range(15):
                 cp = cp0 * np.exp(-spread[:, None] * times)
                 pp = pp0 * np.exp(-spread * years)
@@ -123,13 +128,14 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters, spread_referenc
                 d_dollar = (times * cp).sum(axis=1) + years * pp
                 spread = np.clip(spread + (modeled - dirty[ids]) / np.maximum(d_dollar, 1e-8), -0.5, 0.5)
         else:
-            # Later periods use only the spread observed at the as-of date.
+            # Later periods use only the spread observed at the as-of date (i.e., keep constant for H > 1 to prevent look-ahead bias).
             spread = np.asarray(spread_reference, float)[ids]
         safe_spread = np.where(np.isfinite(spread), spread, 0.0)
         cp = cp0 * np.exp(-safe_spread[:, None] * times)
         pp = pp0 * np.exp(-safe_spread * years)
         modeled = cp.sum(axis=1) + pp
         k_raw = np.empty((len(ids), len(KEY_RATE_TENORS)))
+        # Determine effect of each key-rate shock
         for j in range(len(KEY_RATE_TENORS)):
             eye = np.eye(len(KEY_RATE_TENORS))[:, j]
             basis_cash = np.interp(times, KEY_RATE_TENORS, eye, left=eye[0], right=eye[-1])
@@ -144,7 +150,7 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters, spread_referenc
             # The same calibration is retained as cash flows age; KRDs are
             # allowed to decline instead of being reset to old duration.
             scale = np.asarray(krd_scale_reference, float)[ids]
-        good = ( np.isfinite(cv) & (cv > 0) & np.isfinite(k_raw).all(axis=1) &
+        good = (np.isfinite(cv) & (cv > 0) & np.isfinite(k_raw).all(axis=1) &
             np.isfinite(modeled) & (modeled > 0) &
             np.isfinite(spread) & np.isfinite(scale) &
             (scale >= 0.5) & (scale <= 2.0))
