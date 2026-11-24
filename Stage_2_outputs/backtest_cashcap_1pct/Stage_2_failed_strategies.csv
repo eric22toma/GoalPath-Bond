@@ -1,1 +1,4 @@
 strategy,decision_month,reason
+constant_heuristic_H3_K25_N150,2025-02,No feasible Stage 2 solution (Gurobi status 9)
+direct_heuristic_H3_K10_N150,2025-04,No feasible Stage 2 solution (Gurobi status 9)
+constant_heuristic_H3_K10_N150,2025-05,No feasible Stage 2 solution (Gurobi status 9)
