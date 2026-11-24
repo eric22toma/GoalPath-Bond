@@ -2,27 +2,34 @@
 Reuse Stage 1's data/realized-return handling and Stage 2's input builder/solver.
 Plan H months at each decision date, but execute ONLY the first month's trades."""
 
+from time import perf_counter
+
 import numpy as np
 import pandas as pd
 
 from elastic_net_one_period import (PROJECT_ROOT, BOND_COLUMNS, process_all_data, history_for_features,macro_features, load_panel)
 import Stage_2_prepare_inputs as stage2_inputs
 from Stage_2_prepare_inputs import FORECAST_FILE, CANDIDATE_COUNT, INITIAL_CAPITAL
-from Stage_2_multi_period_optimizer import run_solver, TRANSACTION_COST
-from backtest_stage1 import evaluate_month, show_core_summary
+from Stage_2_multi_period_optimizer import (run_solver, TRANSACTION_COST, GAMMA,
+    UNCERTAINTY_SCALE, DURATION_TOLERANCE, CONVEXITY_TOLERANCE, KRD_TOLERANCE,
+    TERMINAL_TE_CAP, MAX_CASH_WEIGHT, MAX_WEIGHT)
+from backtest_stage1 import evaluate_month
 
-# Focused validation of the 1% cash cap against the archived 16-strategy run.
+# Final calibration Part A: horizon and forecasting baselines.
 START_MONTH = '2023-12'
 END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
-K_VALUES = (10, 25)
-HORIZONS = (3,)
-LONG_HORIZON_K = 25
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_H3_KRD_convexity'
+CALIBRATION_END = '2024-12'  # Realized month; 2025 is retrospective validation.
+K_VALUES = (25,)            # Reference investor; vary K and gamma in Part D.
+HORIZONS = (1, 3)
+OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'A_horizon_and_forecasting'
 
 
 def comparisons():
     """Independent forecast/horizon/K strategies without redundant H=1 cases."""
-    return [(model, h, k) for h in HORIZONS for model in (('direct',) if h == 1 else ('direct', 'constant')) for k in (K_VALUES if h in (1, 3) else (LONG_HORIZON_K,))]
+    return [(model, h, k) for h in HORIZONS
+            for model in (('direct', 'random_walk') if h == 1
+                          else ('direct', 'constant', 'random_walk'))
+            for k in K_VALUES]
 
 
 def strategy_name(model, horizon, k):
@@ -33,17 +40,19 @@ def load_forecast_history(max_horizon):
     """Read the large saved forecast history once for both planning and past errors."""
     cols = ['cusip', 'month', 'target_month', 'horizon', 'dy', 'predicted_dy_pp',
             'predicted_return', 'constant_predicted_return',
-            'return_error', 'constant_return_error']
+            'return_error', 'constant_return_error',
+            'random_walk_predicted_return', 'random_walk_return_error']
     origins, errors = [], []
     for part in pd.read_csv(FORECAST_FILE, usecols=cols, dtype={'cusip': str},
                             chunksize=150_000):
         part = part.loc[part.horizon.between(1, max_horizon)]
         current = part.loc[part.month.between(START_MONTH, END_MONTH),
                            ['cusip', 'month', 'horizon', 'dy', 'predicted_dy_pp',
-                            'predicted_return', 'constant_predicted_return']]
+                            'predicted_return', 'constant_predicted_return',
+                             'random_walk_predicted_return']]
         past = part.loc[part.target_month.le(END_MONTH),
                         ['cusip', 'horizon', 'target_month',
-                         'return_error', 'constant_return_error']]
+                         'return_error', 'constant_return_error', 'random_walk_return_error']]
         if not current.empty:
             origins.append(current.copy())
         if not past.empty:
@@ -57,7 +66,7 @@ def load_forecast_history(max_horizon):
         raise ValueError(
             f'Forecast history is missing horizons {missing}. '
             f'Regenerate Stage_2_bond_forecast_history.csv.gz through H={max_horizon} '
-            'before running the 16-strategy backtest.')
+            'before running the Part A backtest.')
     # Ensure every decision has forecasts through the longest horizon before any solving.
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
         present = set(forecasts.loc[forecasts.month.eq(str(asof)), 'horizon'])
@@ -75,12 +84,22 @@ def prepare_strategy_inputs(bundle, latest, errors, pretrade_state, capital, mod
         # These two settings are read by prepare_inputs and add_forecast_uncertainty.
         # Calls are sequential: no settings leak into the next strategy.
         stage2_inputs.HORIZON = horizon
-        stage2_inputs.FORECAST_MODEL = model
+        # Reuse direct input path for zero yield changes and carry-only returns.
+        # Copy so other strategies retain their original forecasts.
+        stage2_inputs.FORECAST_MODEL = 'direct' if model == 'random_walk' else model
+        if model == 'random_walk':
+            latest = latest.copy()
+            latest['predicted_dy_pp'] = 0.0
+            latest['predicted_return'] = latest['random_walk_predicted_return']
         stage = stage2_inputs.prepare_inputs(bundle, latest, pretrade_state=pretrade_state)
+        stage['forecast_model'] = model
         stage['initial_capital'] = capital
         historical = errors.loc[
             errors.target_month.le(bundle['asof']) &
             errors.cusip.isin(stage['candidates'].cusip)]
+        if model == 'random_walk':
+            historical = historical.copy()
+            historical['return_error'] = historical['random_walk_return_error']
         stage2_inputs.add_forecast_uncertainty(stage, historical)
     finally:
         stage2_inputs.HORIZON = previous_h
@@ -127,7 +146,9 @@ def summarize(monthly):
     """Preserve the original detailed Stage 2 summary CSV."""
     results = []
     for name, rows in monthly.groupby('strategy', sort=False):
+        rows = rows.sort_values('target_month')
         active = rows.active_return.to_numpy(float)
+        net_active = rows.net_active_return.to_numpy(float)
         results.append({
             'strategy': name,
             'forecast': rows.forecast.iloc[0],
@@ -139,13 +160,28 @@ def summarize(monthly):
             'annualized_tracking_error': float(np.std(active, ddof=1) * np.sqrt(12))
                                          if len(active) > 1 else np.nan,
             'annualized_mean_active_return': float(active.mean() * 12),
-            'cumulative_gross_return': float(rows.gross_capital.iloc[-1] / INITIAL_CAPITAL - 1),
-            'cumulative_net_return': float(rows.net_capital.iloc[-1] / INITIAL_CAPITAL - 1),
+            'annualized_net_tracking_error': float(np.std(net_active, ddof=1) * np.sqrt(12))
+                                             if len(net_active) > 1 else np.nan,
+            'annualized_mean_net_active_return': float(net_active.mean() * 12),
+            'annualized_net_active_rmse': float(np.sqrt(12 * np.mean(net_active ** 2))),
+            'cumulative_gross_return': float((1 + rows.portfolio_return).prod() - 1),
+            'cumulative_net_return': float((1 + rows.net_portfolio_return).prod() - 1),
+            'cumulative_benchmark_return': float((1 + rows.benchmark_return).prod() - 1),
             'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
             'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
             'average_holdings': float(rows.holdings_count.mean()),
             'average_cash_weight': float(rows.cash_weight_after_trade.mean()),
             'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
+            'max_individual_bond_weight': float(rows.max_individual_bond_weight.max()),
+            'average_effective_holdings': float(rows.effective_holdings.mean()),
+            'total_runtime_seconds': float(rows.runtime_seconds.sum()),
+            'optimal_months': int(rows.optimal.sum()),
+            'gamma': GAMMA, 'uncertainty_scale': UNCERTAINTY_SCALE,
+            'turnover_multiplier': 1.0, 'duration_tolerance': DURATION_TOLERANCE,
+            'convexity_tolerance': CONVEXITY_TOLERANCE, 'krd_tolerance': KRD_TOLERANCE,
+            'terminal_te_cap': TERMINAL_TE_CAP, 'max_cash_weight': MAX_CASH_WEIGHT,
+            'max_bond_weight': MAX_WEIGHT, 'transaction_cost_rate': TRANSACTION_COST,
+            'initial_capital': INITIAL_CAPITAL, 'solver_time_limit_seconds': 120,
         })
     return pd.DataFrame(results)
 
@@ -196,11 +232,6 @@ def main():
     longest_horizon = max(h for _, h, _ in configs)
     forecasts, errors = load_forecast_history(longest_horizon)
     accuracy = forecast_accuracy_by_horizon(forecasts)
-    # H=1 forecast accuracy is common to direct and constant; longer-horizon
-    # accuracy is displayed separately in the RMSE/MAE tables below.
-    first_scores = accuracy.loc[accuracy.horizon.eq(1) & accuracy.model.eq('direct')]
-    forecast_rmse_bp = first_scores.avg_monthly_rmse_bp.iloc[0]
-    forecast_mae_bp = first_scores.avg_monthly_mae_bp.iloc[0]
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
 
     data = process_all_data(bond_columns=BOND_COLUMNS)
@@ -213,7 +244,7 @@ def main():
     states = {strategy_name(model, h, k): {'pretrade_state': None, 'capital': INITIAL_CAPITAL, 'gross_capital': INITIAL_CAPITAL, 'failed': False}for model, h, k in configs}
     monthly, positions, plans, failures = [], [], [], []
 
-    print('\nSTAGE 2 | OUT-OF-SAMPLE RECEDING-HORIZON BENCHMARK TRACKING')
+    print('\nSTAGE 2 | FINAL CALIBRATION PART A: HORIZON AND FORECASTING')
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
@@ -246,6 +277,7 @@ def main():
             if state['failed']:
                 continue
             capital_before = float(state['capital'])
+            started = perf_counter()
             try:
                 stage = prepare_strategy_inputs(
                     bundle, latest, errors, state['pretrade_state'],
@@ -295,6 +327,9 @@ def main():
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
                 'candidate_count': len(stage['candidates']),
                 'holdings_count': len(held),
+                'max_individual_bond_weight': float(held.weight.max()),
+                'effective_holdings': float(held.weight.sum() ** 2 / np.sum(held.weight.to_numpy(float) ** 2)),
+                'runtime_seconds': perf_counter() - started,
                 'portfolio_return': gross_return,
                 'net_portfolio_return': net_return,
                 'benchmark_return': benchmark_return,
@@ -356,6 +391,22 @@ def main():
     completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
                  if not results.empty else results)
     summary = summarize(completed) if not completed.empty else pd.DataFrame()
+    if not summary.empty:
+        summary = summary.merge(accuracy, left_on=['H', 'forecast'],
+                                right_on=['horizon', 'model'], how='left',
+                                validate='many_to_one').drop(columns=['horizon', 'model'])
+        summary = summary.sort_values('annualized_net_tracking_error')
+    # Evaluate realized subperiods without resetting portfolio state.
+    split_rows = []
+    if not completed.empty:
+        for period, mask in [('calibration', completed.target_month.le(CALIBRATION_END)),
+                             ('retrospective_validation', completed.target_month.gt(CALIBRATION_END))]:
+            split = summarize(completed.loc[mask])
+            split.insert(0, 'evaluation_period', period)
+            split_rows.append(split)
+    split_summary = pd.concat(split_rows, ignore_index=True) if split_rows else pd.DataFrame()
+    accuracy.to_csv(OUTPUT_DIR / 'Stage_2_forecast_accuracy.csv', index=False)
+    split_summary.to_csv(OUTPUT_DIR / 'Stage_2_split_summary.csv', index=False)
     results.to_csv(OUTPUT_DIR / 'Stage_2_monthly_results.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
     (pd.concat(positions, ignore_index=True) if positions else pd.DataFrame()).to_csv(
@@ -364,10 +415,19 @@ def main():
     pd.DataFrame(plans).to_csv(
         OUTPUT_DIR / 'Stage_2_planned_monthly.csv', index=False)
 
-    print('\nHeadline RMSE/MAE refer to H=1 yield-change forecasts for every strategy; '
-          'longer-horizon forecast accuracy is shown below.')
-    show_core_summary(summary, 'STAGE 2 | FINAL STRATEGY RESULTS', START_MONTH, END_MONTH,
-                      forecast_rmse_bp, forecast_mae_bp, initial_capital=INITIAL_CAPITAL)
+    print('\nSTAGE 2 | PART A BASELINE RESULTS (complete strategies only)')
+    if summary.empty:
+        print('No complete strategies; inspect Stage_2_failed_strategies.csv.')
+    else:
+        display = summary[['strategy', 'annualized_tracking_error',
+                           'annualized_net_tracking_error', 'cumulative_net_return',
+                           'average_monthly_one_way_turnover', 'total_transaction_fees_dollars',
+                           'avg_monthly_rmse_bp', 'avg_monthly_mae_bp']].copy()
+        for col in ['annualized_tracking_error', 'annualized_net_tracking_error',
+                    'cumulative_net_return', 'average_monthly_one_way_turnover']:
+            display[col] = display[col].map(lambda x: f'{x:.2%}')
+        print(display.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
+        print("RMSE/MAE use each strategy's own forecast methodology and horizon.")
     for metric in ('rmse', 'mae'):
         comparison = accuracy.pivot(index='model', columns='horizon',
                                     values='avg_monthly_' + metric + '_bp')
