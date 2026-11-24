@@ -17,7 +17,7 @@ END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
 K_VALUES = (10, 25)
 HORIZONS = (3,)
 LONG_HORIZON_K = 25
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_cashcap_1pct'
+OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_H3_KRD_convexity'
 
 
 def comparisons():
@@ -282,6 +282,13 @@ def main():
                     'planned_expected_return': planned['expected_return'],
                     'benchmark_expected_return': planned['benchmark_expected_return'],
                     'planned_duration_gap': planned['duration_gap'],
+                    'planned_convexity_gap': planned['convexity_gap'],
+                    'planned_krd_2y_gap': planned['krd_gaps'][0],
+                    'planned_krd_5y_gap': planned['krd_gaps'][1],
+                    'planned_krd_10y_gap': planned['krd_gaps'][2],
+                    'planned_krd_30y_gap': planned['krd_gaps'][3],
+                    'planned_max_abs_krd_gap': max(abs(x) for x in planned['krd_gaps']),
+                    'cashflow_risk_coverage': planned['cashflow_risk_coverage'],
                 })
             monthly.append({
                 'strategy': strategy, 'forecast': model, 'H': horizon,
