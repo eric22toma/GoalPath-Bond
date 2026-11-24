@@ -16,6 +16,7 @@ from robust_mvo_one_period import (TRANSACTION_COST, DURATION_TOLERANCE, TIME_LI
 K = 10
 GAMMA = 1.0                    # Weight on benchmark tracking-error variance
 UNCERTAINTY_SCALE = 1.0        # Weight on rho.T @ |x - benchmark|
+TURNOVER_MULTIPLIER = 1.0      # Objective-only trading penalty; actual fees unchanged
 TERMINAL_TE_CAP = 0.025        # Maximum terminal expected MONTHLY tracking error
 MAX_CASH_WEIGHT = 0.01         # At most 1% cash after each planned rebalance
 CONVEXITY_TOLERANCE = 25.0      # Initial portfolio-minus-benchmark convexity band (years^2)
@@ -46,7 +47,7 @@ def solve_quadratic(stage, k=K, allowed=None):
     sell = [m.addMVar(n, lb=0, name=f'sells_{h}') for h in range(H)]
     cash = [m.addVar(lb=0, name=f'cash_{h}') for h in range(H)]
     active = [m.addMVar(n, lb=0, name=f'abs_active_{h}') for h in range(H)]
-    objective = TRANSACTION_COST * outside
+    objective = TURNOVER_MULTIPLIER * TRANSACTION_COST * outside
     excluded = sorted(set(range(n)) - set(allowed)) if allowed is not None else []
     already_matured = np.zeros(n, dtype=bool)
 
@@ -64,13 +65,15 @@ def solve_quadratic(stage, k=K, allowed=None):
         # Bond-risk coefficients are fixed as-of information, so these remain linear constraints and do not change the return/risk objective.
         convexity = np.asarray(period['convexity'], float)
         benchmark_convexity = float(period['benchmark_convexity'])
-        m.addConstr(convexity @ w[h] <= benchmark_convexity + CONVEXITY_TOLERANCE, name=f'convexity_upper_{h}')
-        m.addConstr(convexity @ w[h] >= benchmark_convexity - CONVEXITY_TOLERANCE, name=f'convexity_lower_{h}')
+        if np.isfinite(CONVEXITY_TOLERANCE):
+            m.addConstr(convexity @ w[h] <= benchmark_convexity + CONVEXITY_TOLERANCE, name=f'convexity_upper_{h}')
+            m.addConstr(convexity @ w[h] >= benchmark_convexity - CONVEXITY_TOLERANCE, name=f'convexity_lower_{h}')
         krd = np.asarray(period['krd'], float)
         benchmark_krd = np.asarray(period['benchmark_krd'], float)
-        for j in range(krd.shape[1]):
-            m.addConstr(krd[:, j] @ w[h] <= benchmark_krd[j] + KRD_TOLERANCE,name=f'krd_upper_{h}_{j}')
-            m.addConstr(krd[:, j] @ w[h] >= benchmark_krd[j] - KRD_TOLERANCE,name=f'krd_lower_{h}_{j}')
+        if np.isfinite(KRD_TOLERANCE):
+            for j in range(krd.shape[1]):
+                m.addConstr(krd[:, j] @ w[h] <= benchmark_krd[j] + KRD_TOLERANCE,name=f'krd_upper_{h}_{j}')
+                m.addConstr(krd[:, j] @ w[h] >= benchmark_krd[j] - KRD_TOLERANCE,name=f'krd_lower_{h}_{j}')
         if excluded:
             m.addConstr(w[h][excluded] == 0, name=f'fixed_universe_{h}')
         expired = np.flatnonzero(already_matured)
@@ -82,14 +85,15 @@ def solve_quadratic(stage, k=K, allowed=None):
         mu = np.asarray(period['mu'], float)
         rho = np.asarray(period['rho'], float)
         risk = w[h] @ Q @ w[h] + g @ w[h] + constant
-        objective += (GAMMA * risk - mu @ w[h] - stage['cash_monthly_return'] * cash[h] + UNCERTAINTY_SCALE * (rho @ active[h]) + TRANSACTION_COST * trades)
+        objective += (GAMMA * risk - mu @ w[h] - stage['cash_monthly_return'] * cash[h] + UNCERTAINTY_SCALE * (rho @ active[h]) + TURNOVER_MULTIPLIER * TRANSACTION_COST * trades)
 
     # The terminal position is the final post-trade portfolio after any H-th-month maturities.
     survive = (~maturity[-1]).astype(float)
     terminal_q = Q * survive[:, None] * survive[None, :]
     terminal_g = g * survive
     terminal_risk = w[-1] @ terminal_q @ w[-1] + terminal_g @ w[-1] + constant
-    m.addConstr(terminal_risk <= TERMINAL_TE_CAP**2, name='terminal_tracking_cap')
+    if np.isfinite(TERMINAL_TE_CAP):
+        m.addConstr(terminal_risk <= TERMINAL_TE_CAP**2, name='terminal_tracking_cap')
     m.setObjective(objective, GRB.MINIMIZE)
     m.optimize()
     if m.SolCount == 0:
@@ -124,8 +128,8 @@ def report_solution(stage, solution, k=K):
         krd_gap = np.asarray(period['krd']).T @ x - np.asarray(period['benchmark_krd'])
         if (holdings > k or abs(duration_gap) > DURATION_TOLERANCE + 1e-5 or
                 cash[h] < -1e-6 or cash[h] > MAX_CASH_WEIGHT + 1e-5 or
-                abs(convexity_gap) > CONVEXITY_TOLERANCE + 1e-5 or
-                np.max(np.abs(krd_gap)) > KRD_TOLERANCE + 1e-5):
+                (np.isfinite(CONVEXITY_TOLERANCE) and abs(convexity_gap) > CONVEXITY_TOLERANCE + 1e-5) or
+                (np.isfinite(KRD_TOLERANCE) and np.max(np.abs(krd_gap)) > KRD_TOLERANCE + 1e-5)):
             raise ValueError(f'Invalid period {h+1}: holdings={holdings}, '
                              f'duration gap={duration_gap:.6f}, '
                              f'convexity gap={convexity_gap:.6f}, '
@@ -147,12 +151,17 @@ def report_solution(stage, solution, k=K):
     survive = ~np.asarray(stage['periods'][-1]['matures_in_month'], bool)
     terminal_w = w[-1] * survive
     terminal_var = max(0.0, float(terminal_w @ Q @ terminal_w + g @ terminal_w + offset))
+    # Gurobi's default absolute feasibility tolerance applies to the variance cap.
+    if np.isfinite(TERMINAL_TE_CAP) and terminal_var > TERMINAL_TE_CAP**2 + 1e-6:
+        raise ValueError(f'Terminal tracking-error cap violated: {np.sqrt(terminal_var):.6f}')
     first_cost = monthly[0]['transaction_cost_fraction']
     return {
         'asof': stage['asof'], 'H': stage['horizon'],
         'K': k, 'forecast_model': stage['forecast_model'],
         'candidate_count': len(c), 'gamma': GAMMA,
         'uncertainty_scale': UNCERTAINTY_SCALE,
+        'turnover_multiplier': TURNOVER_MULTIPLIER,
+        'duration_tolerance': DURATION_TOLERANCE,
         'convexity_tolerance': CONVEXITY_TOLERANCE,
         'krd_tolerance': KRD_TOLERANCE,
         'key_rate_tenors': np.asarray(stage['key_rate_tenors']).tolist(),
