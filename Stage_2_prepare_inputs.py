@@ -59,9 +59,14 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters):
     # When accrued interest is absent, use clean price and flag the approximation.
     dirty = clean + np.where(np.isfinite(accrued), accrued, 0.0)
 
-    alive = np.isfinite(ttm) & (ttm > 0)
-    method[~alive] = 'matured_or_invalid_maturity'
     safe_duration = np.where(np.isfinite(duration), np.maximum(duration, 0.0), 0.0)
+    missing_maturity = ~np.isfinite(ttm)
+    # Do not silently assign zero risk to benchmark bonds with missing dates.
+    # Approximate their tenor from duration but never invent a coupon schedule.
+    alive = (np.isfinite(ttm) & (ttm > 0)) | (missing_maturity & (safe_duration > 0))
+    method[~alive] = 'matured_or_invalid_maturity'
+    method[missing_maturity & alive] = 'duration_proxy_missing_maturity'
+    ttm = np.where(missing_maturity, safe_duration, ttm)
     safe_yield = np.where(np.isfinite(ytm), ytm, 0.0)
     proxy_denom = np.maximum(1.0 + safe_yield / 2.0, 0.1)
     # An option-free zero-coupon surrogate is a documented fallback, NOT a
@@ -75,7 +80,7 @@ def _bond_convexity_krd(bonds, valuation_date, curve_parameters):
     freq = np.where(np.isfinite(frequency), np.rint(frequency), 0).astype(int)
     freq = np.where(coupon == 0.0, 2, freq)  # Zero-coupon bonds need no coupon schedule.
     supported = (
-        alive & np.isfinite(duration) & (duration > 0) &
+        alive & ~missing_maturity & np.isfinite(duration) & (duration > 0) &
         np.isfinite(ytm) & np.isfinite(coupon) & (coupon >= 0) &
         np.isfinite(dirty) & (dirty > 0) &
         np.isin(freq, [1, 2, 4, 12]) &
