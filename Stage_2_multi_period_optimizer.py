@@ -40,7 +40,7 @@ def solve_quadratic(stage, k=K, allowed=None):
     principal_ratio = 100.0 / c.PRICE_EOM.to_numpy(float)
     m = gp.Model('GoalPath_Bond_Multi_Period')
     m.Params.OutputFlag = 0
-    m.Params.TimeLimit = TIME_LIMIT
+    m.Params.TimeLimit = 120
     w = [m.addMVar(n, lb=0, ub=MAX_WEIGHT, name=f'weights_{h}') for h in range(H)]
     buy = [m.addMVar(n, lb=0, name=f'buys_{h}') for h in range(H)]
     sell = [m.addMVar(n, lb=0, name=f'sells_{h}') for h in range(H)]
