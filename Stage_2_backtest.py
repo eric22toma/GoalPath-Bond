@@ -419,23 +419,22 @@ def main():
     if summary.empty:
         print('No complete strategies; inspect Stage_2_failed_strategies.csv.')
     else:
-        display = summary[['strategy', 'annualized_tracking_error',
-                           'annualized_net_tracking_error', 'cumulative_net_return',
-                           'average_monthly_one_way_turnover', 'total_transaction_fees_dollars',
-                           'avg_monthly_rmse_bp', 'avg_monthly_mae_bp']].copy()
-        for col in ['annualized_tracking_error', 'annualized_net_tracking_error',
-                    'cumulative_net_return', 'average_monthly_one_way_turnover']:
+        # Five headline portfolio metrics; all other diagnostics remain in the CSVs.
+        headline = {
+            'strategy': 'Strategy',
+            'annualized_net_tracking_error': 'Net TE (annual)',
+            'cumulative_net_return': 'Net return (period)',
+            'annualized_mean_net_active_return': 'Net active return (annual)',
+            'average_monthly_one_way_turnover': 'Monthly turnover',
+            'total_transaction_fees_dollars': 'Transaction costs ($)',
+        }
+        display = summary[list(headline)].rename(columns=headline).copy()
+        for col in ['Net TE (annual)', 'Net return (period)',
+                    'Net active return (annual)', 'Monthly turnover']:
             display[col] = display[col].map(lambda x: f'{x:.2%}')
-        print(display.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
-        print("RMSE/MAE use each strategy's own forecast methodology and horizon.")
-    for metric in ('rmse', 'mae'):
-        comparison = accuracy.pivot(index='model', columns='horizon',
-                                    values='avg_monthly_' + metric + '_bp')
-        comparison = comparison.loc[:, list(HORIZONS)]
-        comparison = comparison.rename(columns=lambda h: f'H={h}').rename_axis('Forecast model')
-        print(f'\nFORECAST ACCURACY | average monthly {metric.upper()} (bp) by horizon | '
-              f'origins {START_MONTH} through {END_MONTH}')
-        print(comparison.to_string(float_format=lambda x: f'{x:.2f}', na_rep='N/A'))
+        display['Transaction costs ($)'] = display['Transaction costs ($)'].map(
+            lambda x: f'{x:,.2f}')
+        print(display.to_string(index=False))
     if not failures.empty:
         print(f'{len(failures)} unsuccessful decisions; see Stage_2_failed_strategies.csv.')
     print(f'\nSaved monthly performance, summary, holdings, planned paths and failures to {OUTPUT_DIR}')
