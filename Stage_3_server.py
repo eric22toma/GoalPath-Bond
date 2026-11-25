@@ -112,6 +112,7 @@ def run_path(sid, k, gamma):
         raise ValueError("Stage 2 settings differ from the calibrated strategy.")
     state, value = None, REFERENCE_CAPITAL
     monthly, holdings, plans = [], [], []
+    conditional_moments = []
     by_origin = {month: rows for month, rows in forecasts.groupby("month", sort=False)}
     for asof in pd.period_range(bt.START_MONTH, bt.END_MONTH, freq="M"):
         label = str(asof)
@@ -155,6 +156,22 @@ def run_path(sid, k, gamma):
                           str(row.return_source)]
                          for row in held.sort_values("weight", ascending=False).itertuples(index=False)])
         plans.append(pack_plan(metrics))
+        if label == bt.END_MONTH:
+            # Project the bond-level factor covariance onto each planned portfolio
+            # and the complete benchmark. This is the same risk model as Stage 2.
+            Q = np.asarray(stage['candidate_covariance'], float)
+            cross = -0.5 * np.asarray(stage['risk_linear'], float)
+            benchmark_var = float(stage['risk_constant'])
+            for weights in solution['planned_weights']:
+                var_p = float(weights @ Q @ weights)
+                cov_pb = float(cross @ weights)
+                if not np.isfinite([var_p, benchmark_var, cov_pb]).all() or min(var_p, benchmark_var) < -1e-10:
+                    raise ValueError('Invalid conditional bond-factor covariance.')
+                var_p, var_b = max(0.0, var_p), max(0.0, benchmark_var)
+                limit = math.sqrt(var_p * var_b)
+                if abs(cov_pb) > limit + 1e-8:
+                    raise ValueError('Conditional portfolio/benchmark covariance is not positive semidefinite.')
+                conditional_moments.append([var_p, var_b, max(-limit, min(limit, cov_pb))])
     if len(monthly) != 22:
         raise ValueError("Incomplete rolling backtest; no partial performance will be displayed.")
     r = np.array([m[2] for m in monthly])
@@ -163,7 +180,8 @@ def run_path(sid, k, gamma):
         raise ValueError("Invalid realized return path.")
     return {"sid": sid, "monthly": monthly, "holdings": holdings, "plans": plans,
             "net": float(np.prod(1 + r) - 1), "br": float(np.prod(1 + b) - 1),
-            "te": float(np.std(r-b, ddof=1) * np.sqrt(12))}
+            "te": float(np.std(r-b, ddof=1) * np.sqrt(12)),
+            "conditional_moments": conditional_moments}
 
 
 def archive_rankings(bucket, gamma):
