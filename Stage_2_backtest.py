@@ -16,13 +16,15 @@ from Stage_2_multi_period_optimizer import (TRANSACTION_COST, GAMMA,
     TURNOVER_MULTIPLIER, TERMINAL_TE_CAP, MAX_CASH_WEIGHT, MAX_WEIGHT)
 from backtest_stage1 import evaluate_month
 
-# Final calibration Part C: two-factor interactions selected from Parts A and B.
+# Final calibration Part D: investor-adaptive selection from Parts B and C.
 START_MONTH = '2023-12'
 END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
 CALIBRATION_END = '2024-12'  # Realized month; 2025 is retrospective validation.
-K_VALUES = (25,)            # Reference investor; vary K and gamma in Part D.
-HORIZONS = (1, 3)
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'C_parameter_interactions'
+K_VALUES = (10, 25, 50)
+GAMMA_VALUES = (0.1, 1, 10, 100)
+REFERENCE_K, REFERENCE_GAMMA = 25, 1.0
+CALIBRATION_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration'
+OUTPUT_DIR = CALIBRATION_DIR / 'D_investor_adaptive_selection'
 
 BASE_PARAMETERS = {
     'duration_tolerance': DURATION_TOLERANCE,
@@ -32,45 +34,58 @@ BASE_PARAMETERS = {
     'uncertainty_scale': UNCERTAINTY_SCALE,
     'terminal_te_cap': TERMINAL_TE_CAP,
 }
-# Core: four turnover x KRD combinations per horizon/forecast family.
-KRD_VALUES = (0.5, 1.0)
-TURNOVER_VALUES = (5, 10)
-DIRECT_H3_TURNOVER_VALUES = (2, 5)
-
-# Five targeted frontier-expansion hypotheses. Each changes exactly two
-# parameters relative to the corresponding Part A baseline.
-TARGETED_INTERACTIONS = (
-    ('direct', 3, (('uncertainty_scale', 0.5), ('krd_tolerance', 1.0))),
-    ('direct', 3, (('convexity_tolerance', 50), ('krd_tolerance', 1.0))),
+# Four global Pareto members plus the forecast-free H3 challenger.
+# Preserve the exact B/C parameter ordering for matching archived strategy IDs.
+SHORTLIST = (
+    ('random_walk', 1, (('turnover_multiplier', 10),)),
+    ('direct', 1, (('turnover_multiplier', 5), ('krd_tolerance', 0.5))),
+    ('constant', 3, (('turnover_multiplier', 10), ('krd_tolerance', 0.5))),
     ('constant', 3, (('uncertainty_scale', 0.5), ('turnover_multiplier', 5))),
-    ('constant', 3, (('uncertainty_scale', 0.5), ('krd_tolerance', 0.5))),
-    ('random_walk', 3, (('duration_tolerance', 0.25), ('turnover_multiplier', 10))),
+    ('random_walk', 3, (('turnover_multiplier', 10), ('krd_tolerance', 0.5))),
 )
 
 
 def comparisons():
-    """20 core interactions plus five targeted combinations per reference K."""
-    core = [(model, h, k, (('turnover_multiplier', turnover), ('krd_tolerance', krd)))
-            for h in HORIZONS
-            for model in (('direct', 'random_walk') if h == 1
-                          else ('direct', 'constant', 'random_walk'))
-            for k in K_VALUES
-            for turnover in (DIRECT_H3_TURNOVER_VALUES if model == 'direct' and h == 3
-                             else TURNOVER_VALUES)
-            for krd in KRD_VALUES]
-    targeted = [(model, h, k, changes)
-                for model, h, changes in TARGETED_INTERACTIONS if h in HORIZONS
-                for k in K_VALUES]
-    return core + targeted
+    """Five calibrated models for each of the 12 investor profiles."""
+    return [(model, h, k, gamma, changes)
+            for k in K_VALUES for gamma in GAMMA_VALUES
+            for model, h, changes in SHORTLIST]
 
 
-def strategy_name(model, horizon, k, changes):
+def model_id(model, horizon, changes):
+    suffix = '_'.join(f'{key}_{value:g}' for key, value in changes)
+    return f'{model}_H{horizon}_{suffix}'
+
+
+def archived_name(model, horizon, k, changes):
     suffix = '_'.join(f'{key}_{value:g}' for key, value in changes)
     return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}_{suffix}'
 
 
-def strategy_parameters(changes):
-    return {**BASE_PARAMETERS, **dict(changes)}
+def strategy_name(model, horizon, k, gamma, changes):
+    return f'{archived_name(model, horizon, k, changes)}_gamma_{gamma:g}'
+
+
+def strategy_parameters(gamma, changes):
+    # GAMMA is temporarily applied to the optimizer, not merely the score.
+    return {**BASE_PARAMETERS, **dict(changes), 'gamma': gamma}
+
+
+def is_reference(config):
+    return config[2] == REFERENCE_K and config[3] == REFERENCE_GAMMA
+
+
+def reference_folder(changes):
+    return 'B_parameter_sensitivity' if len(changes) == 1 else 'C_parameter_interactions'
+
+
+def config_metadata(model, h, k, gamma, changes):
+    return {
+        'model_id': model_id(model, h, changes),
+        'reused_reference': is_reference((model, h, k, gamma, changes)),
+        'source_phase': ('B' if len(changes) == 1 else 'C')
+                        if is_reference((model, h, k, gamma, changes)) else 'D',
+    }
 
 
 def variation_labels(changes):
@@ -123,7 +138,7 @@ def load_forecast_history(max_horizon):
         raise ValueError(
             f'Forecast history is missing horizons {missing}. '
             f'Regenerate Stage_2_bond_forecast_history.csv.gz through H={max_horizon} '
-            'before running the Part C backtest.')
+            'before running the Part D backtest.')
     # Ensure every decision has forecasts through the longest horizon before any solving.
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
         present = set(forecasts.loc[forecasts.month.eq(str(asof)), 'horizon'])
@@ -227,13 +242,19 @@ def summarize(monthly):
             'total_transaction_fees_dollars': float(rows.transaction_cost_dollars.sum()),
             'average_monthly_one_way_turnover': float(rows.one_way_turnover.mean()),
             'average_holdings': float(rows.holdings_count.mean()),
+            'max_holdings': int(rows.holdings_count.max()),
+            'average_expected_monthly_tracking_error': float(rows.expected_monthly_tracking_error.mean()),
             'average_cash_weight': float(rows.cash_weight_after_trade.mean()),
             'min_benchmark_return_coverage': float(rows.benchmark_return_coverage.min()),
             'max_individual_bond_weight': float(rows.max_individual_bond_weight.max()),
             'average_effective_holdings': float(rows.effective_holdings.mean()),
             'total_runtime_seconds': float(rows.runtime_seconds.sum()),
             'optimal_months': int(rows.optimal.sum()),
-            'gamma': GAMMA, 'varied_parameter': rows.varied_parameter.iloc[0],
+            'gamma': float(rows.gamma.iloc[0]),
+            'model_id': rows.model_id.iloc[0],
+            'reused_reference': bool(rows.reused_reference.iloc[0]),
+            'source_phase': rows.source_phase.iloc[0],
+            'varied_parameter': rows.varied_parameter.iloc[0],
             'parameter_value': rows.parameter_value.iloc[0],
             **{key: rows[key].iloc[0] for key in BASE_PARAMETERS},
             'max_cash_weight': MAX_CASH_WEIGHT,
@@ -291,7 +312,8 @@ def save_progress(monthly, positions, plans, failures):
         'Stage_2_holdings.csv': pd.concat(positions, ignore_index=True) if positions else pd.DataFrame(),
         'Stage_2_planned_monthly.csv': pd.DataFrame(plans),
         'Stage_2_failed_strategies.csv': pd.DataFrame(failures, columns=[
-            'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value']),
+            'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value',
+             'model_id', 'K', 'gamma', 'reused_reference', 'source_phase']),
     }
     for filename, frame in frames.items():
         path = OUTPUT_DIR / filename
@@ -300,19 +322,136 @@ def save_progress(monthly, positions, plans, failures):
         temporary.replace(path)
 
 
+def load_reference_paths(configs, months):
+    """Reuse complete B/C histories, with the same dates and full settings."""
+    monthly, positions, plans = [], [], []
+    cache = {}
+    decision_months = {str(m) for m in months}
+    target_months = {str(m + 1) for m in months}
+    for model, h, k, gamma, changes in configs:
+        folder = reference_folder(changes)
+        if folder not in cache:
+            directory = CALIBRATION_DIR / folder
+            cache[folder] = {
+                key: pd.read_csv(directory / filename, dtype={'cusip': str} if key == 'holdings' else None)
+                for key, filename in (
+                    ('summary', 'Stage_2_summary.csv'),
+                    ('monthly', 'Stage_2_monthly_results.csv'),
+                    ('holdings', 'Stage_2_holdings.csv'),
+                    ('plans', 'Stage_2_planned_monthly.csv'),
+                )
+            }
+        archive = cache[folder]
+        old_name = archived_name(model, h, k, changes)
+        new_name = strategy_name(model, h, k, gamma, changes)
+        settings = strategy_parameters(gamma, changes)
+        metadata = config_metadata(model, h, k, gamma, changes)
+        reference = archive['summary'].loc[archive['summary'].strategy.eq(old_name)]
+        expected = {**settings, 'K': k, 'H': h, 'months': len(months),
+                    'initial_capital': INITIAL_CAPITAL, 'candidate_count': CANDIDATE_COUNT,
+                    'transaction_cost_rate': TRANSACTION_COST, 'max_cash_weight': MAX_CASH_WEIGHT,
+                    'max_bond_weight': MAX_WEIGHT, 'solver_time_limit_seconds': 120}
+        if len(reference) != 1 or any(not np.isclose(float(reference.iloc[0][key]), value)
+                                      for key, value in expected.items()):
+            raise ValueError(f'Archived reference settings do not match: {old_name}')
+        m = archive['monthly'].loc[archive['monthly'].strategy.eq(old_name)].copy()
+        p = archive['plans'].loc[archive['plans'].strategy.eq(old_name)].copy()
+        held = archive['holdings'].loc[archive['holdings'].strategy.eq(old_name)].copy()
+        if (len(m) != len(months) or set(m.decision_month) != decision_months
+                or set(m.target_month) != target_months
+                or len(p) != len(months) * h
+                or set(zip(p.decision_month, p.horizon_step)) !=
+                   {(month, step) for month in decision_months for step in range(1, h + 1)}
+                or set(held.decision_month) != decision_months
+                or not held.groupby('decision_month').size().reindex(m.decision_month)
+                           .eq(m.holdings_count.to_numpy()).all()):
+            raise ValueError(f'Incomplete archived reference history: {old_name}')
+        for frame in (m, p, held):
+            frame['strategy'] = new_name
+            frame['K'] = k
+            frame['gamma'] = gamma
+            for key, value in metadata.items():
+                frame[key] = value
+        monthly.extend(m.to_dict('records'))
+        positions.append(held)
+        plans.extend(p.to_dict('records'))
+    return monthly, positions, plans
+
+
+def evaluate_profiles(summary, manifest):
+    """Rank complete strategies within each investor profile; retain failed rows."""
+    metrics = ['strategy', 'months', 'annualized_net_tracking_error',
+               'annualized_mean_net_active_return', 'annualized_net_active_rmse',
+               'cumulative_net_return', 'cumulative_benchmark_return',
+               'average_monthly_one_way_turnover', 'total_transaction_fees_dollars',
+               'average_holdings', 'max_holdings', 'average_effective_holdings',
+               'average_expected_monthly_tracking_error', 'optimal_months',
+               'total_runtime_seconds']
+    ranked = manifest.merge(summary.reindex(columns=metrics), on='strategy',
+                            how='left', validate='one_to_one')
+    ranked['complete'] = ranked.months.notna()
+    # Returns in decimal units. Multiplying monthly utility by 12 preserves rankings.
+    ranked['annualized_net_utility'] = (ranked.annualized_mean_net_active_return
+                                       - ranked.gamma * ranked.annualized_net_tracking_error ** 2)
+    ranked = ranked.sort_values(
+        ['K', 'gamma', 'annualized_net_utility', 'annualized_net_active_rmse',
+         'average_monthly_one_way_turnover', 'model_id'],
+        ascending=[True, True, False, True, True, True], na_position='last')
+    ranked['utility_rank'] = ranked.groupby(['K', 'gamma']).cumcount().add(1).where(ranked.complete)
+    ranked['pareto_efficient'] = False
+    for _, group in ranked.loc[ranked.complete].groupby(['K', 'gamma']):
+        for idx, row in group.iterrows():
+            te = group.annualized_net_tracking_error
+            ret = group.annualized_mean_net_active_return
+            dominated = ((te <= row.annualized_net_tracking_error)
+                         & (ret >= row.annualized_mean_net_active_return)
+                         & ((te < row.annualized_net_tracking_error)
+                            | (ret > row.annualized_mean_net_active_return))).any()
+            ranked.loc[idx, 'pareto_efficient'] = not dominated
+    winners = ranked.loc[ranked.utility_rank.eq(1)].copy()
+    # Compare a universal model with the best available model per profile.
+    ranked = ranked.merge(winners[['K', 'gamma', 'annualized_net_utility']].rename(
+        columns={'annualized_net_utility': 'best_profile_utility'}),
+        on=['K', 'gamma'], how='left', validate='many_to_one')
+    ranked['utility_regret'] = ranked.best_profile_utility - ranked.annualized_net_utility
+    universal = ranked.groupby('model_id', as_index=False).agg(
+        complete_profiles=('complete', 'sum'),
+        mean_utility_regret=('utility_regret', 'mean'),
+        max_utility_regret=('utility_regret', 'max'))
+    universal['eligible_universal'] = universal.complete_profiles.eq(len(K_VALUES) * len(GAMMA_VALUES))
+    universal = universal.sort_values(['eligible_universal', 'mean_utility_regret', 'model_id'],
+                                      ascending=[False, True, True])
+    # Include profiles with no completed strategy instead of silently dropping them.
+    profiles = manifest[['K', 'gamma']].drop_duplicates()
+    winners = profiles.merge(winners, on=['K', 'gamma'], how='left', validate='one_to_one')
+    ranked.to_csv(OUTPUT_DIR / 'Stage_2_profile_rankings.csv', index=False)
+    winners.to_csv(OUTPUT_DIR / 'Stage_2_profile_winners.csv', index=False)
+    universal.to_csv(OUTPUT_DIR / 'Stage_2_universal_comparison.csv', index=False)
+
+
 def main():
-    configs = comparisons()
-    longest_horizon = max(h for _, h, _, _ in configs)
+    all_configs = comparisons()
+    reference_configs = [config for config in all_configs if is_reference(config)]
+    configs = [config for config in all_configs if not is_reference(config)]
+    longest_horizon = max(h for _, h, _, _, _ in all_configs)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = pd.DataFrame([
-        {'strategy': strategy_name(model, h, k, changes),
+        {'strategy': strategy_name(model, h, k, gamma, changes),
          'forecast': model, 'H': h, 'K': k, 'candidate_count': CANDIDATE_COUNT,
-         **variation_labels(changes), **strategy_parameters(changes)}
-        for model, h, k, changes in configs])
+         **variation_labels(changes), **strategy_parameters(gamma, changes),
+         **config_metadata(model, h, k, gamma, changes)}
+        for model, h, k, gamma, changes in all_configs])
+    if manifest.strategy.duplicated().any():
+        raise ValueError('Duplicate Part D strategy IDs.')
     manifest.to_csv(OUTPUT_DIR / 'Stage_2_configurations.csv', index=False)
     # Clear final summaries so an interrupted rerun cannot leave a stale ranking.
-    for filename in ('Stage_2_summary.csv', 'Stage_2_split_summary.csv'):
+    for filename in ('Stage_2_summary.csv', 'Stage_2_split_summary.csv',
+                     'Stage_2_profile_rankings.csv', 'Stage_2_profile_winners.csv',
+                     'Stage_2_universal_comparison.csv'):
         (OUTPUT_DIR / filename).unlink(missing_ok=True)
+    months = pd.period_range(START_MONTH, END_MONTH, freq='M')
+    monthly, positions, plans = load_reference_paths(reference_configs, months)
+    failures = []
     forecasts, errors = load_forecast_history(longest_horizon)
     accuracy = forecast_accuracy_by_horizon(forecasts)
     by_origin = {month: rows for month, rows in forecasts.groupby('month', sort=False)}
@@ -323,18 +462,16 @@ def main():
     panel = load_panel(data['bonds'][1], macro, curve)
     del data
 
-    months = pd.period_range(START_MONTH, END_MONTH, freq='M')
     states = {strategy_name(*config): {'pretrade_state': None, 'capital': INITIAL_CAPITAL,
               'gross_capital': INITIAL_CAPITAL, 'failed': False} for config in configs}
-    monthly, positions, plans, failures = [], [], [], []
-
-    print('\nSTAGE 2 | FINAL CALIBRATION PART C: PARAMETER INTERACTIONS')
+    print('\nSTAGE 2 | FINAL CALIBRATION PART D: INVESTOR-ADAPTIVE SELECTION')
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
-    print(f'Strategies: {len(configs)}; initial capital: ${INITIAL_CAPITAL:,.2f}')
-    print(f'\nSTRATEGY GRID ({len(configs)} independent portfolios):')
-    print(manifest[['forecast', 'H', 'K', 'varied_parameter', 'parameter_value']]
+    print(f'Strategies: {len(all_configs)} total; {len(configs)} new; '
+          f'{len(reference_configs)} reused; initial capital: ${INITIAL_CAPITAL:,.2f}')
+    print(f'\nSTRATEGY GRID ({len(configs)} new independent portfolios):')
+    print(manifest[['forecast', 'H', 'K', 'gamma', 'varied_parameter', 'parameter_value', 'reused_reference']]
           .to_string(index=False))
     print('Execute only the FIRST planned trades; all later planned trades are discarded.')
     print('Fees are funded from portfolio cash (unlike the Stage 1 fee convention).')
@@ -354,9 +491,10 @@ def main():
 
         successes = 0
         coverages = []
-        for model, horizon, k, changes in configs:
-            strategy = strategy_name(model, horizon, k, changes)
-            settings = strategy_parameters(changes)
+        for model, horizon, k, gamma, changes in configs:
+            strategy = strategy_name(model, horizon, k, gamma, changes)
+            settings = strategy_parameters(gamma, changes)
+            metadata = config_metadata(model, horizon, k, gamma, changes)
             labels = variation_labels(changes)
             state = states[strategy]
             if state['failed']:
@@ -374,9 +512,10 @@ def main():
                 fee_fraction = fee / capital_before
                 next_state, gross_return, net_return, redeemed_cash = settle_with_cash(
                     held, solution, stage, bond_return, fee_fraction)
-            except (RuntimeError, ValueError, KeyError, IndexError) as exc:
+            except (RuntimeError, ValueError, KeyError, IndexError, optimizer.gp.GurobiError) as exc:
                 failures.append({'strategy': strategy, 'decision_month': label,
-                                 'reason': str(exc), **labels})
+                                 'reason': str(exc), **labels, **metadata,
+                                 'K': k, 'gamma': gamma})
                 state['failed'] = True
                 print(f'{label} | {strategy}: not evaluable ({exc})', flush=True)
                 continue
@@ -390,8 +529,8 @@ def main():
             # Preserve the full H-period plan for audit; only h=1 executes.
             for h, planned in enumerate(metrics['monthly_plan'], start=1):
                 plans.append({
-                    'strategy': strategy, 'decision_month': label,
-                    **labels,
+                    'strategy': strategy, 'decision_month': label, 'K': k,
+                    **labels, **metadata,
                     **settings,
                     'horizon_step': h, 'planned_month': planned['month'],
                     'executed': h == 1,
@@ -412,7 +551,7 @@ def main():
             monthly.append({
                 'strategy': strategy, 'forecast': model, 'H': horizon,
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
-                **labels,
+                **labels, **metadata,
                 **settings,
                 'candidate_count': len(stage['candidates']),
                 'holdings_count': len(held),
@@ -451,6 +590,10 @@ def main():
                 'terminal_tracking_error': metrics['terminal_tracking_error'],
             })
             held['strategy'] = strategy
+            held['K'] = k
+            held['gamma'] = gamma
+            for key, value in metadata.items():
+                held[key] = value
             held['decision_month'] = label
             held['target_month'] = str(asof + 1)
             held['capital_allocated'] = held.weight * capital_before
@@ -458,6 +601,7 @@ def main():
                 pd.Series(stage['periods'][0]['mu'], index=stage['candidates'].cusip))
             positions.append(held[[
                 'strategy', 'decision_month', 'target_month', 'cusip',
+                'K', 'gamma', 'model_id', 'reused_reference', 'source_phase',
                 'weight', 'capital_allocated', 'expected_return', 'duration',
                 'next_return', 'was_redeemed', 'redemption_date',
                 'return_source', 'return_note',
@@ -477,8 +621,11 @@ def main():
 
     results = pd.DataFrame(monthly)
     failures = pd.DataFrame(failures, columns=[
-        'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value'])
-    completed = (results.groupby('strategy').filter(lambda x: len(x) == len(months))
+        'strategy', 'decision_month', 'reason', 'varied_parameter', 'parameter_value',
+             'model_id', 'K', 'gamma', 'reused_reference', 'source_phase'])
+    completed = (results.groupby('strategy').filter(
+                     lambda x: len(x) == len(months)
+                     and set(x.target_month) == {str(m + 1) for m in months})
                  if not results.empty else results)
     summary = summarize(completed) if not completed.empty else pd.DataFrame()
     if not summary.empty:
@@ -498,14 +645,16 @@ def main():
     accuracy.to_csv(OUTPUT_DIR / 'Stage_2_forecast_accuracy.csv', index=False)
     split_summary.to_csv(OUTPUT_DIR / 'Stage_2_split_summary.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
+    evaluate_profiles(summary, manifest)
 
-    print('\nSTAGE 2 | PART C INTERACTION RESULTS (complete strategies only)')
+    print('\nSTAGE 2 | PART D INVESTOR-ADAPTIVE RESULTS (complete strategies only)')
     if summary.empty:
         print('No complete strategies; inspect Stage_2_failed_strategies.csv.')
     else:
         # Five headline portfolio metrics; all other diagnostics remain in the CSVs.
         headline = {
             'strategy': 'Strategy',
+            'K': 'K', 'gamma': 'Gamma',
             'annualized_net_tracking_error': 'Net TE (annual)',
             'cumulative_net_return': 'Net return (period)',
             'annualized_mean_net_active_return': 'Net active return (annual)',
