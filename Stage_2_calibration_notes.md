@@ -97,4 +97,21 @@ Proposed D criterion: realized monthly mean net active return minus gamma times 
 
 Audit caveat: peak post-settlement cash ~42.9% for balanced Constant H3 and ~58.1% for return-oriented Constant H3, versus ~1.02% for Direct H1 and ~1.00% for the optional Random walk H3 challenger. Not post-trade cap violations. Highest absolute monthly active return for return-oriented Constant H3 was 1.886 percentage points; no evidence from this statistic alone of the extreme zero-alpha behavior, but bond-level return quality still requires audit. No code modifications in Part C assessment.
 
-Part D decisions and results: pending user agreement and execution.
+Part D decisions and implementation are documented below; results pending.
+
+## 9. Part D implementation (2026-11-25)
+
+User approved all five shortlisted models, including the Random walk H3 challenger. Selection rationale: global Pareto efficiency at the reference profile, diverse forecast/horizon structures, differing KRD and uncertainty flexibility, and hypotheses about responsiveness to investor preferences. Effective holdings and prior outcomes do not prove sensitivity to K or gamma. Final shortlist (all other settings retain Part A defaults):
+- Random walk H1, lambda=10, KRD=2, alpha=1 (minimum-TE reference, Part B).
+- Direct H1, lambda=5, KRD=0.5, alpha=1 (balanced tracking, Part C).
+- Constant H3, lambda=10, KRD=0.5, alpha=1 (balanced outperformance, Part C).
+- Constant H3, lambda=5, KRD=2, alpha=0.5 (return-oriented, Part C).
+- Random walk H3, lambda=10, KRD=0.5, alpha=1 (forecast-free multi-period challenger, Part C).
+
+Final reduced logarithmic grid: K={10,25,50}; gamma={0.1,1,10,100}. User preferred a systematic power-of-ten range rather than large arbitrary values inferred from frozen-path crossovers. The original crossover analysis remains useful as a scale diagnostic but does not establish reoptimized sensitivity. Avoid the extra 0.01 run initially due to computational burden; investigate higher gamma selectively only if the observed risk response warrants it. Gamma changes the actual optimizer variance coefficient; K changes the common relax-and-fix universe size. No change to risk model, solver, transaction-fee rate, terminal cap, concentration rules, candidate count or reference capital.
+
+Implementation: Stage_2_backtest.py commit 3e93c770c1afe19647d4028629d858e6da86ab3d. 60 total combinations, 55 new paths, 1,210 new monthly optimizations, 2,662 new planned periods if complete. Reuse exact K=25/gamma=1 histories from B/C: validate summary settings, month coverage, plan steps and holdings counts; copy into D outputs with unique gamma-specific IDs and reused_reference/source_phase metadata. Verified five matching archive summaries, 110 monthly observations, 242 plans and 2,750 holding rows; no new solve for those reference paths. Each new configuration retains independent portfolio state. Temporary solver settings including gamma restored after each solve.
+
+Output: Stage_2_outputs/backtest_final_calibration/D_investor_adaptive_selection. Retain existing eight CSVs; add Stage_2_profile_rankings.csv (all 60 including incomplete paths, complete-only utility and within-profile Pareto flags), Stage_2_profile_winners.csv (all 12 investor profiles, no winner if none completed), Stage_2_universal_comparison.csv (complete profile counts, average and maximum regret versus profile winner, only universal models completing all profiles eligible). Primary utility U_annual=annualized arithmetic mean net active return - gamma*annualized net TE^2, computed in decimals and equivalent to 12 times monthly sample mean-variance utility. Rank within same K/gamma, tie-break with lower net active RMSE then turnover and stable model ID. Fees already included in net returns. Mean expected monthly TE, maximum and effective holdings added to summary for responsiveness diagnostics. Assess predicted and realized risk separately; no requirement that a different winner emerge at each profile. Universal versus adaptive comparison is retrospective descriptive calibration with equally weighted tested profiles; not independent evidence of adaptive improvement. Continue audit of return quality and ex-post universe exclusions before final conclusions.
+
+Part D results pending. Grid and reference histories verified via GitHub; full Python/Gurobi execution not performed in chat.
