@@ -1,0 +1,83 @@
+# GoalPath-Bond — Stage 2 calibration and methodology log
+
+Updated 2026-11-24, before running Part C. This is a working record for the final capstone report, not a claim of independent out-of-sample validation. The CSV outputs and Git history are the authoritative reproducibility record.
+
+## 1. Development history and rationale
+
+- Stage 1: one-month elastic-net yield-change forecasts; carry plus duration-based return mapping; factor covariance and idiosyncratic risk estimates; benchmark tracking; cardinality-constrained relax-and-fix heuristic. Benchmark weights are based on outstanding amount times price; eligible investment candidates are a subset of the benchmark.
+- Stage 2: receding-horizon optimization, executing only the first month's trades and reoptimizing monthly. Explicit cash accounting and self-financing with transaction fees paid out of cash. Cash is capped at 1% immediately after trading, not after unexpected redemption settlement. Original H=6 and H=12 results are archived in Stage_2_outputs/backtest; subsequent TA discussion supported limiting final calibration to H=1 and H=3.
+- Forecasting: direct horizon-specific cumulative yield-change predictions mapped to incremental monthly returns; constant repeats the H=1 forecast; random walk sets yield changes to zero and uses saved carry-only returns and model-specific historical errors. Constant and direct are equivalent at H=1. Model C elastic-net predictors extend curve/macro features with yield momentum, spread changes, credit rating and bond return volatility. Chronological tuning and purging overlapping longer-horizon labels are used in the forecast pipeline; retain exact details from the forecasting source when drafting the report.
+- Early redemptions: historical redemption dates are used for settlement after optimization, not to directly schedule known future calls in the optimizer. Prior manually flagged missing-return/callability cases and their investment exclusions must be disclosed separately: retrospective universe exclusions can introduce selection bias; do not assert the entire historical universe is point-in-time unbiased. Preserve the benchmark rather than silently removing unsupported holdings. February 2025 redemption generated roughly 55–58% post-settlement cash for several leading configurations; this does not itself violate the post-trade cash cap.
+- Convexity: reconstruct contractual cash flows using coupon, frequency, next coupon date, maturity and $100 face value. Compute YTM-based second derivative divided by model price; add 0.5*C*(forecast yield change in decimals)^2 to candidate and benchmark forecast returns. This changes the return mapping, not elastic-net predictions.
+- KRD: use Svensson continuously compounded Treasury zero rates and calibrate a constant bond spread to observed dirty price by Newton iterations (15 iterations). Independently shock 2Y, 5Y, 10Y and 30Y by +/-1 bp with piecewise linear interpolation. Compute central price differences efficiently through sinh; proportionally scale raw KRDs to match WRDS modified duration at decision date. Accept numerical estimates if positive/finite as required, modeled price is within 0.1% at decision date, and scale is in [0.5,2]. Unsupported estimates retain duration-based zero-coupon convexity and maturity-interpolated KRD proxies. Reconstructed cash flows are not an option-adjusted/prepayment model.
+- Future risk inputs: age contractual cash flows while retaining decision-date curve, calibrated spread, KRD scale and benchmark weights/composition. Aggregate exposures across the full benchmark (not just candidates) and cache repeated benchmark calculations. Enforce duration, convexity and four KRD absolute-gap limits in each planned period; report gaps and coverage. Modified duration is still fixed over the planning horizon while projected convexity/KRD incorporate aging. Historical uncertainty uses first-order forecast errors even though expected returns include convexity; intentionally unchanged in A–C for comparability. These approximations must be disclosed.
+- Solver: Stage 2 time limit raised from 60 to 120 seconds; retain relax-and-fix and distinguish optimal final restricted solves from global optimality of the original cardinality-constrained problem.
+- Investor interface: only risk aversion gamma, maximum bond count K, initial capital. No other user-facing hyperparameters. Internal model selection may adapt to gamma and K if supported empirically. Long-only; no additional per-bond concentration cap (maximum weight 100%); monitor maximum weight, effective holdings and redemption cash without imposing a new constraint. Fixed candidate count 150, monthly rebalancing, actual transaction fee 10 bp per traded notional, post-trade cash cap 1%. Current continuous-weight formulation implies approximate capital-scale invariance, not discrete bond-lot feasibility.
+
+## 2. Experimental design and common settings
+
+Reference investor gamma=1, K=25, capital=$100,000. Decisions Dec 2023–Sep 2025; realized Jan 2024–Oct 2025 (22 months). Common default tolerances: duration 0.5 years, convexity 25 years squared, KRD 2 years per tenor, terminal expected monthly TE cap 2.5%, uncertainty multiplier alpha=1, turnover multiplier lambda=1. Preserve all these settings unless varied in an experiment.
+
+Use a staged design rather than 11,520 combinations of the original reduced Cartesian grid. Part A establishes five forecast/horizon baselines; B varies one parameter at a time; C tests targeted two-factor combinations; D evaluates a small diverse shortlist across investor inputs. A and B retain separate output folders. Subperiod results (2024 and Jan–Oct 2025) are descriptive diagnostics; do not require Pareto efficiency in each subperiod. The full-period historical sample is the primary calibration evidence. Extending to 8–10 years across economic conditions should strengthen evidence, ideally with a genuinely reserved evaluation period. All current 22 months have already informed decisions.
+
+## 3. Part A — horizon and forecasting
+
+Source: Stage_2_outputs/backtest_final_calibration/A_horizon_and_forecasting/Stage_2_summary.csv and Stage_2_split_summary.csv; implementation commit 52a2eab4b57fd376554f241f41f21bc72fd7e11a.
+
+Five baselines, 110 successful monthly optimizations, 242 planned portfolios, no reported constraint breaches. Annualized net tracking error / cumulative net return / average monthly one-way turnover (percent):
+- Direct H1: 2.258 / 7.618 / 26.29.
+- Random walk H1: 1.602 / 5.738 / 29.13.
+- Direct H3: 2.024 / 8.007 / 29.48.
+- Constant H3: 1.880 / 8.256 / 31.01.
+- Random walk H3: 1.651 / 6.930 / 28.71.
+- Benchmark cumulative return: 9.071%.
+
+Direct H3 improves TE and return relative to Direct H1; random walk H3 improves return while net TE is slightly worse than random walk H1. Random walk generally has better H3 yield RMSE/MAE, but Constant H3 has the best baseline net portfolio return. Forecast accuracy and investment performance need not rank methods identically. All five advance to B. Effective holdings were only about 2–2.5 despite 25 positions; this is a diagnostic, not a reason to impose an unrequested cap.
+
+## 4. Part B — individual parameter sensitivity
+
+Source: Stage_2_outputs/backtest_final_calibration/B_parameter_sensitivity/ (summary, split summary, configuration manifest, monthly/planned/holdings/failures). Implementation commits 638c8cff44d70e269f44ba37c8319ca1f7f91018 (optimizer), 02e9a2ec2b6032ac6f04ef0dc5ef15f1ed503b9d (backtest).
+
+Add independent objective-only turnover multiplier lambda multiplying actual cost rate c and traded weight T; alpha already scales the robust uncertainty penalty. Objective, omitting cash return for exposition: sum_h [gamma*active variance - mu'w + alpha*rho'|w-b| + lambda*c*T]. Actual fees and self-financing are unchanged. Infinite tolerances skip the applicable convexity, KRD or terminal constraint. Sequential temporary settings are restored after each solve; full parameters and diagnostics are exported. Incremental CSV saves are not automatic resume checkpoints.
+
+Test alternatives relative to each of five A baselines: duration {0.25,1}; convexity {10,50,unrestricted}; KRD {0.5,1,unrestricted}; lambda {2,5,10}; alpha {0,0.5,2}; terminal TE cap {1%,unrestricted}. Total 80 new paths (16 per family); 78 complete, 1,735 monthly solves and 3,797 planned portfolios, zero observed duration/convexity/KRD/cash violations. Failed Direct H3 alpha=0 (accounting reconciliation) and Random walk H3 lambda=2 (Gurobi status 12, numerical difficulties); not evidence of mathematical infeasibility.
+
+Findings versus each family's A baseline:
+- KRD=1 improved net TE, cumulative net return and turnover in all 5 families. KRD=0.5 improved net TE in all 5, but returns in only 1. Near-binding KRD observations: 237/242 at 0.5, 155/242 at 1, 3/3071 at 2.
+- Lambda=5 and 10 each improved net return and turnover in 5/5 families; lambda=10 improved TE in 3/5. Random walk H1 lambda=10 achieved net TE 0.889%, net return 8.035%, turnover 11.53%, fees $511 vs baseline $1,299. Constant H3 lambda=5 achieved 1.336% TE and 10.317% return; Direct H1 lambda=10 1.358% and 11.108%; Constant H3 lambda=10 1.708% and 11.641%. Direct H3 instead attained best turnover-only TE at lambda=2 (1.418%).
+- Convexity=10 improved both net TE and return for 3/5. Convexity=50 or unrestricted is useful in Direct H3, but not generally. Duration=0.25 improved returns 4/5, net TE 2/5; duration=1 generally worsened performance.
+- Alpha=0.5 improved returns 5/5 but raised full-period net TE 5/5. Constant H3 alpha=0.5: 2.865% TE / 14.039% return; Direct H3: 3.240% / 14.641%. Alpha=2 generally sacrifices return. Alpha=0 yielded 43.7–62.1% cumulative net returns and 6.85–11.13% TE among completed paths; Constant H3 Sep 2025 alone returned 15.09%. Exclude zero uncertainty from primary Pareto analysis pending underlying bond/return audit; exclusion is a modeling screen, not a property of Pareto efficiency.
+- Removing terminal quadratic risk cap made H3 runs roughly 13–14x faster with generally similar baseline performance; not tested jointly in C to keep controlled comparisons. May revisit for computational efficiency after shortlisting.
+
+## 5. Pareto screening and Part C selection
+
+Use lower annualized net TE and higher cumulative net return within each forecast/horizon family. Dominance requires no worse on either and strictly better on at least one. Net TE is annualized sample standard deviation of monthly net active returns. Net active RMSE is sqrt(12*mean(monthly net active return squared)); unlike TE, it penalizes bias. Use annualized mean net active return as alternative return measure. Across 83 completed A+B paths, 79 eligible after zero-uncertainty screen; 22 family-specific efficient paths:
+- Direct H1: lambda 10,5.
+- Random walk H1: lambda 10,5.
+- Direct H3: KRD 0.5, lambda 2, KRD 1, convexity 50, convexity off, duration 0.25, lambda 5, lambda 10, alpha 0.5.
+- Constant H3: KRD 0.5, lambda 5, lambda 10, alpha 0.5.
+- Random walk H3: KRD 0.5, duration 0.25, KRD 1, lambda 5, lambda 10.
+Turnover accounts for 11/22, KRD 5/22, uncertainty 2/22, duration 2/22, convexity 2/22, terminal 0. Turnover+KRD = 16/22 (72.7%). Substituting mean net active return gives same frontier set; substituting net active RMSE for TE removes Random walk H3 duration variant. Nine configurations were efficient in full period and both subperiods (7 turnover, 2 uncertainty), but temporal efficiency is not a mandatory filter: localized conditions should not override full-period evidence, especially when longer history is available. KRD=1 also improves all five baselines even though it is not on both H1 family frontiers; a dominated standalone setting can still be valuable in combination.
+
+Part C intentionally limited to 25 new paths: 20 core turnover x KRD tests (four per family): lambda {5,10} x KRD {0.5,1}, except Direct H3 lambda {2,5}. Five targeted tests:
+1. Direct H3 alpha=0.5 + KRD=1 (preserve return potential while improving tracking).
+2. Direct H3 convexity=50 + KRD=1 (risk constraint substitution/complementarity).
+3. Constant H3 alpha=0.5 + lambda=5 (returns plus trading discipline).
+4. Constant H3 alpha=0.5 + KRD=0.5 (highest-return and lowest-TE standalone settings in family).
+5. Random walk H3 duration=0.25 + lambda=10 (two efficient changes).
+All else stays at corresponding A defaults. Each constituent B test exists and completed. Part C code commit c939255891313be41b12c129460fea092662ea1c. Outputs in C_parameter_interactions; 550 monthly optimizations and 1,298 planned portfolios if all finish. Prior A, B and original long-horizon results remain untouched.
+
+## 6. How to evaluate C and move to D
+
+For each pair use the matched A baseline (0), individual B runs (A,B), and combined C run (AB). Factorial contrast I=J_AB-J_A-J_B+J_0. For monthly mean squared net active return and turnover, I<0 indicates complementary improvements on the chosen metric; for mean net active return, I>0 is desirable. A favorable contrast is not required for a joint model to improve on both individual runs or expand the frontier. Contrast is scale-dependent and descriptive, not proof of statistical significance.
+
+1. Require all months, successful accounting, valid constraints and credible bond-level realized returns.
+2. Measure individual and joint effects and recompute family-specific Pareto frontiers across A–C; then global frontier. Aim to expand attainable low-TE/high-return region, not automatically favor C over B. Use net active RMSE, turnover, fees and runtime to distinguish near-equivalent cases. Suggested materiality tolerances (not finalized): 0.05 percentage points net TE and 0.10 pp cumulative return.
+3. Keep roughly five diverse candidates (tracking, balanced, return-oriented, sufficient family diversity); avoid over-pruning at reference gamma/K since ranks may change.
+4. Part D: test each shortlisted model across gamma {0.1,1,10} and K {10,25,50}; use realized monthly mean net active return minus gamma times monthly active-return variance (units consistent with model objective), feasibility and economic credibility. Check that gamma actually produces meaningful modeled risk differences; the grid may need calibration. Select theta=f(K,gamma) only if supported rather than force distinct models; define how unseen inputs map to tested profiles before deployment. Capital scaling check $10k/$100k/$1m under continuous-weight assumptions. No new concentration constraints. Longer sample and reserved evaluation period needed to substantiate robustness.
+
+## 7. Output and audit notes
+
+Preserve original Stage_2_outputs/backtest and A/B/C phase folders. Superseded H3 KRD/convexity and cash-cap-only folders removed in commit 86e200d52e750322964f91b64e300e8066af2240; recover via Git history if necessary. Report complete settings, dates, gross/net TE, active return and RMSE, cumulative return, fees/turnover, holdings/concentration/cash, duration/convexity/KRD gaps, reconstruction coverage, solver status/runtime and failures. Keep historical first-order uncertainty limitation, risk proxy limitations, possible retrospective selection bias, and calibration reuse explicit. Do not interpret historical empirical rankings as a guarantee of future performance.
+
+Part C results and Part D decisions: pending.
