@@ -15,7 +15,7 @@
 <div class="rule"></div><h3>Evaluation period</h3><p>Jan 2024 – Oct 2025</p><p class="muted">22 realized months · archived Part D backtests</p>
 <div class="rule"></div><p class="muted">Instant replay works offline. Fresh optimization requires the local Python launcher and an existing Gurobi environment.</p></aside>
 <main><section class="hero"><div><p class="muted">Automatically selected strategy</p><h1 id="modelTitle"></h1><p class="muted" id="parameters"></p></div><span class="tag" id="profile"></span></section><div id="warning" class="warn hidden"></div>
-<div id="status" class="warn hidden" role="status"></div><div id="results"><section class="panel" id="goalPanel"><div class="row"><div><p class="muted">Goal assessment · scenario-based</p><h1 id="goalVerdict"></h1></div><span class="tag" id="goalTag"></span></div><p id="goalExplanation" class="muted"></p><div id="goalMetrics" class="metrics"></div><div id="goalChart"></div><p id="goalRange" class="muted"></p><details><summary>How the scenario estimates work</summary><p>As of the latest saved decision (September 2025), the selected model supplies the H-month conditional portfolio and benchmark expected returns. Beyond H, the last forecast is held constant as a scenario assumption. We subtract a modeled initial 10 bp purchase cost and recurring historical proportional trading costs, then resample centered, paired portfolio/benchmark log-return forecast errors in three-month circular blocks (4,000 seeded paths). Only returns known by the forecast date are used for residual estimation. The log shocks are normalized to preserve the conditional arithmetic mean in each simulated month. This is a portfolio-level approximation, not a bond-level stochastic optimization, and is not live market data. The small historical sample and repeated long-horizon forecasts make probabilities illustrative, not calibrated guarantees.</p><p>Goal met means estimated expected terminal wealth reaches the target. Probability is reported separately; it is not a guarantee. The horizon here is the investor horizon, independent of the optimizer planning horizon H.</p></details></section><section class="panel" id="alternatives"><h2>What can you change?</h2><p id="advice"></p><div id="alternativeTable" class="tablewrap"></div><p class="muted">Alternatives use calibrated archived paths at or below your bond limit, not new exact-K solves. Changes in risk or horizon are illustrative; a larger contribution can close a fixed dollar wealth gap, but does not improve percentage return.</p></section><h2 style="margin-top:24px">Historical performance &amp; portfolio audit</h2><div id="headline" class="metrics"></div><nav class="tabs" aria-label="Result sections"><button type="button" data-tab="performance" class="active">Performance</button><button type="button" data-tab="portfolio">Portfolio</button><button type="button" data-tab="risk">Risk &amp; constraints</button><button type="button" data-tab="compare">Model comparison</button></nav>
+<div id="status" class="warn hidden" role="status"></div><div id="results"><section class="panel" id="goalPanel"><div class="row"><div><p class="muted">Goal assessment · scenario-based</p><h1 id="goalVerdict"></h1></div><span class="tag" id="goalTag"></span></div><p id="goalExplanation" class="muted"></p><div id="goalMetrics" class="metrics"></div><div id="goalChart"></div><p id="goalRange" class="muted"></p><div id="factorCheck" class="hidden"></div><details><summary>How the scenario estimates work</summary><p>As of the latest saved decision (September 2025), the selected model supplies the H-month conditional portfolio and benchmark expected returns. Beyond H, the last forecast is held constant as a scenario assumption. We subtract a modeled initial 10 bp purchase cost and recurring historical proportional trading costs, then resample centered, paired portfolio/benchmark log-return forecast errors in three-month circular blocks (4,000 seeded paths). Only returns known by the forecast date are used for residual estimation. The log shocks are normalized to preserve the conditional arithmetic mean in each simulated month. This is a portfolio-level approximation, not a bond-level stochastic optimization, and is not live market data. The small historical sample and repeated long-horizon forecasts make probabilities illustrative, not calibrated guarantees.</p><p>Goal met means estimated expected terminal wealth reaches the target. Probability is reported separately; it is not a guarantee. The horizon here is the investor horizon, independent of the optimizer planning horizon H.</p></details></section><section class="panel" id="alternatives"><h2>What can you change?</h2><p id="advice"></p><div id="alternativeTable" class="tablewrap"></div><p class="muted">Alternatives use calibrated archived paths, not new exact-K solves. Any larger K is explicitly marked as a requested change to your mandate. Changes in risk or horizon are illustrative; a larger contribution can close a fixed dollar wealth gap, but does not improve percentage return.</p></section><h2 style="margin-top:24px">Historical performance &amp; portfolio audit</h2><div id="headline" class="metrics"></div><nav class="tabs" aria-label="Result sections"><button type="button" data-tab="performance" class="active">Performance</button><button type="button" data-tab="portfolio">Portfolio</button><button type="button" data-tab="risk">Risk &amp; constraints</button><button type="button" data-tab="compare">Model comparison</button></nav>
 <div id="performance" class="tab">
 <section class="panel"><div class="row"><h2>Growth of invested capital</h2><button id="downloadPerformance">Download CSV</button></div><div id="wealth"></div><div class="legend"><span><i style="background:#087f77"></i>GoalPath-Bond (net)</span><span><i style="background:#8295aa"></i>Benchmark proxy</span></div></section>
 <section class="panel"><h2>Monthly net active return</h2><div id="activeChart"></div><p class="muted">Portfolio net return minus benchmark return, in percentage points.</p></section>
@@ -63,7 +63,7 @@ async function render(){
 }
 function renderResults(){let m=current.monthly,model=DATA.models[current.sid],scale=capital/100000,active=m.map(r=>r[2]-r[3]),mean=avg(active),te=current.te,net=current.net,br=current.br,u=12*mean-gamma*te*te,rmse=Math.sqrt(12*avg(active.map(x=>x*x)));
 $("modelTitle").textContent=current.sid+" — "+model[0];$("parameters").textContent="H = "+model[1]+" · turnover λ = "+model[2]+" · KRD tolerance = "+model[3]+" years · uncertainty α = "+model[4];$("profile").textContent="Requested K = "+requestedK+" | Used K = "+k+" | γ = "+gamma;
-let notices=[];if(current.provisional)notices.push("Provisional selection: one competing Part D strategy did not complete the reference profile.");if(mode==="replay"&&k!==requestedK)notices.push("Rounded down to calibrated K="+k+" to respect your maximum of "+requestedK+".");if(mode==="fresh")notices.push("Fresh exact-K backtest; model selected using reference K="+referenceK+".");if(current.fallback)notices.push("Primary solver failed; restarted entire path with S5. "+current.fallback);$("warning").classList.toggle("hidden",!notices.length);$("warning").textContent=notices.join(" ");
+let notices=[];if(mode==="replay")notices.push("Historical replay of completed Part D results; no new optimizer call.");if(current.provisional)notices.push("Provisional selection: one competing Part D strategy did not complete the reference profile.");if(mode==="replay"&&k!==requestedK)notices.push("Rounded down to calibrated K="+k+" to respect your maximum of "+requestedK+".");if(mode==="fresh")notices.push((current.cached?"Reused this session’s completed exact-K solve":"Fresh exact-K backtest")+"; model selected using reference K="+referenceK+".");if(current.fallback)notices.push("Primary solver failed; restarted entire path with S5. "+current.fallback);$("warning").classList.toggle("hidden",!notices.length);$("warning").textContent=notices.join(" ");
 $("headline").innerHTML=metric("Net cumulative return",fmt(net),((net-br)*100>=0?"+":"")+((net-br)*100).toFixed(2)+" pp vs benchmark",net>=br?"positive":"negative")+metric("Annual net tracking error",fmt(te),"Lower = closer tracking")+metric("Ending portfolio value",usd(capital*(1+net)),"Initial "+usd(capital))+metric("Annualized net utility",fmt(u),"Higher within this profile");
 let v=capital,b=capital,vs=[v],bs=[b],dates=[m[0][1]];m.forEach(r=>{v*=1+r[2];b*=1+r[3];vs.push(v);bs.push(b);dates.push(r[0])});$("wealth").innerHTML=svgLine([{values:vs,color:"#087f77"},{values:bs,color:"#8295aa"}],dates);$("activeChart").innerHTML=svgBars(active,m.map(r=>r[0]));
 $("secondary").innerHTML=metric("Annualized historical net return",fmt(Math.pow(1+net,12/m.length)-1),"Realized CAGR")+metric("Benchmark return",fmt(br),usd(capital*(1+br)))+metric("Annual mean net active return",fmt(12*mean))+metric("Annual net active RMSE",fmt(rmse))+metric("Transaction fees",usd(sum(m.map(r=>r[4]))*scale))+metric("Monthly one-way turnover",fmt(avg(m.map(r=>r[5]))))+metric("Expected monthly TE",fmt(avg(m.map(r=>r[9]))))+metric("Average effective holdings",n(avg(m.map(r=>r[7])),2))+metric("Peak post-settlement cash",fmt(Math.max(...m.map(r=>r[11]))));
@@ -116,6 +116,36 @@ function simulate(path,months,targetFactor,extension=false){
  }
  return {...result,extra};
 }
+
+/* Independent monthly lognormal approximation to factor-model moments.
+   In fresh mode Q, cross covariance and full-benchmark variance come from
+   bond-level exposures in Stage 2. No historical errors are used here. */
+function normalCdf(z){
+ if(z>=8)return 1;if(z<=-8)return 0;
+ const a=Math.abs(z)/Math.sqrt(2),t=1/(1+0.3275911*a);
+ const erf=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-a*a);
+ return (1+(z<0?-erf:erf))/2;
+}
+function factorScenario(path,months,target){
+ if(!path.conditional_moments||!path.conditional_moments.length)return null;
+ const a=scenarioInputs(path);
+ let lp=0,lb=0,vp=0,vb=0,cv=0,meanP=0,meanB=0;
+ for(let t=0;t<months;t++){
+   const j=Math.min(t,a.latest.length-1),p=a.latest[j],mom=path.conditional_moments[j];
+   const mp=1+p[5]-(t===0?.001:a.fee),mb=1+p[6];
+   const pvar=Math.log1p(mom[0]/(mp*mp)),bvar=Math.log1p(mom[1]/(mb*mb));
+   const covariance=Math.log1p(mom[2]/(mp*mb));
+   if(![mp,mb,pvar,bvar,covariance].every(Number.isFinite)||mp<=0||mb<=0)return null;
+   const lim=Math.sqrt(pvar*bvar);
+   cv+=Math.max(-lim,Math.min(lim,covariance));vp+=pvar;vb+=bvar;
+   meanP+=Math.log(mp);meanB+=Math.log(mb);lp+=Math.log(mp)-pvar/2;lb+=Math.log(mb)-bvar/2;
+ }
+ const prob=vp>0?normalCdf((lp-Math.log(target))/Math.sqrt(vp)):(Math.exp(lp)>=target?1:0);
+ const activeVar=Math.max(0,vp+vb-2*cv);
+ return {mean:Math.exp(meanP),benchmark:Math.exp(meanB),prob,
+         outperformance:activeVar>0?normalCdf((lp-lb)/Math.sqrt(activeVar)):(lp>=lb?1:0)};
+}
+
 function renderGoal(){
  const target=Math.pow(1+goal,horizon/12),s=simulate(current,horizon,target,true),annual=Math.pow(s.mean,12/horizon)-1,meets=s.mean>=target;
  if(![target,s.mean,s.benchmark,s.p10,s.p90,capital*target,capital*s.mean,capital*s.p90].every(Number.isFinite))throw Error("Scenario wealth exceeds numeric range; reduce the horizon or capital.");
@@ -126,23 +156,29 @@ function renderGoal(){
  const mx=Math.max(target,s.mean,s.benchmark,1e-12);
  $("goalChart").innerHTML='<div class="bars">'+[["Goal",target,"#607d8b"],["Portfolio",s.mean,"#087f77"],["Benchmark",s.benchmark,"#8295aa"]].map(([name,v,color])=>'<div class="bar" style="grid-template-columns:90px 1fr minmax(100px,auto)"><span>'+esc(name)+'</span><div class="track"><div class="fill" style="background:'+color+';width:'+Math.max(0,Math.min(100,100*v/mx))+'%"></div></div><span>'+esc(usd(capital*v))+'</span></div>').join("")+'</div>';
  $("goalRange").textContent="Scenario terminal wealth: 10th percentile "+usd(capital*s.p10)+" · median "+usd(capital*s.median)+" · 90th percentile "+usd(capital*s.p90)+".";
+ const factor=factorScenario(current,horizon,target);
+ $("factorCheck").classList.toggle("hidden",!factor);
+ $("factorCheck").innerHTML=factor?'<h3 style="margin-top:18px">Fresh solve · bond-factor scenario cross-check</h3><div class="metrics">'+metric("Factor-model goal probability",fmt(factor.prob),"Independent monthly lognormal shocks")+metric("Expected terminal wealth",usd(capital*factor.mean))+metric("Probability of beating benchmark",fmt(factor.outperformance),"Same factor covariance")+'</div><p class="muted">Uses the conditional bond-return forecast means and the actual portfolio/benchmark covariance from the Stage 2 factor model. The joint moments are projected onto planned weights. Independent monthly shocks and repeated final-period moments beyond H are modeling assumptions. The primary block-residual estimate remains the common comparison basis; differing probabilities indicate model uncertainty.</p>':"";
  const alternatives=[];
- if(requestedK>=10){
-   for(const cap of [10,25,50].filter(x=>x<=requestedK))for(const g of [.1,1,10,100]){
+ {
+   for(const cap of [10,25,50])for(const g of [.1,1,10,100]){
      if(mode==="replay"&&cap===k&&g===gamma)continue;
      const p=DATA.profiles[cap+"|"+g];if(!p)continue;const q=simulate(p,horizon,target,false);
-     alternatives.push({cap,g,p,q,annual:Math.pow(q.mean,12/horizon)-1,delta:p.te-current.te});
+     alternatives.push({cap,g,p,q,annual:Math.pow(q.mean,12/horizon)-1,delta:p.te-current.te,within:cap<=requestedK});
    }
  }
  alternatives.sort((a,b)=>b.q.prob-a.q.prob||b.q.mean-a.q.mean);
- $("alternativeTable").innerHTML=table(["K","Risk aversion","Model","Expected annual return","Goal probability","Historical annual TE","Δ TE (pp)","Expected goal met?"],alternatives.map(a=>[a.cap,({0.1:"Low",1:"Medium",10:"High",100:"Very high"})[a.g],a.p.sid,fmt(a.annual),fmt(a.q.prob),fmt(a.p.te),(a.delta*100).toFixed(2),a.q.mean>=target?"Yes":"No"]));
- const best=alternatives.find(a=>a.q.mean>=target&&a.q.prob>s.prob)||alternatives.find(a=>a.q.mean>s.mean&&a.q.prob>=s.prob);
+ $("alternativeTable").innerHTML=table(["K","Risk aversion","Model","Expected annual return","Goal probability","Historical annual TE","Δ TE (pp)","Expected goal met?","Bond limit"],alternatives.map(a=>[a.cap,({0.1:"Low",1:"Medium",10:"High",100:"Very high"})[a.g],a.p.sid,fmt(a.annual),fmt(a.q.prob),fmt(a.p.te),(a.delta*100).toFixed(2),a.q.mean>=target?"Yes":"No",a.within?"Within cap":"Increase cap"]));
+ const best=alternatives.find(a=>a.within&&a.q.mean>=target&&a.q.prob>s.prob)||alternatives.find(a=>a.q.mean>=target&&a.q.prob>s.prob)||alternatives.find(a=>a.within&&a.q.mean>s.mean&&a.q.prob>=s.prob)||alternatives.find(a=>a.q.mean>s.mean&&a.q.prob>=s.prob);
+ const riskAlternative=alternatives.filter(a=>a.within&&a.q.mean>=target).sort((a,b)=>a.p.te-b.p.te)[0];
  let notes=[];
  if(meets)notes.push("Your expected terminal wealth reaches the target. Review the probability and downside range before considering any changes.");
  else{
    notes.push("Expected shortfall: "+usd(capital*(target-s.mean))+".");
    if(best)notes.push("An archived alternative is K="+best.cap+", γ="+best.g+" ("+best.p.sid+"), with "+fmt(best.annual)+" expected annualized return, "+fmt(best.q.prob)+" goal probability and "+(best.delta*100).toFixed(2)+" pp change in historical tracking error. "+(best.q.mean>=target?"It meets the target in expectation.":"It improves the projection but still falls short."));
-   else notes.push("No tested archived alternative within your cap clearly improves both projected wealth and goal probability.");
+   else notes.push("No tested archived alternative clearly improves both projected wealth and goal probability.");
+   if(best&&!best.within)notes.push("This alternative requires raising your maximum bond limit to "+best.cap+".");
+   if(riskAlternative)notes.push("Among tested archived alternatives within your cap meeting the expected target, the lowest historical TE is "+fmt(riskAlternative.p.te)+" ("+riskAlternative.p.sid+", K="+riskAlternative.cap+", γ="+riskAlternative.g+"), a "+(riskAlternative.delta*100).toFixed(2)+" pp change. This is a discrete comparison, not the theoretical minimum tracking risk.");
    const add=Math.max(0,capital*(target/s.mean-1));
    notes.push("For the same fixed dollar target, an additional initial contribution of "+usd(add)+" would close the expected wealth gap, under proportional scaling. This does not raise the annualized return.");
    notes.push(s.extra!==null?"Keeping the original dollar target fixed, the expected wealth first reaches it at "+s.extra+" months (+"+(s.extra-horizon)+" months).":"No additional horizon within the next "+Math.min(120,600-horizon)+" months reached the fixed dollar target in these scenarios.");
@@ -155,8 +191,6 @@ $("inputs").addEventListener("submit",e=>{e.preventDefault();render()});document
 $("downloadPerformance").onclick=()=>csv(["K","gamma","model","realized_month","decision_month","net_portfolio_return","benchmark_return","net_active_return","fees_usd","one_way_turnover","holdings","effective_holdings","net_capital_usd"],current.monthly.map(r=>[k,gamma,current.sid,r[0],r[1],r[2],r[3],r[2]-r[3],r[4]*capital/100000,r[5],r[6],r[7],r[15]*capital/100000]),"GoalPath_performance.csv");
 $("downloadHoldings").onclick=()=>{let i=Number($("holdMonth").value);csv(["K","gamma","model","decision_month","cusip","weight","capital_allocated_usd","expected_monthly_return","duration","realized_return","return_source"],current.holdings[i].map(r=>[k,gamma,current.sid,current.monthly[i][1],r[0],r[1],r[2]*capital/100000,...r.slice(3)]),"GoalPath_holdings.csv")};
 $("downloadPlans").onclick=()=>{let i=Number($("planMonth").value);csv(["K","gamma","model","decision_month","horizon_step","planned_month","holdings","cash","expected_monthly_te","expected_return","benchmark_expected_return","duration_gap","convexity_gap","krd_2y_gap","krd_5y_gap","krd_10y_gap","krd_30y_gap","cashflow_risk_coverage"],current.plans[i].map(r=>[k,gamma,current.sid,current.monthly[i][1],...r]),"GoalPath_plan.csv")};
-if(localServer)$("mode").value="fresh";
-// Initial display remains instant; a submitted request uses the selected mode.
+// Start with a clearly labeled archived preview; fresh mode is selectable locally.
 $("mode").value="replay";render();
-if(localServer)$("mode").value="fresh";
 </script></body></html>
