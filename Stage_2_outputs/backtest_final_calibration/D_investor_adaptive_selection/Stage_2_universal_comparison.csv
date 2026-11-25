@@ -1,0 +1,6 @@
+model_id,complete_profiles,mean_utility_regret,max_utility_regret,eligible_universal
+random_walk_H3_turnover_multiplier_10_krd_tolerance_0.5,12,0.01732131459362451,0.04057723403818138,True
+direct_H1_turnover_multiplier_5_krd_tolerance_0.5,12,0.01918087270345188,0.0422649230454345,True
+random_walk_H1_turnover_multiplier_10,12,0.029671445658590038,0.05875994063195878,True
+constant_H3_uncertainty_scale_0.5_turnover_multiplier_5,11,0.0020622747877552324,0.010862829399620466,False
+constant_H3_turnover_multiplier_10_krd_tolerance_0.5,11,0.012411471567773735,0.041047541972445124,False
