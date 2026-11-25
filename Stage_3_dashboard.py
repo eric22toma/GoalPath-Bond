@@ -182,13 +182,13 @@ def prepare_and_solve(panel, curve, forecasts, errors, asof, sid, k, gamma, capi
     return stage, solution, metrics
 
 
-def plan_rows(asof, metrics):
+def plan_rows(asof, metrics, execute_first=True):
     """Flatten the validated H-period plan using the same Stage 2 field names."""
     rows = []
     for h, p in enumerate(metrics["monthly_plan"], start=1):
         rows.append({
             "decision_month": asof, "horizon_step": h, "planned_month": p["month"],
-            "executed": h == 1, "planned_holdings": p["holdings"],
+            "executed": execute_first and h == 1, "planned_holdings": p["holdings"],
             "planned_cash_weight": p["cash_weight"],
             "planned_tracking_error": p["expected_tracking_error"],
             "planned_expected_return": p["expected_return"],
@@ -272,7 +272,7 @@ def fresh_allocation(data, sid, k, gamma, capital, asof, progress):
     progress.progress(1.0, text=f"{sid} | Allocation complete")
     return {"kind": "allocation", "source": "Fresh historical-date allocation", "sid": sid,
             "k": k, "gamma": gamma, "capital": capital, "asof": asof,
-            "holdings": held, "plans": pd.DataFrame(plan_rows(asof, metrics)),
+            "holdings": held, "plans": pd.DataFrame(plan_rows(asof, metrics, execute_first=False)),
             "metrics": metrics, "cash": cash, "fee": fee,
             "invested": float(w.sum() * capital), "benchmark_type": stage["benchmark_type"]}
 
@@ -387,7 +387,8 @@ def show_risk(result, decision=None):
     for col in cols[3:]:
         table[col] = table[col].map(pct)
     st.dataframe(table, hide_index=True, use_container_width=True)
-    st.caption("Only the first planned allocation is implemented. Later periods are conditional plans, not realized returns.")
+    st.caption("Only the first planned allocation is actionable. In a historical backtest it is simulated as executed; "
+               "fresh allocations are proposals, not trades. Later periods are conditional plans, not realized returns.")
     download(plans, "Download risk and planning diagnostics", "goalpath_plan.csv")
 
 
@@ -527,8 +528,10 @@ def dashboard():
         if st.button("Clear results"):
             st.session_state.pop("gp_result", None)
         if st.button("Refresh local data caches"):
-            st.cache_data.clear()
-            st.cache_resource.clear()
+            # Do not clear the shared solver lock while another session may be solving.
+            with solver_lock():
+                read_archive.clear()
+                load_engine_data.clear()
             st.session_state.pop("gp_result", None)
 
     if submitted:
@@ -562,6 +565,10 @@ def dashboard():
 
     st.caption(f"{result['source']}  •  K={result['k']}  •  γ={result['gamma']:g}  •  "
                f"Initial capital {money(result['capital'])}")
+    st.caption(f"Benchmark: {BENCHMARK}")
+    if result["kind"] == "history":
+        dates = result["monthly"].target_month
+        st.caption(f"Realized period: {dates.min()} through {dates.max()} ({len(dates)} months)")
     st.subheader(f"{result['sid']} — {MODEL_NAMES[result['sid']]}")
     settings = settings_for(result["sid"], result["gamma"])
     st.caption(f"H={MODELS[result['sid']][1]} months  |  Turnover λ={settings['turnover_multiplier']:g}  |  "
