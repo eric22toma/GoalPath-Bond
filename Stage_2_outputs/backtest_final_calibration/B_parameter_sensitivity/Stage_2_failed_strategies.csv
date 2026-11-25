@@ -1,0 +1,3 @@
+strategy,decision_month,reason,varied_parameter,parameter_value
+direct_heuristic_H3_K25_N150_uncertainty_scale_0,2023-12,Gross return and transaction-fee reconciliation failed.,uncertainty_scale,0
+random_walk_heuristic_H3_K25_N150_turnover_multiplier_2,2025-07,No feasible Stage 2 solution (Gurobi status 12),turnover_multiplier,2
