@@ -16,13 +16,13 @@ from Stage_2_multi_period_optimizer import (TRANSACTION_COST, GAMMA,
     TURNOVER_MULTIPLIER, TERMINAL_TE_CAP, MAX_CASH_WEIGHT, MAX_WEIGHT)
 from backtest_stage1 import evaluate_month
 
-# Final calibration Part B: one-parameter-at-a-time sensitivity.
+# Final calibration Part C: two-factor interactions selected from Parts A and B.
 START_MONTH = '2023-12'
 END_MONTH = '2025-09'      # Common realized window: Jan 2024–Oct 2025.
 CALIBRATION_END = '2024-12'  # Realized month; 2025 is retrospective validation.
 K_VALUES = (25,)            # Reference investor; vary K and gamma in Part D.
 HORIZONS = (1, 3)
-OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'B_parameter_sensitivity'
+OUTPUT_DIR = PROJECT_ROOT / 'Stage_2_outputs' / 'backtest_final_calibration' / 'C_parameter_interactions'
 
 BASE_PARAMETERS = {
     'duration_tolerance': DURATION_TOLERANCE,
@@ -32,34 +32,53 @@ BASE_PARAMETERS = {
     'uncertainty_scale': UNCERTAINTY_SCALE,
     'terminal_te_cap': TERMINAL_TE_CAP,
 }
-PARAMETER_GRID = {
-    'duration_tolerance': (0.25, 0.5, 1.0),
-    'convexity_tolerance': (10, 25, 50, np.inf),
-    'krd_tolerance': (0.5, 1, 2, np.inf),
-    'turnover_multiplier': (1, 2, 5, 10),
-    'uncertainty_scale': (0, 0.5, 1, 2),
-    'terminal_te_cap': (0.01, 0.025, np.inf),
-}
+# Core: four turnover x KRD combinations per horizon/forecast family.
+KRD_VALUES = (0.5, 1.0)
+TURNOVER_VALUES = (5, 10)
+DIRECT_H3_TURNOVER_VALUES = (2, 5)
+
+# Five targeted frontier-expansion hypotheses. Each changes exactly two
+# parameters relative to the corresponding Part A baseline.
+TARGETED_INTERACTIONS = (
+    ('direct', 3, (('uncertainty_scale', 0.5), ('krd_tolerance', 1.0))),
+    ('direct', 3, (('convexity_tolerance', 50), ('krd_tolerance', 1.0))),
+    ('constant', 3, (('uncertainty_scale', 0.5), ('turnover_multiplier', 5))),
+    ('constant', 3, (('uncertainty_scale', 0.5), ('krd_tolerance', 0.5))),
+    ('random_walk', 3, (('duration_tolerance', 0.25), ('turnover_multiplier', 10))),
+)
 
 
 def comparisons():
-    """Vary one parameter at a time for each Part A baseline (80 new paths)."""
-    return [(model, h, k, parameter, value)
+    """20 core interactions plus five targeted combinations per reference K."""
+    core = [(model, h, k, (('turnover_multiplier', turnover), ('krd_tolerance', krd)))
             for h in HORIZONS
             for model in (('direct', 'random_walk') if h == 1
                           else ('direct', 'constant', 'random_walk'))
             for k in K_VALUES
-            for parameter, values in PARAMETER_GRID.items()
-            for value in values if value != BASE_PARAMETERS[parameter]]
+            for turnover in (DIRECT_H3_TURNOVER_VALUES if model == 'direct' and h == 3
+                             else TURNOVER_VALUES)
+            for krd in KRD_VALUES]
+    targeted = [(model, h, k, changes)
+                for model, h, changes in TARGETED_INTERACTIONS if h in HORIZONS
+                for k in K_VALUES]
+    return core + targeted
 
 
-def strategy_name(model, horizon, k, parameter, value):
-    label = 'unrestricted' if np.isinf(value) else f'{value:g}'
-    return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}_{parameter}_{label}'
+def strategy_name(model, horizon, k, changes):
+    suffix = '_'.join(f'{key}_{value:g}' for key, value in changes)
+    return f'{model}_heuristic_H{horizon}_K{k}_N{CANDIDATE_COUNT}_{suffix}'
 
 
-def strategy_parameters(parameter, value):
-    return {**BASE_PARAMETERS, parameter: value}
+def strategy_parameters(changes):
+    return {**BASE_PARAMETERS, **dict(changes)}
+
+
+def variation_labels(changes):
+    """Keep the existing CSV metadata columns; full settings are also exported."""
+    return {
+        'varied_parameter': '+'.join(key for key, _ in changes),
+        'parameter_value': '+'.join(f'{value:g}' for _, value in changes),
+    }
 
 
 def run_configured_solver(stage, k, settings):
@@ -104,7 +123,7 @@ def load_forecast_history(max_horizon):
         raise ValueError(
             f'Forecast history is missing horizons {missing}. '
             f'Regenerate Stage_2_bond_forecast_history.csv.gz through H={max_horizon} '
-            'before running the Part B backtest.')
+            'before running the Part C backtest.')
     # Ensure every decision has forecasts through the longest horizon before any solving.
     for asof in pd.period_range(START_MONTH, END_MONTH, freq='M'):
         present = set(forecasts.loc[forecasts.month.eq(str(asof)), 'horizon'])
@@ -283,14 +302,13 @@ def save_progress(monthly, positions, plans, failures):
 
 def main():
     configs = comparisons()
-    longest_horizon = max(h for _, h, _, _, _ in configs)
+    longest_horizon = max(h for _, h, _, _ in configs)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = pd.DataFrame([
-        {'strategy': strategy_name(model, h, k, parameter, value),
+        {'strategy': strategy_name(model, h, k, changes),
          'forecast': model, 'H': h, 'K': k, 'candidate_count': CANDIDATE_COUNT,
-         'varied_parameter': parameter, 'parameter_value': value,
-         **strategy_parameters(parameter, value)}
-        for model, h, k, parameter, value in configs])
+         **variation_labels(changes), **strategy_parameters(changes)}
+        for model, h, k, changes in configs])
     manifest.to_csv(OUTPUT_DIR / 'Stage_2_configurations.csv', index=False)
     # Clear final summaries so an interrupted rerun cannot leave a stale ranking.
     for filename in ('Stage_2_summary.csv', 'Stage_2_split_summary.csv'):
@@ -310,7 +328,7 @@ def main():
               'gross_capital': INITIAL_CAPITAL, 'failed': False} for config in configs}
     monthly, positions, plans, failures = [], [], [], []
 
-    print('\nSTAGE 2 | FINAL CALIBRATION PART B: PARAMETER SENSITIVITY')
+    print('\nSTAGE 2 | FINAL CALIBRATION PART C: PARAMETER INTERACTIONS')
     print(f'Decision months: {START_MONTH} through {END_MONTH}; '
           f'realized returns: {pd.Period(START_MONTH, freq="M") + 1} through '
           f'{pd.Period(END_MONTH, freq="M") + 1}')
@@ -336,9 +354,10 @@ def main():
 
         successes = 0
         coverages = []
-        for model, horizon, k, parameter, value in configs:
-            strategy = strategy_name(model, horizon, k, parameter, value)
-            settings = strategy_parameters(parameter, value)
+        for model, horizon, k, changes in configs:
+            strategy = strategy_name(model, horizon, k, changes)
+            settings = strategy_parameters(changes)
+            labels = variation_labels(changes)
             state = states[strategy]
             if state['failed']:
                 continue
@@ -357,8 +376,7 @@ def main():
                     held, solution, stage, bond_return, fee_fraction)
             except (RuntimeError, ValueError, KeyError, IndexError) as exc:
                 failures.append({'strategy': strategy, 'decision_month': label,
-                                 'reason': str(exc), 'varied_parameter': parameter,
-                                 'parameter_value': value})
+                                 'reason': str(exc), **labels})
                 state['failed'] = True
                 print(f'{label} | {strategy}: not evaluable ({exc})', flush=True)
                 continue
@@ -373,7 +391,7 @@ def main():
             for h, planned in enumerate(metrics['monthly_plan'], start=1):
                 plans.append({
                     'strategy': strategy, 'decision_month': label,
-                    'varied_parameter': parameter, 'parameter_value': value,
+                    **labels,
                     **settings,
                     'horizon_step': h, 'planned_month': planned['month'],
                     'executed': h == 1,
@@ -394,7 +412,7 @@ def main():
             monthly.append({
                 'strategy': strategy, 'forecast': model, 'H': horizon,
                 'K': k, 'decision_month': label, 'target_month': str(asof + 1),
-                'varied_parameter': parameter, 'parameter_value': value,
+                **labels,
                 **settings,
                 'candidate_count': len(stage['candidates']),
                 'holdings_count': len(held),
@@ -481,7 +499,7 @@ def main():
     split_summary.to_csv(OUTPUT_DIR / 'Stage_2_split_summary.csv', index=False)
     summary.to_csv(OUTPUT_DIR / 'Stage_2_summary.csv', index=False)
 
-    print('\nSTAGE 2 | PART B SENSITIVITY RESULTS (complete strategies only)')
+    print('\nSTAGE 2 | PART C INTERACTION RESULTS (complete strategies only)')
     if summary.empty:
         print('No complete strategies; inspect Stage_2_failed_strategies.csv.')
     else:
