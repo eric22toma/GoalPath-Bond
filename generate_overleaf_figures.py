@@ -1,9 +1,9 @@
-"""Generate two publication-ready GoalPath-Bond EDA figures for Overleaf.
+"""Generate three publication-ready GoalPath-Bond EDA figures for Overleaf.
 
 Run from repository root:
     python generate_overleaf_figures.py
 
-By default, saves both PDFs in figures/ and commits/pushes only those PDFs
+By default, saves all three PDFs in figures/ and commits/pushes only those PDFs
 to origin/main. Use --local-only to generate without publishing.
 
 Optional:
@@ -59,6 +59,80 @@ def make_figure(series, filename):
     plt.close(fig)
 
 
+def monthly_yield_changes(df):
+    """Return valid consecutive-month bond yield changes in basis points."""
+    panel = df.loc[df["DATE"].between("2016-01-01", "2025-12-31"),
+                   ["cusip", "DATE", "YIELD"]].copy()
+    panel = panel.sort_values(["cusip", "DATE"])
+    panel["month"] = panel["DATE"].dt.year * 12 + panel["DATE"].dt.month
+    if panel.duplicated(["cusip", "month"]).any():
+        raise ValueError("Duplicate CUSIP-month observations in yield-change panel.")
+
+    grouped = panel.groupby("cusip", sort=False)
+    # The loader expresses yields as decimals; 0.0001 equals one basis point.
+    dy = grouped["YIELD"].diff() * 10000
+    dy = dy.loc[grouped["month"].diff().eq(1) & np.isfinite(dy)]
+    if dy.empty:
+        raise ValueError("No valid consecutive-month yield changes.")
+    return dy
+
+
+def yield_change_statistics(dy):
+    """Print full-sample descriptive statistics and absolute tail frequencies."""
+    summary = dy.describe(percentiles=[.01, .05, .25, .5, .75, .95, .99])
+    print("\nMonthly yield changes, January 2016–December 2025 (bps)")
+    print(summary.to_string(float_format=lambda x: f"{x:,.4f}"))
+
+    thresholds = np.array([50, 100, 200, 300, 500, 1000])
+    # Use untrimmed observations for all statistics and tail frequencies.
+    absolute = dy.abs()
+    counts = np.array([int((absolute > t).sum()) for t in thresholds])
+    percentages = 100 * counts / len(dy)
+    print("\nAbsolute yield-change thresholds")
+    print(f"{'Threshold':>12} {'Count':>12} {'Percentage':>12}")
+    for t, count, pct in zip(thresholds, counts, percentages):
+        print(f"{'>' + str(t) + ' bps':>12} {count:>12,} {pct:>11.4f}%")
+    return thresholds, percentages
+
+
+def make_yield_change_figure(dy, thresholds, percentages, filename):
+    """Plot the central distribution and full-sample tail frequencies."""
+    fig, (ax, tail) = plt.subplots(1, 2, figsize=(7.0, 2.85),
+                                  layout="constrained")
+
+    # Trim only the displayed histogram, never the statistical sample.
+    lower, upper = dy.quantile([0.005, 0.995])
+    shown = dy[dy.between(lower, upper)]
+    ax.hist(shown, bins=50, weights=np.full(len(shown), 100 / len(dy)),
+            color="#397db5", edgecolor="white", linewidth=0.32)
+    ax.set_title("(a) Monthly yield changes", loc="left", fontsize=10)
+    ax.set_xlabel("Yield change (bps; 0.5–99.5th pct.)")
+    ax.set_ylabel("Share of valid observations (%)")
+    if lower < upper:
+        ax.set_xlim(lower, upper)
+
+    positions = np.arange(len(thresholds))
+    bars = tail.bar(positions, percentages, color="#397db5", width=0.72)
+    tail.set_xticks(positions, [str(t) for t in thresholds])
+    tail.set_title("(b) Extreme yield changes", loc="left", fontsize=10)
+    tail.set_xlabel("Absolute threshold (bps)")
+    tail.set_ylabel("Share exceeding threshold (%)")
+    tail.bar_label(bars, labels=[f"{p:.2f}%" if p >= .01 or p == 0
+                                 else f"{p:.4f}%" for p in percentages],
+                   padding=3, fontsize=7)
+    tail.set_ylim(0, max(float(percentages.max()) * 1.2, 0.01))
+
+    for axis in (ax, tail):
+        axis.yaxis.set_major_locator(MaxNLocator(5))
+        axis.grid(axis="y", alpha=0.2, linewidth=0.5)
+        axis.set_axisbelow(True)
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+
+    fig.savefig(filename, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+
+
 def publish_figures(files):
     """Publish only the generated PDFs; never push unrelated local commits."""
     def git(*args, capture=False):
@@ -90,15 +164,15 @@ def publish_figures(files):
         ["git", "diff", "--cached", "--quiet", "--", *paths], cwd=ROOT
     )
     if changed.returncode == 0:
-        print("Both PDFs are already up to date on GitHub.")
+        print("All PDFs are already up to date on GitHub.")
         return
     if changed.returncode != 1:
         raise RuntimeError("Could not check staged figure changes.")
 
-    git("commit", "--only", "-m", "Update Overleaf bond distribution figures",
+    git("commit", "--only", "-m", "Update Overleaf bond distribution and yield-change figures",
         "--", *paths)
     git("push", "origin", "main")
-    print("Both PDFs committed and pushed to GitHub (origin/main).")
+    print("All PDFs committed and pushed to GitHub (origin/main).")
 
 
 def main():
@@ -130,8 +204,14 @@ def main():
         (ytm, "Yield to maturity", "Yield to maturity (%)", True)
     ], args.out / "coupon_yield.pdf")
 
+    dy = monthly_yield_changes(df)
+    thresholds, percentages = yield_change_statistics(dy)
+    make_yield_change_figure(dy, thresholds, percentages,
+                             args.out / "yield_changes.pdf")
+
     print(f"Figures saved in {args.out.resolve()}")
-    files = [args.out / "duration_maturity.pdf", args.out / "coupon_yield.pdf"]
+    files = [args.out / "duration_maturity.pdf", args.out / "coupon_yield.pdf",
+             args.out / "yield_changes.pdf"]
     if not args.local_only:
         try:
             publish_figures(files)
