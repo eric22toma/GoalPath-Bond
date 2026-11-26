@@ -34,8 +34,6 @@ def make_figure(series, filename):
         if values.empty:
             raise ValueError(f"No valid observations for {label}")
 
-        median = values.median()
-        # Trim only the displayed yield tails, not the dataset or median.
         if trim:
             lower, upper = values.quantile([0.005, 0.995])
             shown = values[values.between(lower, upper)]
@@ -46,8 +44,6 @@ def make_figure(series, filename):
         ax.hist(shown, bins=50,
                 weights=np.full(len(shown), 100 / len(values)),
                 color="#397db5", edgecolor="white", linewidth=0.32)
-        ax.axvline(median, color="#222222", linestyle="--", linewidth=1,
-                   label=f"Median: {median:.2f}")
         ax.set_title(f"({chr(97+i)}) {label}", loc="left", fontsize=10)
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Share of valid observations (%)")
@@ -58,8 +54,6 @@ def make_figure(series, filename):
         ax.spines["right"].set_visible(False)
         ax.legend(frameon=False, fontsize=8)
 
-        print(f"{label}: n={len(values):,}, plotted={len(shown):,}, "
-              f"median={median:.4f}")
 
     fig.savefig(filename, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
