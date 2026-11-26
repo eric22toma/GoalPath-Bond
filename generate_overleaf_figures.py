@@ -83,7 +83,7 @@ def yield_change_statistics(dy):
     print("\nMonthly yield changes, January 2016–December 2025 (bps)")
     print(summary.to_string(float_format=lambda x: f"{x:,.4f}"))
 
-    thresholds = np.array([50, 100, 200, 300, 500, 1000])
+    thresholds = np.array([100, 200, 300, 500, 1000])
     # Use untrimmed observations for all statistics and tail frequencies.
     absolute = dy.abs()
     counts = np.array([int((absolute > t).sum()) for t in thresholds])
