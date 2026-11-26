@@ -16,7 +16,7 @@ TENORS = np.arange(1.0, 31.0)
 RISK_WINDOW_MONTHS = 36
 
 # Current YTM ceiling for portfolio candidates only (decimal annual yield).
-# This differs from the 500 bp historical yield-CHANGE filter in elastic net.
+# This differs from the 1500 bp historical yield-CHANGE filter in elastic net.
 MAX_INVESTABLE_YIELD = 0.15
 MIN_FACTOR_OBSERVATIONS = 12
 MIN_BOND_RESIDUALS = 12
