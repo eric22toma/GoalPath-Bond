@@ -116,9 +116,7 @@ def resolve_next_month_returns(bonds, target_month):
         result.at[idx, 'was_redeemed'] = True
         result.at[idx, 'redemption_date'] = event_date.strftime('%Y-%m-%d')
         try:
-            result.at[idx, 'next_return'] = terminal_redemption_return(
-                result.loc[idx], event_date, principal
-            )
+            result.at[idx, 'next_return'] = terminal_redemption_return(result.loc[idx], event_date, principal)
             result.at[idx, 'return_source'] = 'estimated_redemption_30_360'
         except (ValueError, TypeError, OverflowError) as exc:
             result.at[idx, 'return_note'] = str(exc)
